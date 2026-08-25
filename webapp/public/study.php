@@ -268,6 +268,8 @@ require __DIR__ . '/partials/nav.php';
     <button type="button" class="view-tab-btn" data-view="swipe">Prima / Dopo (swipe)</button>
     <button type="button" class="view-tab-btn" data-view="mask">Maschera</button>
     <button type="button" class="view-tab-btn" data-view="edges">Contorni</button>
+    <button type="button" class="view-tab-btn" data-view="original-a" title="Ripresa A originale, senza overlay/filtri">📷 Originale A</button>
+    <button type="button" class="view-tab-btn" data-view="original-b" title="Ripresa B originale (riallineata su A), senza overlay/filtri">📷 Originale B</button>
   </div>
 
   <div class="grid grid-2">

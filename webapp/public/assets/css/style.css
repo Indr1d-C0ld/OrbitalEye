@@ -526,7 +526,7 @@ label { display: flex; align-items: center; gap: 6px; font-size: 11px; color: va
 .checkbox-row input { width: auto; }
 
 .region-list { max-height: 320px; overflow-y: auto; }
-.region-item { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 8px; border-bottom: 1px solid var(--line); font-size: 12px; }
+.region-item { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 8px; border-bottom: 1px solid var(--line); font-size: 12px; }
 .region-item:hover { background: rgba(0,255,242,0.04); cursor: pointer; }
 .region-item.selected { background: rgba(0,255,242,0.09); border-left: 2px solid var(--cyan); }
 

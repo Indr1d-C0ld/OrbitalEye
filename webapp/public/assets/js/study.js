@@ -271,12 +271,20 @@
       div.dataset.regionIndex = i;
       div.innerHTML = `
         <span>#${i + 1} — ${r.w}×${r.h}px <span style="color:var(--text-muted);">(${r.area}px²)</span></span>
-        <span>
+        <span style="display:flex; gap:4px; flex-wrap:wrap;">
+          <button type="button" class="btn btn-sm" data-jump-original="a" data-region="${i}" title="Vai alla ripresa A originale (senza filtri/overlay), zoomata su questa regione">📷 A</button>
+          <button type="button" class="btn btn-sm" data-jump-original="b" data-region="${i}" title="Vai alla ripresa B originale (senza filtri/overlay), zoomata su questa regione">📷 B</button>
           <button type="button" class="btn btn-sm" data-annotate-region="${i}" title="Crea un'annotazione da questa regione rilevata">✎ Annota</button>
         </span>`;
       div.addEventListener('click', (e) => {
-        if (e.target.closest('[data-annotate-region]')) return;
+        if (e.target.closest('button')) return;
         selectRegion(i);
+      });
+      div.querySelectorAll('[data-jump-original]').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          jumpToOriginal(i, btn.dataset.jumpOriginal);
+        });
       });
       div.querySelector('[data-annotate-region]').addEventListener('click', (e) => {
         e.stopPropagation();
@@ -315,6 +323,25 @@
     if (!state.currentComparison) return;
     const region = state.currentComparison.regions[index];
     if (!region) return;
+    whenStageReady(() => {
+      flashRegion(region);
+      const img = $('#stage-img');
+      if (activeZoom && activeZoom.focusRegion) {
+        activeZoom.focusRegion(region.x, region.y, region.w, region.h, img.naturalWidth, img.naturalHeight);
+      }
+      highlightRegionListItem(index);
+    });
+  }
+
+  // Scorciatoia: salta direttamente alla ripresa originale (A o B, senza
+  // overlay/heatmap/filtri) già zoomata sulla regione scelta — utile per
+  // verificare a colpo d'occhio cosa mostra davvero la foto in quel punto,
+  // senza l'evidenziazione grafica del confronto.
+  function jumpToOriginal(index, which) {
+    if (!state.currentComparison) return;
+    const region = state.currentComparison.regions[index];
+    if (!region) return;
+    setView(which === 'a' ? 'original-a' : 'original-b');
     whenStageReady(() => {
       flashRegion(region);
       const img = $('#stage-img');
@@ -561,6 +588,36 @@
       activeZoom = swipeZoom;
       $('#mode-toggle').style.display = 'none';
       $('#stage-hint').textContent = 'Rotellina del mouse o pulsanti +/− per zoomare. Trascina il cursore ↔ per spostare la linea di confronto prima/dopo.';
+    } else if (view === 'original-a' || view === 'original-b') {
+      // Ripresa satellitare "pura": nessun overlay di differenze, nessun
+      // filtro di enhancement applicato per l'analisi — solo la foto usata
+      // nel confronto, nello stesso sistema di coordinate delle regioni
+      // rilevate (per A è la ripresa originale; per B è la versione
+      // riallineata geometricamente su A, così il riquadro di una regione
+      // resta preciso su entrambe — non è un filtro di elaborazione, è la
+      // stessa correzione geometrica già applicata prima del confronto).
+      single.style.display = '';
+      swipe.style.display = 'none';
+      let url = null;
+      if (view === 'original-a') {
+        const captureA = window.ORBITALEYE.captures.find((c) => c.id === state.selectedA);
+        url = captureA ? window.ORBITALEYE.mediaBase + encodeURIComponent(captureA.relative_path) : null;
+      } else {
+        url = state.currentComparison.urls.aligned_b;
+      }
+      if (!url) {
+        alert('Immagine originale non disponibile per questo confronto.');
+        setView('overlay');
+        return;
+      }
+      $('#stage-img').src = url;
+      $('#stage-img').onload = () => {
+        resizeCanvas();
+        loadAnnotations();
+      };
+      activeZoom = stageZoom;
+      $('#mode-toggle').style.display = '';
+      $('#stage-hint').innerHTML = 'Ripresa satellitare originale, senza overlay/heatmap/filtri di enhancing. Rotellina del mouse per zoomare, trascina per spostarti. Clicca (senza trascinare) dentro un riquadro numerato per ingrandirlo automaticamente.';
     } else {
       single.style.display = '';
       swipe.style.display = 'none';
