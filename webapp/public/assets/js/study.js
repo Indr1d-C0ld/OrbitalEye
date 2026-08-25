@@ -567,8 +567,11 @@
       const url = state.currentComparison.urls[view];
       if (!url) {
         // Confronti salvati prima dell'introduzione di questa vista (es.
-        // "Contorni") non hanno l'immagine corrispondente: torniamo
-        // sull'overlay invece di mostrare un'immagine rotta.
+        // "Contorni") non hanno l'immagine corrispondente: avvisa invece di
+        // tornare in silenzio sull'overlay, che da fuori sembra un bottone
+        // rotto piuttosto che un limite dei dati salvati in precedenza.
+        const labels = { overlay: 'Overlay differenze', heatmap: 'Heatmap', mask: 'Maschera', edges: 'Contorni' };
+        alert(`Questo confronto è stato salvato prima che la vista "${labels[view] || view}" fosse disponibile, quindi non è mai stata generata per lui. Riesegui il confronto (stessi parametri o nuovi) per ottenerla.`);
         setView('overlay');
         return;
       }
