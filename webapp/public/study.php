@@ -263,13 +263,13 @@ require __DIR__ . '/partials/nav.php';
   <div class="grid grid-4" id="result-stats" style="margin:16px 0;"></div>
 
   <div class="viewer-tabs">
-    <button type="button" class="view-tab-btn active" data-view="overlay">Overlay differenze</button>
-    <button type="button" class="view-tab-btn" data-view="heatmap">Heatmap</button>
-    <button type="button" class="view-tab-btn" data-view="swipe">Prima / Dopo (swipe)</button>
-    <button type="button" class="view-tab-btn" data-view="mask">Maschera</button>
-    <button type="button" class="view-tab-btn" data-view="edges">Contorni</button>
-    <button type="button" class="view-tab-btn" data-view="original-a" title="Ripresa A originale, senza overlay/filtri">📷 Originale A</button>
-    <button type="button" class="view-tab-btn" data-view="original-b" title="Ripresa B originale (riallineata su A), senza overlay/filtri">📷 Originale B</button>
+    <button type="button" class="view-tab-btn active" data-view="overlay">Overlay differenze <span class="info-tip" tabindex="0" data-tip="La ripresa 'dopo' con le zone di cambiamento evidenziate in ciano semi-trasparente e delimitate da riquadri numerati (uno per regione rilevata). È la vista principale per capire a colpo d'occhio dove sono i cambiamenti e la loro estensione relativa l'uno rispetto all'altro.">?</span></button>
+    <button type="button" class="view-tab-btn" data-view="heatmap">Heatmap <span class="info-tip" tabindex="0" data-tip="Mappa di calore della differenza calcolata pixel per pixel (SSIM o differenza assoluta), prima di applicare la soglia: più il colore tende al bianco/giallo, maggiore è la differenza in quel punto. A differenza dell'overlay (sì/no cambiamento) mostra l'intensità in modo continuo — utile per capire quanto è netto un cambiamento, non solo dove si trova.">?</span></button>
+    <button type="button" class="view-tab-btn" data-view="swipe">Prima / Dopo (swipe) <span class="info-tip" tabindex="0" data-tip="Le due riprese originali (A e B riallineata su A) sovrapposte con uno slider trascinabile per confrontarle direttamente. Nessuna elaborazione: solo le due foto reali, una sopra l'altra — utile per un controllo visivo immediato prima di fidarsi dell'analisi automatica.">?</span></button>
+    <button type="button" class="view-tab-btn" data-view="mask">Maschera <span class="info-tip" tabindex="0" data-tip="Maschera binaria bianco/nero: bianco dove la differenza supera la soglia impostata ed è sopravvissuta alla pulizia dal rumore, nero altrove. È esattamente l'area che l'algoritmo sta contando come cambiamento — utile per capire concretamente cosa include (o esclude) il calcolo delle statistiche e delle regioni.">?</span></button>
+    <button type="button" class="view-tab-btn" data-view="edges">Contorni <span class="info-tip" tabindex="0" data-tip="Rilevamento dei bordi (Canny) sulla ripresa 'dopo': evidenzia il profilo netto di strutture ed elementi. Utile per distinguere il contorno di una nuova costruzione dal rumore diffuso di un cambiamento non strutturale (es. variazione di colore/umidità del terreno), che nell'overlay potrebbe sembrare simile.">?</span></button>
+    <button type="button" class="view-tab-btn" data-view="original-a">📷 Originale A <span class="info-tip" tabindex="0" data-tip="La ripresa 'prima' così come acquisita: nessun overlay, heatmap o filtro di elaborazione applicato per l'analisi — solo la foto satellitare reale, zoomabile e annotabile come le altre viste.">?</span></button>
+    <button type="button" class="view-tab-btn" data-view="original-b">📷 Originale B <span class="info-tip" tabindex="0" data-tip="La ripresa 'dopo' riallineata geometricamente su A (la stessa correzione già applicata prima del confronto, non un filtro di elaborazione) ma senza overlay, heatmap o altri filtri: la foto satellitare reale in quel momento.">?</span></button>
   </div>
 
   <div class="grid grid-2">
