@@ -1,0 +1,14 @@
+# Sicurezza di base: questa directory (/data/html/orbitaleye) NON deve essere
+# il DocumentRoot del virtual host. Il DocumentRoot va puntato a
+# /data/html/orbitaleye/webapp/public (vedi README.md).
+#
+# Questa regola nega l'accesso a tutto ciò che sta fuori da webapp/public,
+# come rete di sicurezza nel caso il DocumentRoot sia configurato più in alto
+# per errore.
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order deny,allow
+    Deny from all
+</IfModule>

@@ -1,0 +1,23 @@
+[Unit]
+Description=OrbitalEye Analysis Service (FastAPI/uvicorn)
+After=network-online.target
+Wants=network-online.target
+
+# NOTA: prima di installare questo unit, sostituisci CHANGE_ME_USER con il
+# tuo utente Linux (di norma lo stesso proprietario dei file del progetto,
+# NON root) e verifica che i due percorsi sotto puntino alla directory in
+# cui hai effettivamente clonato/installato OrbitalEye.
+[Service]
+Type=simple
+User=CHANGE_ME_USER
+Group=www-data
+WorkingDirectory=/var/www/html/orbitaleye/python-service
+ExecStart=/var/www/html/orbitaleye/python-service/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8077
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+Environment="PYTHONUNBUFFERED=1"
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,28 @@
+# === Segreti / config locale ===
+webapp/config/config.php
+python-service/.env
+
+# === Database (dati operativi, ricreato automaticamente al primo avvio) ===
+webapp/data/*.sqlite
+webapp/data/*.sqlite-shm
+webapp/data/*.sqlite-wal
+
+# === Python ===
+python-service/venv/
+__pycache__/
+*.pyc
+
+# === Dati/risultati generati a runtime (immagini, credenziali dinamiche) ===
+storage/raw/*
+storage/processed/*
+storage/results/*
+storage/config/*
+!storage/raw/.gitkeep
+!storage/processed/.gitkeep
+!storage/results/.gitkeep
+!storage/config/.gitkeep
+
+# === OS / editor ===
+.DS_Store
+*.swp
+*.bak.*
