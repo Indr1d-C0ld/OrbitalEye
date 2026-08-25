@@ -235,7 +235,7 @@ final class ExportBuilder
     <div class="kv"><span>Studio</span><span>{$e($study['title'])}</span></div>
     <div class="kv"><span>Area</span><span>{$e($study['area_name'] ?: '—')}</span></div>
     <div class="kv"><span>Titolo confronto</span><span>{$title}</span></div>
-    <div class="kv"><span>Eseguito il</span><span>{$e($cmp['created_at'])}</span></div>
+    <div class="kv"><span>Eseguito il</span><span>{$e(format_datetime_it($cmp['created_at']))}</span></div>
     {$bboxLine}
   </div>
 
@@ -244,14 +244,14 @@ final class ExportBuilder
     <div class="panel">
       <div class="kv"><span>Ruolo</span><span>A · PRIMA</span></div>
       <div class="kv"><span>Etichetta</span><span>{$e($capA['label'] ?: '—')}</span></div>
-      <div class="kv"><span>Data ripresa</span><span>{$e($capA['capture_date'] ?: '—')}</span></div>
+      <div class="kv"><span>Data ripresa</span><span>{$e(format_date_it($capA['capture_date']))}</span></div>
       <div class="kv"><span>Fonte</span><span>{$e($capA['source'])}</span></div>
       <div class="kv"><span>Dimensioni</span><span>{$e($capA['width'])}&times;{$e($capA['height'])}px</span></div>
     </div>
     <div class="panel">
       <div class="kv"><span>Ruolo</span><span>B · DOPO</span></div>
       <div class="kv"><span>Etichetta</span><span>{$e($capB['label'] ?: '—')}</span></div>
-      <div class="kv"><span>Data ripresa</span><span>{$e($capB['capture_date'] ?: '—')}</span></div>
+      <div class="kv"><span>Data ripresa</span><span>{$e(format_date_it($capB['capture_date']))}</span></div>
       <div class="kv"><span>Fonte</span><span>{$e($capB['source'])}</span></div>
       <div class="kv"><span>Dimensioni</span><span>{$e($capB['width'])}&times;{$e($capB['height'])}px</span></div>
     </div>

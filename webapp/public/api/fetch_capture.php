@@ -86,7 +86,7 @@ if ($source === 'sentinelhub') {
 
     $captureId = Capture::create(
         $studyId,
-        'Esri World Imagery — scaricata il ' . date('Y-m-d'),
+        'Esri World Imagery — scaricata il ' . date('d/m/Y'),
         'esri',
         null, // Esri non espone la data reale della ripresa, solo "il composito più recente disponibile": non possiamo mostrarla come se fosse la data della ripresa
         $result['relative_path'],

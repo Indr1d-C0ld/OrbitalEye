@@ -49,7 +49,7 @@ require __DIR__ . '/partials/nav.php';
           <span class="badge badge-amber"><?= round(($stats['changed_ratio'] ?? 0) * 100, 2) ?>% variazione</span>
           <span class="badge badge-cyan"><?= $stats['num_regions'] ?? 0 ?> regioni</span>
         </div>
-        <div class="hint" style="margin-bottom:10px;"><?= e($item['created_at']) ?></div>
+        <div class="hint" style="margin-bottom:10px;"><?= format_datetime_it($item['created_at']) ?></div>
         <div style="display:flex; gap:6px; flex-wrap:wrap;">
           <a class="btn btn-sm btn-primary" href="study.php?id=<?= (int)$item['study_id'] ?>&comparison=<?= (int)$item['id'] ?>">Apri</a>
           <a class="btn btn-sm" href="export_comparison.php?id=<?= (int)$item['id'] ?>" title="Scarica ZIP (immagini + report)">⬇ Esporta</a>

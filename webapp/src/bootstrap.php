@@ -5,6 +5,11 @@ declare(strict_types=1);
 error_reporting(E_ALL);
 ini_set('display_errors', '0');
 
+// Fuso orario dell'applicazione: influenza date() e i confronti/formattazioni
+// fatti da qui in poi (il server può girare in UTC — è il default di questo
+// PHP — ma l'interfaccia deve mostrare sempre l'ora italiana).
+date_default_timezone_set('Europe/Rome');
+
 session_start([
     'cookie_httponly' => true,
     'cookie_samesite' => 'Lax',
@@ -40,6 +45,35 @@ function respond_json(array $data, int $status = 200): void
 function storage_url(string $relativePath): string
 {
     return 'media.php?path=' . urlencode($relativePath);
+}
+
+/** Formatta un timestamp memorizzato in UTC (es. i campi created_at/updated_at
+ * di SQLite, popolati con datetime('now')) in formato italiano, convertito
+ * all'ora di Roma (gestisce automaticamente CET/CEST). */
+function format_datetime_it(?string $utcDateTime, string $format = 'd/m/Y H:i'): string
+{
+    if (!$utcDateTime) {
+        return '—';
+    }
+    try {
+        $dt = new DateTime($utcDateTime, new DateTimeZone('UTC'));
+        $dt->setTimezone(new DateTimeZone('Europe/Rome'));
+        return $dt->format($format);
+    } catch (Exception $e) {
+        return e($utcDateTime);
+    }
+}
+
+/** Formatta una data pura (senza ora, es. capture_date: 'YYYY-MM-DD') in
+ * formato italiano gg/mm/aaaa. Nessuna conversione di fuso orario: è già
+ * un giorno di calendario, non un istante temporale. */
+function format_date_it(?string $isoDate): string
+{
+    if (!$isoDate) {
+        return '—';
+    }
+    $ts = strtotime($isoDate);
+    return $ts !== false ? date('d/m/Y', $ts) : e($isoDate);
 }
 
 try {

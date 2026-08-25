@@ -46,8 +46,8 @@ require __DIR__ . '/partials/nav.php';
           <tr>
             <td><a href="study.php?id=<?= (int)$s['id'] ?>"><?= e($s['title']) ?></a></td>
             <td><?= e($s['area_name'] ?: '—') ?></td>
-            <td><?= e($s['created_at']) ?></td>
-            <td><?= e($s['updated_at']) ?></td>
+            <td><?= format_datetime_it($s['created_at']) ?></td>
+            <td><?= format_datetime_it($s['updated_at']) ?></td>
             <td>
               <span class="badge badge-cyan"><?= $c['captures'] ?> riprese</span>
               <span class="badge badge-amber"><?= $c['comparisons'] ?> confronti</span>

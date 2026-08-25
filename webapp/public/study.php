@@ -153,7 +153,7 @@ require __DIR__ . '/partials/nav.php';
           <img src="<?= e(storage_url($c['relative_path'])) ?>" alt="">
           <div class="meta">
             <div class="lbl"><?= e($c['label'] ?: ('Ripresa #' . $c['id'])) ?></div>
-            <div><?= e($c['capture_date'] ?: '—') ?> · <?= e($c['source']) ?></div>
+            <div><?= format_date_it($c['capture_date']) ?> · <?= e($c['source']) ?></div>
             <div style="display:flex; gap:4px; margin-top:6px;">
               <a class="btn btn-sm" style="flex:1; text-align:center;" href="export_capture.php?id=<?= (int)$c['id'] ?>" onclick="event.stopPropagation();" title="Scarica il file immagine originale">⬇ Scarica</a>
               <button type="button" class="btn btn-sm btn-danger" style="flex:1;"
@@ -327,7 +327,7 @@ require __DIR__ . '/partials/nav.php';
       <tbody>
         <?php foreach ($comparisons as $cmp): $stats = json_decode($cmp['stats_json'], true); ?>
           <tr>
-            <td><?= e($cmp['created_at']) ?></td>
+            <td><?= format_datetime_it($cmp['created_at']) ?></td>
             <td><?= e($cmp['title'] ?: '—') ?> <?= $cmp['is_saved_to_library'] ? '<span class="badge badge-green">libreria</span>' : '' ?></td>
             <td><?= isset($stats['changed_ratio']) ? round($stats['changed_ratio'] * 100, 2) . '%' : '—' ?></td>
             <td><?= $stats['num_regions'] ?? '—' ?></td>

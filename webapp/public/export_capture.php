@@ -19,7 +19,7 @@ $study = Study::find((int) $capture['study_id']);
 $ext = strtolower(pathinfo($full, PATHINFO_EXTENSION)) ?: 'jpg';
 $labelPart = ExportBuilder::slug($capture['label'] ?: ('ripresa_' . $capture['id']));
 $studyPart = $study ? ExportBuilder::slug($study['title']) : 'orbitaleye';
-$datePart = $capture['capture_date'] ? ExportBuilder::slug($capture['capture_date']) : date('Ymd', strtotime($capture['created_at']));
+$datePart = $capture['capture_date'] ? ExportBuilder::slug($capture['capture_date']) : format_datetime_it($capture['created_at'], 'Ymd');
 $filename = "{$studyPart}_{$labelPart}_{$datePart}.{$ext}";
 
 $mime = [
