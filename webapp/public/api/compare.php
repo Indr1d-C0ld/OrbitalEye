@@ -115,6 +115,7 @@ respond_json([
     'regions' => $result['regions'],
     'registration' => $result['registration'],
     'urls' => [
+        'enhanced_a' => isset($result['paths']['enhanced_a']) ? storage_url($result['paths']['enhanced_a']) : null,
         'aligned_b' => storage_url($result['paths']['aligned_b']),
         'mask' => storage_url($result['paths']['mask']),
         'overlay' => storage_url($result['paths']['overlay']),

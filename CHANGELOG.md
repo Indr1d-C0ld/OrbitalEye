@@ -4,6 +4,33 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-08-27 (5) — Fix: l'enhancement pre-analisi su A non era mai visibile
+
+L'enhancement pre-analisi (denoise, desaturazione, ecc.) veniva applicato
+correttamente a **entrambe** le riprese per il calcolo del confronto, ma solo
+la versione elaborata di B veniva salvata su disco — "Originale A" mostrava
+sempre il file grezzo non filtrato, dando l'impressione (falsa) che i filtri
+agissero solo su B.
+
+- **[python-service/app/routers/analysis.py](python-service/app/routers/analysis.py)**
+  `/analysis/compare` salva ora anche `enhanced_a.jpg` (la ripresa A con gli
+  stessi filtri di enhance_a usati nel calcolo) e la include nella risposta
+  (`paths.enhanced_a`).
+
+- **[webapp/public/api/compare.php](webapp/public/api/compare.php)**
+  Include `enhanced_a` (se presente) negli `urls` restituiti al frontend.
+
+- **[webapp/public/assets/js/study.js](webapp/public/assets/js/study.js)**
+  Nuova `captureAUrl()`: "Originale A" e lo swipe "prima/dopo" usano ora
+  `urls.enhanced_a` invece del file grezzo, con fallback automatico alla
+  ripresa originale per i confronti salvati prima di questa correzione
+  (che non hanno `enhanced_a`).
+
+- **[webapp/public/study.php](webapp/public/study.php)**
+  Tooltip di "Originale A/B" corretti: dicevano erroneamente "nessun filtro
+  di elaborazione applicato per l'analisi" anche quando l'enhancement
+  pre-analisi era attivo.
+
 ## 2026-08-27 (4) — Desaturazione B/N e indici spettrali NDVI/falso colore IR
 
 Due nuovi strumenti di analisi: un filtro di desaturazione universale (utile

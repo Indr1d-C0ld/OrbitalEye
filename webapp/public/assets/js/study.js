@@ -612,11 +612,25 @@
     const single = $('#stage-single');
     const swipe = $('#stage-swipe');
 
+    // "Originale A" mostra enhanced_a: la ripresa A così come è stata
+    // effettivamente usata nel calcolo (con gli stessi filtri di enhancement
+    // pre-analisi applicati anche a B), non il file grezzo — altrimenti,
+    // confrontandola con "Originale B" (che riflette sempre enhance_b),
+    // sembrerebbe che l'enhancement agisca solo su una delle due riprese.
+    // Fallback alla ripresa grezza solo per i confronti salvati prima
+    // dell'introduzione di enhanced_a, che non ce l'hanno.
+    function captureAUrl() {
+      if (state.currentComparison && state.currentComparison.urls.enhanced_a) {
+        return state.currentComparison.urls.enhanced_a;
+      }
+      const captureA = window.ORBITALEYE.captures.find((c) => c.id === state.selectedA);
+      return captureA ? window.ORBITALEYE.mediaBase + encodeURIComponent(captureA.relative_path) : null;
+    }
+
     if (view === 'swipe') {
       single.style.display = 'none';
       swipe.style.display = '';
-      const captureA = window.ORBITALEYE.captures.find((c) => c.id === state.selectedA);
-      const beforeUrl = captureA ? window.ORBITALEYE.mediaBase + encodeURIComponent(captureA.relative_path) : state.currentComparison.urls.aligned_b;
+      const beforeUrl = captureAUrl() || state.currentComparison.urls.aligned_b;
       $('#swipe-before').src = beforeUrl;
       $('#swipe-after').src = state.currentComparison.urls.aligned_b;
       initSwipe();
@@ -624,19 +638,15 @@
       $('#mode-toggle').style.display = 'none';
       $('#stage-hint').textContent = 'Rotellina del mouse o pulsanti +/− per zoomare. Trascina il cursore ↔ per spostare la linea di confronto prima/dopo.';
     } else if (view === 'original-a' || view === 'original-b') {
-      // Ripresa satellitare "pura": nessun overlay di differenze, nessun
-      // filtro di enhancement applicato per l'analisi — solo la foto usata
-      // nel confronto, nello stesso sistema di coordinate delle regioni
-      // rilevate (per A è la ripresa originale; per B è la versione
-      // riallineata geometricamente su A, così il riquadro di una regione
-      // resta preciso su entrambe — non è un filtro di elaborazione, è la
-      // stessa correzione geometrica già applicata prima del confronto).
+      // Ripresa satellitare così come usata nel confronto: stessi filtri di
+      // enhancement pre-analisi applicati (per A) e stessa correzione
+      // geometrica di allineamento (per B), nello stesso sistema di
+      // coordinate delle regioni rilevate — non il file grezzo non filtrato.
       single.style.display = '';
       swipe.style.display = 'none';
       let url = null;
       if (view === 'original-a') {
-        const captureA = window.ORBITALEYE.captures.find((c) => c.id === state.selectedA);
-        url = captureA ? window.ORBITALEYE.mediaBase + encodeURIComponent(captureA.relative_path) : null;
+        url = captureAUrl();
       } else {
         url = state.currentComparison.urls.aligned_b;
       }

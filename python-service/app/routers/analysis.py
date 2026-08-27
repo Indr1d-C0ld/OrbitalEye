@@ -141,6 +141,14 @@ def compare(req: CompareRequest):
     result_dir = settings.results_dir / result_id
     result_dir.mkdir(parents=True, exist_ok=True)
 
+    # img_a qui sotto include già i filtri di enhance_a (applicati sopra,
+    # prima della registrazione/diff): senza salvarla, la vista "Originale A"
+    # lato webapp puntava sempre alla ripresa grezza non filtrata, mentre
+    # "Originale B" mostra aligned_b (che invece riflette enhance_b) — dando
+    # l'impressione che l'enhancement pre-analisi agisca solo su una delle
+    # due riprese, quando in realtà veniva già applicato a entrambe per il
+    # calcolo (SSIM/absdiff), solo non era mai visibile lato A.
+    save_image(img_a, result_dir / "enhanced_a.jpg", quality=92)
     save_image(img_b_aligned, result_dir / "aligned_b.jpg", quality=92)
     save_image(mask, result_dir / "mask.png")
     save_image(overlay, result_dir / "overlay.jpg", quality=92)
@@ -150,6 +158,7 @@ def compare(req: CompareRequest):
     return {
         "result_id": result_id,
         "paths": {
+            "enhanced_a": f"results/{result_id}/enhanced_a.jpg",
             "aligned_b": f"results/{result_id}/aligned_b.jpg",
             "mask": f"results/{result_id}/mask.png",
             "overlay": f"results/{result_id}/overlay.jpg",
