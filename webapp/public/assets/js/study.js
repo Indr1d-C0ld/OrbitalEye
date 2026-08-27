@@ -5,6 +5,8 @@
     currentComparison: null, // { comparisonId, stats, regions, urls }
     currentView: 'overlay',
     swipeCaptureAUrl: null,
+    alignMode: 'auto', // 'auto' | 'manual' — vedi editor punti di controllo
+    manualControlPoints: [], // punti già salvati per la coppia A/B selezionata
   };
 
   const $ = (sel, root) => (root || document).querySelector(sel);
@@ -77,6 +79,10 @@
     ) {
       $('#results-panel').style.display = 'none';
       state.currentComparison = null;
+    }
+
+    if (typeof window.refreshManualAlignStatus === 'function') {
+      window.refreshManualAlignStatus();
     }
   }
 
@@ -182,6 +188,10 @@
   if (runBtn) {
     runBtn.addEventListener('click', async () => {
       if (!state.selectedA || !state.selectedB) return;
+      if (state.alignMode === 'manual' && state.manualControlPoints.length < 3) {
+        $('#compare-status').textContent = 'Servono almeno 3 punti di controllo salvati per usare l\'allineamento manuale su questa coppia di riprese.';
+        return;
+      }
       const status = $('#compare-status');
       runBtn.disabled = true;
       status.textContent = 'Elaborazione in corso: allineamento, calcolo differenze, filtri...';
@@ -191,6 +201,7 @@
         capture_a_id: state.selectedA,
         capture_b_id: state.selectedB,
         align: $('#opt-align').checked,
+        align_mode: state.alignMode,
         diff_method: $('#opt-diff-method').value,
         threshold: $('#opt-threshold').value,
         use_otsu: $('#opt-otsu').checked,
@@ -1085,6 +1096,247 @@
         setTimeout(() => window.location.reload(), 500);
       } catch (err) {
         status.textContent = 'Errore: ' + err.message;
+      }
+    });
+  })();
+
+  // ---------- Editor punti di controllo (allineamento manuale) ----------
+  // Fallback assistito per quando il motore automatico (ORB+ECC) non trova
+  // corrispondenze affidabili tra le due riprese, tipicamente tra fonti
+  // visivamente molto diverse (es. Esri World Imagery vs Sentinel Hub).
+  // I punti sono legati alla COPPIA di riprese selezionata, non al singolo
+  // confronto: restano salvati e riutilizzabili finché non li modifichi.
+  (function setupControlPointsEditor() {
+    const panel = $('#control-points-panel');
+    if (!panel) return;
+
+    const POINT_COLORS = ['#00fff2', '#ff5f5f', '#ffd23f', '#7cff5f', '#c77dff', '#5fb8ff', '#ff8fd8', '#ffab5f'];
+
+    let points = []; // [{ax, ay, bx, by}] in pixel immagine originale
+    let draft = null; // {ax, ay} in attesa del punto corrispondente su B
+    let natA = { w: 0, h: 0 };
+    let natB = { w: 0, h: 0 };
+
+    const alignModeBtns = $$('.align-mode-btn');
+    const manualBlock = $('#manual-align-block');
+    const alignStatus = $('#manual-align-status');
+    const alignRow = $('#opt-align-row');
+
+    alignModeBtns.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        state.alignMode = btn.dataset.mode;
+        alignModeBtns.forEach((b) => b.classList.toggle('active', b === btn));
+        if (alignRow) alignRow.style.display = state.alignMode === 'manual' ? 'none' : '';
+        manualBlock.style.display = state.alignMode === 'manual' ? '' : 'none';
+        if (state.alignMode === 'manual') loadPointsForPair();
+      });
+    });
+
+    // Chiamato da refreshSelectionUI() ad ogni cambio di selezione A/B, così
+    // lo stato mostrato resta coerente con la coppia effettivamente scelta
+    // (i punti sono legati alla coppia, non al confronto).
+    window.refreshManualAlignStatus = function () {
+      if (!state.selectedA || !state.selectedB) {
+        state.manualControlPoints = [];
+        updateStatusText();
+        return;
+      }
+      loadPointsForPair();
+    };
+
+    async function loadPointsForPair() {
+      if (!state.selectedA || !state.selectedB) return;
+      try {
+        const res = await fetch(`api/control_points.php?capture_a_id=${state.selectedA}&capture_b_id=${state.selectedB}`);
+        const data = await res.json();
+        state.manualControlPoints = Array.isArray(data.points) ? data.points : [];
+      } catch (e) {
+        state.manualControlPoints = [];
+      }
+      updateStatusText();
+    }
+
+    function updateStatusText() {
+      if (!alignStatus) return;
+      const n = state.manualControlPoints.length;
+      if (n === 0) {
+        alignStatus.textContent = 'Nessun punto salvato per questa coppia di riprese.';
+      } else {
+        alignStatus.textContent = n + (n === 1 ? ' punto di controllo salvato' : ' punti di controllo salvati') + ' per questa coppia.';
+      }
+    }
+
+    function captureUrl(id) {
+      const c = window.ORBITALEYE.captures.find((cap) => cap.id === id);
+      return c ? window.ORBITALEYE.mediaBase + encodeURIComponent(c.relative_path) : null;
+    }
+
+    const openBtn = $('#open-control-points-btn');
+    if (openBtn) {
+      openBtn.addEventListener('click', () => {
+        if (!state.selectedA || !state.selectedB) return;
+        openEditor();
+      });
+    }
+
+    function openEditor() {
+      points = (state.manualControlPoints || []).map((p) => ({ ax: p.ax, ay: p.ay, bx: p.bx, by: p.by }));
+      draft = null;
+      natA = { w: 0, h: 0 };
+      natB = { w: 0, h: 0 };
+      $('#cp-preview-row').style.display = 'none';
+      $('#cp-status').textContent = '';
+
+      const imgA = $('#cp-img-a');
+      const imgB = $('#cp-img-b');
+      imgA.onload = () => { natA = { w: imgA.naturalWidth, h: imgA.naturalHeight }; setZoom('a', 'fit'); };
+      imgB.onload = () => { natB = { w: imgB.naturalWidth, h: imgB.naturalHeight }; setZoom('b', 'fit'); };
+      imgA.src = captureUrl(state.selectedA);
+      imgB.src = captureUrl(state.selectedB);
+
+      panel.style.display = '';
+      panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    const closeBtn = $('#cp-close-btn');
+    if (closeBtn) closeBtn.addEventListener('click', () => { panel.style.display = 'none'; });
+
+    $$('.cp-zoom-btn').forEach((btn) => {
+      btn.addEventListener('click', () => setZoom(btn.dataset.target, btn.dataset.zoom));
+    });
+
+    function setZoom(target, spec) {
+      const img = $('#cp-img-' + target);
+      const scroll = $('#cp-scroll-' + target);
+      const nat = target === 'a' ? natA : natB;
+      if (!nat.w) return;
+      const factor = spec === 'fit' ? (Math.min(1, scroll.clientWidth / nat.w) || 1) : parseFloat(spec);
+      img.style.width = Math.round(nat.w * factor) + 'px';
+      img.style.height = Math.round(nat.h * factor) + 'px';
+      $$('.cp-zoom-btn[data-target="' + target + '"]').forEach((b) => b.classList.toggle('active', b.dataset.zoom === spec));
+      renderMarkers();
+    }
+
+    function clientToNatural(img, nat, clientX, clientY) {
+      const rect = img.getBoundingClientRect();
+      const xFrac = (clientX - rect.left) / rect.width;
+      const yFrac = (clientY - rect.top) / rect.height;
+      return { x: xFrac * nat.w, y: yFrac * nat.h };
+    }
+
+    function pairColor(index) {
+      return POINT_COLORS[index % POINT_COLORS.length];
+    }
+
+    function addMarker(wrap, leftPct, topPct, label, color, dashed) {
+      const m = document.createElement('div');
+      m.className = 'cp-marker';
+      m.style.cssText = 'position:absolute; left:' + leftPct + '%; top:' + topPct + '%; width:22px; height:22px; '
+        + 'margin:-11px 0 0 -11px; border-radius:50%; border:2px ' + (dashed ? 'dashed' : 'solid') + ' ' + color + '; '
+        + 'background:rgba(0,0,0,0.5); color:' + color + '; font-size:11px; font-weight:bold; display:flex; '
+        + 'align-items:center; justify-content:center; pointer-events:none; z-index:5;';
+      m.textContent = label;
+      wrap.appendChild(m);
+    }
+
+    function renderMarkers() {
+      ['a', 'b'].forEach((side) => {
+        const wrap = $('#cp-wrap-' + side);
+        wrap.querySelectorAll('.cp-marker').forEach((m) => m.remove());
+        const nat = side === 'a' ? natA : natB;
+        if (!nat.w) return;
+        points.forEach((p, i) => {
+          const x = side === 'a' ? p.ax : p.bx;
+          const y = side === 'a' ? p.ay : p.by;
+          addMarker(wrap, (x / nat.w) * 100, (y / nat.h) * 100, i + 1, pairColor(i));
+        });
+        if (draft && side === 'a') {
+          addMarker(wrap, (draft.ax / nat.w) * 100, (draft.ay / nat.h) * 100, '…', '#ffffff', true);
+        }
+      });
+    }
+
+    $('#cp-img-a').addEventListener('click', (e) => {
+      if (!natA.w) return;
+      const p = clientToNatural(e.target, natA, e.clientX, e.clientY);
+      draft = { ax: p.x, ay: p.y };
+      $('#cp-status').textContent = 'Punto impostato su A — ora clicca il punto corrispondente su B.';
+      renderMarkers();
+    });
+
+    $('#cp-img-b').addEventListener('click', (e) => {
+      if (!natB.w) return;
+      if (!draft) {
+        $('#cp-status').textContent = 'Clicca prima il punto su A, poi quello corrispondente qui su B.';
+        return;
+      }
+      const p = clientToNatural(e.target, natB, e.clientX, e.clientY);
+      points.push({ ax: draft.ax, ay: draft.ay, bx: p.x, by: p.y });
+      draft = null;
+      $('#cp-status').textContent = 'Punto ' + points.length + ' aggiunto. Clicca su A per aggiungerne un altro (minimo 3 per salvare).';
+      renderMarkers();
+    });
+
+    $('#cp-undo-btn').addEventListener('click', () => {
+      if (draft) {
+        draft = null;
+        $('#cp-status').textContent = 'Punto in sospeso su A annullato.';
+      } else {
+        points.pop();
+        $('#cp-status').textContent = 'Ultima coppia di punti annullata.';
+      }
+      renderMarkers();
+    });
+
+    $('#cp-clear-btn').addEventListener('click', () => {
+      points = [];
+      draft = null;
+      renderMarkers();
+      $('#cp-status').textContent = 'Tutti i punti cancellati (non ancora salvato: chiudi senza salvare per annullare).';
+    });
+
+    $('#cp-preview-btn').addEventListener('click', async () => {
+      if (points.length < 3) {
+        $('#cp-status').textContent = "Servono almeno 3 punti per generare un'anteprima.";
+        return;
+      }
+      $('#cp-status').textContent = 'Calcolo anteprima allineamento...';
+      try {
+        const res = await fetch('api/register_manual_preview.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ capture_a_id: state.selectedA, capture_b_id: state.selectedB, points }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Errore');
+        $('#cp-preview-aligned').src = data.urls.aligned_b + '&_=' + Date.now();
+        $('#cp-preview-blend').src = data.urls.blend + '&_=' + Date.now();
+        $('#cp-preview-row').style.display = '';
+        $('#cp-status').textContent = 'Anteprima generata (' + data.method + '). Se i contorni nel blend sono nitidi senza sdoppiamenti, l\'allineamento è buono.';
+      } catch (err) {
+        $('#cp-status').textContent = 'Errore: ' + err.message;
+      }
+    });
+
+    $('#cp-save-btn').addEventListener('click', async () => {
+      if (points.length < 3) {
+        $('#cp-status').textContent = 'Servono almeno 3 punti per salvare.';
+        return;
+      }
+      $('#cp-status').textContent = 'Salvataggio in corso...';
+      try {
+        const res = await fetch('api/control_points.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ capture_a_id: state.selectedA, capture_b_id: state.selectedB, points }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Errore');
+        state.manualControlPoints = points.slice();
+        updateStatusText();
+        $('#cp-status').textContent = 'Salvati ' + data.count + ' punti di controllo per questa coppia di riprese.';
+      } catch (err) {
+        $('#cp-status').textContent = 'Errore: ' + err.message;
       }
     });
   })();

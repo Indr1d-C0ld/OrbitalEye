@@ -56,6 +56,18 @@ function build_enhance_steps(array $opts): array
 $enhanceOpts = $body['enhance'] ?? [];
 $enhanceSteps = build_enhance_steps($enhanceOpts);
 
+// Allineamento manuale: se richiesto esplicitamente (align_mode === 'manual'),
+// usa i punti di controllo salvati per questa coppia di riprese al posto del
+// motore automatico. Se non ce ne sono almeno 3, l'errore arriva già dal
+// servizio Python — qui verifichiamo solo per dare un messaggio più chiaro.
+$controlPoints = [];
+if (($body['align_mode'] ?? 'auto') === 'manual') {
+    $controlPoints = ManualControlPoints::getPoints($captureAId, $captureBId);
+    if (count($controlPoints) < 3) {
+        respond_json(['error' => 'Servono almeno 3 punti di controllo salvati per questa coppia di riprese per usare l\'allineamento manuale'], 400);
+    }
+}
+
 $payload = [
     'capture_a_path' => $captureA['relative_path'],
     'capture_b_path' => $captureB['relative_path'],
@@ -70,6 +82,7 @@ $payload = [
     'overlay_alpha' => (float) ($body['overlay_alpha'] ?? 0.35),
     'enhance_a' => $enhanceSteps,
     'enhance_b' => $enhanceSteps,
+    'control_points' => $controlPoints,
 ];
 
 try {

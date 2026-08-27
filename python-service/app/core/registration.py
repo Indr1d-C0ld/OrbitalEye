@@ -202,3 +202,89 @@ def register_images(img_a: np.ndarray, img_b: np.ndarray) -> RegistrationResult:
         matched_features=inliers,
         confidence=0.0,
     )
+
+
+def register_with_points(
+    img_a: np.ndarray, img_b: np.ndarray, points: list[tuple[float, float, float, float]]
+) -> RegistrationResult:
+    """Allinea img_b su img_a usando punti di controllo indicati manualmente
+    dall'analista, invece del feature matching automatico.
+
+    Fallback assistito per i casi in cui il motore automatico (ORB+ECC, vedi
+    `register_images`) non trova corrispondenze affidabili — tipicamente tra
+    fonti con stile visivo molto diverso (es. Esri World Imagery vs Sentinel
+    Hub) o in aree con poca texture. Qui è l'analista a indicare direttamente
+    coppie di punti che rappresentano lo stesso luogo reale nelle due
+    immagini: niente ECC di rifinitura automatica dopo, perché reintrodurrebbe
+    lo stesso rischio di convergenza sbagliata che ha reso necessario
+    l'intervento manuale in primo luogo — i punti indicati sono presi come
+    riferimento definitivo.
+
+    points: lista di (ax, ay, bx, by) in pixel dell'immagine ORIGINALE (piena
+    risoluzione, non ridimensionata) di A e B rispettivamente. Servono almeno
+    3 punti: con esattamente 3 si stima un moto affine (rotazione + scala +
+    shear), con 4 o più un'omografia (proiettiva, con RANSAC se >4 per
+    tollerare qualche punto impreciso).
+    """
+    if len(points) < 3:
+        raise ValueError("Servono almeno 3 punti di controllo per l'allineamento manuale.")
+
+    h, w = img_a.shape[:2]
+
+    if img_b.shape[:2] != (h, w):
+        scale_x = w / img_b.shape[1]
+        scale_y = h / img_b.shape[0]
+        img_b_resized = cv2.resize(img_b, (w, h), interpolation=cv2.INTER_AREA)
+    else:
+        scale_x = scale_y = 1.0
+        img_b_resized = img_b
+
+    pts_a = np.float32([[p[0], p[1]] for p in points])
+    # I punti su B sono stati presi sull'immagine originale: se B è stata
+    # ridimensionata per combaciare con A, le coordinate vanno riscalate di
+    # conseguenza prima di stimare la trasformazione.
+    pts_b = np.float32([[p[2] * scale_x, p[3] * scale_y] for p in points])
+
+    full_mask = np.full((h, w), 255, dtype=np.uint8)
+
+    if len(points) == 3:
+        matrix = cv2.getAffineTransform(pts_b, pts_a)
+        aligned = cv2.warpAffine(
+            img_b_resized, matrix, (w, h), flags=cv2.INTER_LINEAR,
+            borderMode=cv2.BORDER_CONSTANT, borderValue=0,
+        )
+        valid_mask = cv2.warpAffine(
+            full_mask, matrix, (w, h), flags=cv2.INTER_NEAREST,
+            borderMode=cv2.BORDER_CONSTANT, borderValue=0,
+        )
+        method = "manual-affine"
+        warp_out = matrix.tolist()
+    else:
+        ransac_method = cv2.RANSAC if len(points) > 4 else 0
+        matrix, _inlier_mask = cv2.findHomography(pts_b, pts_a, ransac_method, 5.0)
+        if matrix is None:
+            raise ValueError(
+                "Impossibile calcolare una trasformazione valida da questi punti "
+                "(probabilmente troppo vicini o allineati tra loro: sceglili più "
+                "distribuiti sull'immagine)."
+            )
+        aligned = cv2.warpPerspective(
+            img_b_resized, matrix, (w, h), flags=cv2.INTER_LINEAR,
+            borderMode=cv2.BORDER_CONSTANT, borderValue=0,
+        )
+        valid_mask = cv2.warpPerspective(
+            full_mask, matrix, (w, h), flags=cv2.INTER_NEAREST,
+            borderMode=cv2.BORDER_CONSTANT, borderValue=0,
+        )
+        method = "manual-homography"
+        warp_out = matrix.tolist()
+
+    return RegistrationResult(
+        aligned=aligned,
+        method=method,
+        success=True,
+        valid_mask=_erode_valid_mask(valid_mask),
+        warp_matrix=warp_out,
+        matched_features=len(points),
+        confidence=1.0,
+    )

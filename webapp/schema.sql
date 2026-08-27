@@ -65,6 +65,24 @@ CREATE TABLE IF NOT EXISTS annotations (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Punti di controllo per l'allineamento manuale (fallback assistito quando il
+-- motore automatico ORB+ECC non trova corrispondenze affidabili, tipico tra
+-- fonti visivamente molto diverse come Esri World Imagery e Sentinel Hub).
+-- Legati alla COPPIA di riprese (non al singolo confronto): restano
+-- disponibili e riutilizzabili per qualunque confronto futuro sulle stesse
+-- due immagini. points_json: array di {ax, ay, bx, by} in pixel
+-- dell'immagine originale (non ridimensionata) di ciascuna ripresa.
+CREATE TABLE IF NOT EXISTS manual_control_points (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    capture_a_id INTEGER NOT NULL REFERENCES captures(id) ON DELETE CASCADE,
+    capture_b_id INTEGER NOT NULL REFERENCES captures(id) ON DELETE CASCADE,
+    points_json TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(capture_a_id, capture_b_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_captures_study ON captures(study_id);
 CREATE INDEX IF NOT EXISTS idx_comparisons_study ON comparisons(study_id);
 CREATE INDEX IF NOT EXISTS idx_annotations_study ON annotations(study_id);
+CREATE INDEX IF NOT EXISTS idx_manual_cp_pair ON manual_control_points(capture_a_id, capture_b_id);

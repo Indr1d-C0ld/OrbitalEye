@@ -228,6 +228,61 @@ require __DIR__ . '/partials/nav.php';
   </div>
 </div>
 
+<div class="panel" id="control-points-panel" style="display:none;">
+  <h2>Editor punti di controllo (allineamento manuale)</h2>
+  <div class="hint" style="margin-bottom:12px;">
+    Clicca un punto su <strong>A</strong> (un dettaglio riconoscibile: un incrocio, un angolo di edificio, ecc.), poi clicca lo <strong>stesso identico punto reale</strong> su B: la coppia si evidenzia con lo stesso numero e colore su entrambe le immagini. Servono almeno <strong>3 punti</strong> (4+ tollerano qualche imprecisione di click grazie al filtro RANSAC). Usa i pulsanti di zoom per posizionare i punti con precisione.
+  </div>
+  <div class="grid grid-2">
+    <div>
+      <h3>A — riferimento</h3>
+      <div class="tag-row" style="margin-bottom:6px;">
+        <button type="button" class="btn btn-sm cp-zoom-btn" data-target="a" data-zoom="fit">Adatta</button>
+        <button type="button" class="btn btn-sm cp-zoom-btn" data-target="a" data-zoom="1">100%</button>
+        <button type="button" class="btn btn-sm cp-zoom-btn" data-target="a" data-zoom="2">200%</button>
+        <button type="button" class="btn btn-sm cp-zoom-btn" data-target="a" data-zoom="4">400%</button>
+      </div>
+      <div class="cp-scroll" id="cp-scroll-a" style="overflow:auto; max-height:420px; border:1px solid var(--border-color, #333); position:relative;">
+        <div class="cp-wrap" id="cp-wrap-a" style="position:relative; display:inline-block; line-height:0;">
+          <img id="cp-img-a" src="" alt="" style="display:block; max-width:none;">
+        </div>
+      </div>
+    </div>
+    <div>
+      <h3>B — da allineare</h3>
+      <div class="tag-row" style="margin-bottom:6px;">
+        <button type="button" class="btn btn-sm cp-zoom-btn" data-target="b" data-zoom="fit">Adatta</button>
+        <button type="button" class="btn btn-sm cp-zoom-btn" data-target="b" data-zoom="1">100%</button>
+        <button type="button" class="btn btn-sm cp-zoom-btn" data-target="b" data-zoom="2">200%</button>
+        <button type="button" class="btn btn-sm cp-zoom-btn" data-target="b" data-zoom="4">400%</button>
+      </div>
+      <div class="cp-scroll" id="cp-scroll-b" style="overflow:auto; max-height:420px; border:1px solid var(--border-color, #333); position:relative;">
+        <div class="cp-wrap" id="cp-wrap-b" style="position:relative; display:inline-block; line-height:0;">
+          <img id="cp-img-b" src="" alt="" style="display:block; max-width:none;">
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="tag-row" style="margin-top:10px;">
+    <button type="button" class="btn btn-sm" id="cp-undo-btn">↶ Annulla ultimo punto</button>
+    <button type="button" class="btn btn-sm" id="cp-clear-btn">🗑 Cancella tutti</button>
+    <button type="button" class="btn btn-sm" id="cp-preview-btn">👁 Anteprima allineamento</button>
+    <button type="button" class="btn btn-primary btn-sm" id="cp-save-btn">💾 Salva punti</button>
+    <button type="button" class="btn btn-sm" id="cp-close-btn">✕ Chiudi</button>
+  </div>
+  <div class="hint" id="cp-status" style="margin-top:6px;"></div>
+  <div class="grid grid-2" id="cp-preview-row" style="display:none; margin-top:16px;">
+    <div>
+      <h3>B allineata su A</h3>
+      <div class="viewer-stage"><img id="cp-preview-aligned" style="width:100%; display:block;" alt=""></div>
+    </div>
+    <div>
+      <h3>Sovrapposizione (blend 50/50)<span class="info-tip" tabindex="0" data-tip="A e B allineata mescolate al 50%: se l'allineamento è buono i dettagli invarianti (edifici, strade) appaiono nitidi; un disallineamento residuo si vede come uno sdoppiamento/fantasma dei contorni.">?</span></h3>
+      <div class="viewer-stage"><img id="cp-preview-blend" style="width:100%; display:block;" alt=""></div>
+    </div>
+  </div>
+</div>
+
 <div class="panel" id="compare-panel" style="display:none;">
   <h2>Configurazione confronto</h2>
   <div class="grid grid-2">
@@ -270,9 +325,20 @@ require __DIR__ . '/partials/nav.php';
         <label>Opacità overlay <span class="info-tip" tabindex="0" data-tip="Trasparenza del colore usato per evidenziare le zone di cambiamento nell'immagine overlay. Valori più alti rendono l'evidenziazione più marcata.">?</span><span class="val" id="val-alpha" style="margin-left:auto;"><?= e($defaults['default_overlay_alpha']) ?></span></label>
         <input type="range" id="opt-alpha" min="0.05" max="0.9" step="0.05" value="<?= e($defaults['default_overlay_alpha']) ?>">
       </div>
-      <div class="checkbox-row field">
+      <div class="checkbox-row field" id="opt-align-row">
         <input type="checkbox" id="opt-align" checked>
-        <label style="margin:0;">Allinea automaticamente le due riprese prima del confronto <span class="info-tip" tabindex="0" data-tip="Corregge piccoli disallineamenti tra le due riprese (rotazione, traslazione) prima di confrontarle. Consigliato quasi sempre: senza allineamento, anche un piccolo scostamento nell'inquadratura genera falsi cambiamenti lungo tutti i bordi degli oggetti.">?</span></label>
+        <label style="margin:0;">Allinea automaticamente le due riprese prima del confronto <span class="info-tip" tabindex="0" data-tip="Corregge piccoli disallineamenti tra le due riprese (rotazione, traslazione, scala) prima di confrontarle, tramite riconoscimento automatico dei punti in comune (motore ORB+ECC). Consigliato quasi sempre: senza allineamento, anche un piccolo scostamento nell'inquadratura genera falsi cambiamenti lungo tutti i bordi degli oggetti.">?</span></label>
+      </div>
+      <div class="field">
+        <label>Modalità di allineamento <span class="info-tip" tabindex="0" data-tip="Automatico: il motore (ORB+ECC) individua da solo i punti in comune tra le due riprese. Manuale: indichi tu stesso, a mano, coppie di punti corrispondenti nella stessa area reale — usalo quando il motore automatico non allinea correttamente (tipico tra fonti molto diverse tra loro, es. Esri World Imagery vs Sentinel Hub).">?</span></label>
+        <div class="tag-row">
+          <button type="button" class="btn btn-sm align-mode-btn active" data-mode="auto">Automatico</button>
+          <button type="button" class="btn btn-sm align-mode-btn" data-mode="manual">Manuale (punti di controllo)</button>
+        </div>
+        <div id="manual-align-block" style="display:none; margin-top:8px;">
+          <div class="hint" id="manual-align-status">Nessun punto salvato per questa coppia di riprese.</div>
+          <button type="button" class="btn btn-sm" id="open-control-points-btn" style="margin-top:6px;">✏️ Apri editor punti di controllo</button>
+        </div>
       </div>
     </div>
     <div>
