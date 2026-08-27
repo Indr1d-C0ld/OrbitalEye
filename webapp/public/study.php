@@ -148,6 +148,8 @@ require __DIR__ . '/partials/nav.php';
               $confirmMsg .= ' Verranno eliminati anche i ' . count($linked) . ' confronto/i che la usano'
                   . (array_filter($linked, fn($l) => $l['is_saved_to_library']) ? ' (inclusi alcuni salvati in libreria)' : '') . '.';
           }
+          $cMeta = json_decode($c['meta_json'] ?? '', true);
+          $hasNir = is_array($cMeta) && !empty($cMeta['nir_relative_path']);
       ?>
         <div class="thumb-card" data-capture-id="<?= (int)$c['id'] ?>">
           <img src="<?= e(storage_url($c['relative_path'])) ?>" alt="">
@@ -166,6 +168,20 @@ require __DIR__ . '/partials/nav.php';
               title="Applica filtri di miglioramento a questa sola ripresa, senza eseguire un confronto">
               ✨ Migliora
             </button>
+            <?php if ($hasNir): ?>
+              <div style="display:flex; gap:4px; margin-top:4px;">
+                <button type="button" class="btn btn-sm" style="flex:1;"
+                  onclick="event.stopPropagation(); openSpectralPanel(<?= (int)$c['id'] ?>, 'ndvi', <?= e(json_encode($c['label'] ?: ('Ripresa #' . $c['id']))) ?>)"
+                  title="NDVI: evidenzia la vegetazione (verde = densa/in salute, giallo/bruno = scarsa o assente) a partire dalla banda infrarossa scaricata con questa ripresa.">
+                  🌿 NDVI
+                </button>
+                <button type="button" class="btn btn-sm" style="flex:1;"
+                  onclick="event.stopPropagation(); openSpectralPanel(<?= (int)$c['id'] ?>, 'false_color_ir', <?= e(json_encode($c['label'] ?: ('Ripresa #' . $c['id']))) ?>)"
+                  title="Falso colore infrarosso: la vegetazione viva appare in rosso acceso, utile per distinguere vegetazione reale da superfici solo apparentemente verdi (o viceversa).">
+                  🌈 Falso colore IR
+                </button>
+              </div>
+            <?php endif; ?>
           </div>
         </div>
       <?php endforeach; ?>
@@ -181,9 +197,9 @@ require __DIR__ . '/partials/nav.php';
   <div class="hint" style="margin-bottom:12px;">Applica filtri di enhancing a <strong id="enhance-target-label"></strong> senza eseguire un confronto — utile per pulire/valutare una ripresa da sola, o per ottenerne una versione migliorata da scaricare o riusare in un confronto.</div>
   <div class="grid grid-2">
     <div>
-      <div class="checkbox-row field"><input type="checkbox" id="eh-wb"><label style="margin:0;">Bilanciamento del bianco</label></div>
-      <div class="checkbox-row field"><input type="checkbox" id="eh-denoise"><label style="margin:0;">Riduzione rumore</label></div>
-      <div class="grid grid-2" style="margin-bottom:12px;">
+      <div class="checkbox-row field"><input type="checkbox" id="eh-wb"><label style="margin:0;">Bilanciamento del bianco <span class="info-tip" tabindex="0" data-tip="Corregge eventuali dominanti di colore (es. dovute a condizioni atmosferiche o al sensore) tramite l'algoritmo gray-world, rendendo i colori dell'immagine più naturali e bilanciati.">?</span></label></div>
+      <div class="checkbox-row field"><input type="checkbox" id="eh-denoise"><label style="margin:0;">Riduzione rumore <span class="info-tip" tabindex="0" data-tip="Attenua il rumore fotografico/di compressione, utile per pulire una ripresa rumorosa prima di esportarla o riusarla in un confronto.">?</span></label></div>
+      <div class="grid grid-2" style="margin-bottom:4px;">
         <select id="eh-denoise-method">
           <option value="gaussian">Gaussiano</option>
           <option value="median">Mediano</option>
@@ -192,24 +208,31 @@ require __DIR__ . '/partials/nav.php';
         </select>
         <input type="range" id="eh-denoise-strength" min="1" max="10" value="3">
       </div>
-      <div class="checkbox-row field"><input type="checkbox" id="eh-clahe"><label style="margin:0;">CLAHE (contrasto adattivo)</label></div>
-      <div class="checkbox-row field"><input type="checkbox" id="eh-hist-eq"><label style="margin:0;">Equalizzazione istogramma</label></div>
+      <div class="hint" style="margin-bottom:12px;">Gaussiano: sfocatura morbida generica. Mediano: efficace contro il rumore isolato tipo "sale e pepe". Bilaterale: riduce il rumore preservando meglio i bordi netti. Non-local means: il più efficace, anche il più lento. Lo slider a destra ne regola l'intensità (valori alti = più filtro, rischio di perdere dettagli reali).</div>
+      <div class="checkbox-row field"><input type="checkbox" id="eh-clahe"><label style="margin:0;">CLAHE (contrasto adattivo) <span class="info-tip" tabindex="0" data-tip="Migliora il contrasto locale dell'immagine in modo adattivo, utile su riprese con foschia o forte variazione di illuminazione tra zone diverse della stessa immagine.">?</span></label></div>
+      <div class="checkbox-row field"><input type="checkbox" id="eh-hist-eq"><label style="margin:0;">Equalizzazione istogramma <span class="info-tip" tabindex="0" data-tip="Ridistribuisce l'intera gamma tonale dell'immagine per massimizzare il contrasto globale. Alternativa più semplice e uniforme al CLAHE: usa questa se il CLAHE introduce aloni innaturali, il CLAHE se invece serve un miglioramento più localizzato. Di norma non servono entrambe insieme.">?</span></label></div>
     </div>
     <div>
-      <div class="checkbox-row field"><input type="checkbox" id="eh-gamma-enabled"><label style="margin:0;">Correzione gamma</label></div>
+      <div class="checkbox-row field"><input type="checkbox" id="eh-gamma-enabled"><label style="margin:0;">Correzione gamma <span class="info-tip" tabindex="0" data-tip="Schiarisce o scurisce l'immagine in modo non lineare. Valori sopra 1 schiariscono le zone scure, valori sotto 1 le scuriscono ulteriormente. Utile su riprese sovra/sotto-esposte.">?</span></label></div>
       <div class="field">
         <label>Gamma <span class="val" id="eh-val-gamma" style="margin-left:auto;">1.0</span></label>
         <input type="range" id="eh-gamma" min="0.2" max="3" step="0.1" value="1.0">
       </div>
-      <div class="checkbox-row field"><input type="checkbox" id="eh-sharpen"><label style="margin:0;">Sharpening</label></div>
+      <div class="checkbox-row field"><input type="checkbox" id="eh-sharpen"><label style="margin:0;">Sharpening <span class="info-tip" tabindex="0" data-tip="Accentua i bordi e i dettagli fini dell'immagine, utile per rendere più leggibili i contorni di strutture in riprese leggermente sfocate.">?</span></label></div>
       <div class="field">
-        <label>Intensità sharpen <span class="val" id="eh-val-sharpen" style="margin-left:auto;">1.0</span></label>
+        <label>Intensità sharpen <span class="info-tip" tabindex="0" data-tip="Quanto applicare l'accentuazione dei bordi: valori alti possono introdurre aloni artificiali attorno ai contorni.">?</span><span class="val" id="eh-val-sharpen" style="margin-left:auto;">1.0</span></label>
         <input type="range" id="eh-sharpen-amount" min="0" max="3" step="0.1" value="1.0">
+      </div>
+      <div class="checkbox-row field"><input type="checkbox" id="eh-desaturate"><label style="margin:0;">Desaturazione B/N <span class="info-tip" tabindex="0" data-tip="Riduce gradualmente la saturazione del colore verso il bianco e nero. Utile per concentrarsi su bordi/texture/ombre (i cambiamenti strutturali reali) invece che su variazioni di colore dovute a stagione, angolo solare o sensore diverso, che possono distrarre o confondere la lettura.">?</span></label></div>
+      <div class="field">
+        <label>Intensità desaturazione <span class="val" id="eh-val-desaturate" style="margin-left:auto;">1.0</span></label>
+        <input type="range" id="eh-desaturate-amount" min="0" max="1" step="0.05" value="1.0">
+        <div class="hint">0 = colore originale invariato, 1 = bianco e nero completo. Valori intermedi attenuano le dominanti cromatiche senza eliminarle del tutto.</div>
       </div>
     </div>
   </div>
-  <button class="btn btn-primary" type="button" id="enhance-apply-btn">▶ Applica e anteprima</button>
-  <button class="btn btn-sm" type="button" id="enhance-close-btn">✕ Chiudi</button>
+  <button class="btn btn-primary" type="button" id="enhance-apply-btn" title="Applica i filtri selezionati e genera un'anteprima prima/dopo, senza salvare nulla in archivio.">▶ Applica e anteprima</button>
+  <button class="btn btn-sm" type="button" id="enhance-close-btn" title="Chiude il pannello senza salvare l'anteprima generata.">✕ Chiudi</button>
   <span class="hint" id="enhance-status"></span>
 
   <div class="grid grid-2" id="enhance-preview-row" style="display:none; margin-top:16px;">
@@ -222,10 +245,31 @@ require __DIR__ . '/partials/nav.php';
       <div class="viewer-stage"><img id="enhance-img-after" style="width:100%; display:block;" alt=""></div>
       <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
         <input type="text" id="enhance-save-label" placeholder="Etichetta (opzionale)" style="flex:1; min-width:160px;">
-        <button class="btn btn-primary btn-sm" type="button" id="enhance-save-btn">💾 Salva come nuova ripresa</button>
+        <button class="btn btn-primary btn-sm" type="button" id="enhance-save-btn" title="Salva l'anteprima come nuova ripresa permanente in archivio, riusabile in qualunque confronto futuro.">💾 Salva come nuova ripresa</button>
       </div>
     </div>
   </div>
+</div>
+
+<div class="panel" id="spectral-panel" style="display:none;">
+  <h2 id="spectral-title">Indice spettrale</h2>
+  <div class="hint" style="margin-bottom:12px;" id="spectral-hint"></div>
+  <div class="grid grid-2">
+    <div>
+      <h3>Vero colore</h3>
+      <div class="viewer-stage"><img id="spectral-img-before" style="width:100%; display:block;" alt=""></div>
+    </div>
+    <div>
+      <h3 id="spectral-result-title">Risultato</h3>
+      <div class="viewer-stage"><img id="spectral-img-after" style="width:100%; display:block;" alt=""></div>
+      <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
+        <input type="text" id="spectral-save-label" placeholder="Etichetta (opzionale)" style="flex:1; min-width:160px;">
+        <button class="btn btn-primary btn-sm" type="button" id="spectral-save-btn" title="Salva il risultato come nuova ripresa permanente in archivio.">💾 Salva come nuova ripresa</button>
+      </div>
+    </div>
+  </div>
+  <button class="btn btn-sm" type="button" id="spectral-close-btn" style="margin-top:10px;">✕ Chiudi</button>
+  <span class="hint" id="spectral-status"></span>
 </div>
 
 <div class="panel" id="control-points-panel" style="display:none;">
@@ -378,6 +422,12 @@ require __DIR__ . '/partials/nav.php';
       <div class="field">
         <label>Intensità sharpen <span class="info-tip" tabindex="0" data-tip="Quanto applicare l'accentuazione dei bordi: valori alti possono introdurre aloni artificiali attorno ai contorni.">?</span><span class="val" id="val-sharpen" style="margin-left:auto;">1.0</span></label>
         <input type="range" id="opt-sharpen-amount" min="0" max="3" step="0.1" value="1.0">
+      </div>
+      <div class="checkbox-row field"><input type="checkbox" id="opt-desaturate"><label style="margin:0;">Desaturazione B/N <span class="info-tip" tabindex="0" data-tip="Riduce gradualmente la saturazione del colore verso il bianco e nero su entrambe le riprese prima del confronto. Utile per concentrarsi su bordi/texture/ombre (i cambiamenti strutturali reali) invece che su variazioni di colore dovute a stagione, angolo solare o sensore diverso tra le due riprese, che possono generare falsi positivi cromatici.">?</span></label></div>
+      <div class="field">
+        <label>Intensità desaturazione <span class="val" id="val-desaturate" style="margin-left:auto;">1.0</span></label>
+        <input type="range" id="opt-desaturate-amount" min="0" max="1" step="0.05" value="1.0">
+        <div class="hint">0 = colore originale invariato, 1 = bianco e nero completo.</div>
       </div>
     </div>
   </div>

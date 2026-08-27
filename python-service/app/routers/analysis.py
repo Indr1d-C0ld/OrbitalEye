@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from ..config import settings
 from ..core import diff as diffmod
 from ..core import enhance as enhancemod
+from ..core import spectral as spectralmod
 from ..core.registration import register_images, register_with_points
 from ..core.utils import load_image, new_id, safe_storage_path, save_image
 from ..deps import require_service_key
@@ -215,3 +216,45 @@ def register_manual(req: RegisterManualRequest):
             "blend": f"results/{out_id}/blend.jpg",
         },
     }
+
+
+class SpectralViewRequest(BaseModel):
+    true_color_path: str
+    nir_red_path: str
+    mode: str = "ndvi"  # 'ndvi' | 'false_color_ir'
+
+
+@router.post("/spectral_view")
+def spectral_view(req: SpectralViewRequest):
+    """Genera NDVI (colorizzato) o falso colore infrarosso per una ripresa
+    Sentinel Hub che dispone della banda NIR scaricata in coppia (vedi
+    fetch_red_nir in sentinelhub_client.py). Non disponibile per Esri World
+    Imagery o caricamenti manuali, che non hanno mai dati oltre l'RGB."""
+    try:
+        tc_path = safe_storage_path(req.true_color_path)
+        nir_path = safe_storage_path(req.nir_red_path)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Percorso non valido")
+    if not tc_path.exists() or not nir_path.exists():
+        raise HTTPException(status_code=404, detail="Immagine non trovata (banda NIR mancante per questa ripresa)")
+    if req.mode not in ("ndvi", "false_color_ir"):
+        raise HTTPException(status_code=400, detail="Modalità non valida")
+
+    import cv2
+
+    true_color_img = load_image(tc_path)
+    nir_red_img = load_image(nir_path)
+    h, w = true_color_img.shape[:2]
+    if nir_red_img.shape[:2] != (h, w):
+        nir_red_img = cv2.resize(nir_red_img, (w, h), interpolation=cv2.INTER_AREA)
+
+    if req.mode == "false_color_ir":
+        out = spectralmod.false_color_ir(nir_red_img, true_color_img)
+    else:
+        out = spectralmod.colorize_ndvi(spectralmod.compute_ndvi(nir_red_img))
+
+    out_id = new_id()
+    out_path = settings.processed_dir / f"{out_id}.png"
+    save_image(out, out_path)
+
+    return {"relative_path": f"processed/{out_id}.png"}

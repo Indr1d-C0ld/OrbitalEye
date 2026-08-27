@@ -49,6 +49,30 @@ function evaluatePixel(sample) {
 }
 """
 
+# Coppia Rosso (B04) + vicino infrarosso/NIR (B08), codificata nei canali di
+# un PNG RGBA esattamente come il vero colore sopra (stesso gain, stessa
+# scala 0-255) così può essere caricata con lo stesso load_image() usato
+# ovunque nel servizio, senza dipendenze aggiuntive per formati float/TIFF.
+# Canali: R=Red*gain, G=NIR*gain, B=0 (inutilizzato), A=dataMask.
+# Serve a calcolare indici spettrali (NDVI, falso colore infrarosso) — vedi
+# core/spectral.py — possibili SOLO per riprese Sentinel-2 (Esri World
+# Imagery e i caricamenti manuali non hanno mai dati oltre il visibile RGB).
+_EVALSCRIPT_RED_NIR = """
+//VERSION=3
+function setup() {
+  return {
+    input: ["B04", "B08", "dataMask"],
+    output: { bands: 4 }
+  };
+}
+function evaluatePixel(sample) {
+  let gain = 2.5;
+  return [
+    sample.B04 * gain, sample.B08 * gain, 0, sample.dataMask
+  ];
+}
+"""
+
 _token_cache = {"token": None, "expires_at": 0}
 
 
@@ -86,19 +110,21 @@ def _get_token() -> str:
     return _token_cache["token"]
 
 
-def fetch_true_color(
+def _process_request(
+    evalscript: str,
     bbox: list,
     date_from: str,
     date_to: str,
-    width: int = 1024,
-    height: int = 1024,
-    max_cloud_coverage: int = 20,
+    width: int,
+    height: int,
+    max_cloud_coverage: int,
 ) -> bytes:
     """bbox: [min_lon, min_lat, max_lon, max_lat] in EPSG:4326.
     date_from/date_to: stringhe ISO 'YYYY-MM-DD'.
-    Ritorna i byte PNG dell'immagine True Color composita (mosaico del
-    periodo, immagine più recente/con meno nuvole in primo piano).
-    """
+    Ritorna i byte PNG dell'immagine composita (mosaico del periodo,
+    immagine più recente/con meno nuvole in primo piano) per l'evalscript
+    indicato — condivisa da fetch_true_color e fetch_red_nir, che differiscono
+    solo per le bande richieste."""
     token = _get_token()
 
     payload = {
@@ -126,7 +152,7 @@ def fetch_true_color(
             "height": height,
             "responses": [{"identifier": "default", "format": {"type": "image/png"}}],
         },
-        "evalscript": _EVALSCRIPT_TRUE_COLOR,
+        "evalscript": evalscript,
     }
 
     resp = requests.post(
@@ -139,3 +165,30 @@ def fetch_true_color(
         raise SentinelHubError(f"Richiesta Process API fallita: {resp.status_code} {resp.text[:500]}")
 
     return resp.content
+
+
+def fetch_true_color(
+    bbox: list,
+    date_from: str,
+    date_to: str,
+    width: int = 1024,
+    height: int = 1024,
+    max_cloud_coverage: int = 20,
+) -> bytes:
+    return _process_request(_EVALSCRIPT_TRUE_COLOR, bbox, date_from, date_to, width, height, max_cloud_coverage)
+
+
+def fetch_red_nir(
+    bbox: list,
+    date_from: str,
+    date_to: str,
+    width: int = 1024,
+    height: int = 1024,
+    max_cloud_coverage: int = 20,
+) -> bytes:
+    """Stessa area/periodo/copertura nuvolosa della ripresa vero-colore
+    (stessa richiesta, evalscript diverso): la coppia Rosso+NIR risultante è
+    quindi pixel-allineata alla ripresa vero-colore scaricata in coppia,
+    utile per calcolare NDVI/falso colore infrarosso (vedi core/spectral.py).
+    """
+    return _process_request(_EVALSCRIPT_RED_NIR, bbox, date_from, date_to, width, height, max_cloud_coverage)

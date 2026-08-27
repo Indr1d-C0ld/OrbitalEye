@@ -61,6 +61,22 @@ def sharpen(img: np.ndarray, amount: float = 1.0) -> np.ndarray:
     return cv2.addWeighted(img, 1 + amount, blurred, -amount, 0)
 
 
+def desaturate(img: np.ndarray, amount: float = 1.0) -> np.ndarray:
+    """Desatura l'immagine verso il bianco e nero in modo graduale.
+
+    amount 0.0 = colore originale invariato, 1.0 = scala di grigi completa,
+    valori intermedi attenuano le dominanti cromatiche senza eliminarle del
+    tutto. Utile in analisi satellitare per concentrarsi su bordi/texture/
+    ombre (i cambiamenti strutturali reali) invece che su variazioni di
+    colore dovute a stagione, angolo solare o sensore diverso tra due
+    riprese — che possono altrimenti distrarre o confondere la lettura.
+    """
+    amount = max(0.0, min(amount, 1.0))
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    gray_bgr = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+    return cv2.addWeighted(img, 1 - amount, gray_bgr, amount, 0)
+
+
 def edge_detect(img: np.ndarray, low: int = 50, high: int = 150) -> np.ndarray:
     """Canny edge detection: utile per evidenziare contorni di strutture/edifici."""
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -88,6 +104,7 @@ FILTER_REGISTRY = {
     "sharpen": sharpen,
     "edge_detect": edge_detect,
     "white_balance": auto_white_balance,
+    "desaturate": desaturate,
 }
 
 

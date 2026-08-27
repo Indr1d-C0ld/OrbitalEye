@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 from ..config import settings
 from ..core.esri_client import EsriError, fetch_world_imagery
-from ..core.sentinelhub_client import SentinelHubError, fetch_true_color
+from ..core.sentinelhub_client import SentinelHubError, fetch_red_nir, fetch_true_color
 from ..core.utils import new_id
 from ..deps import require_service_key
 
@@ -40,10 +40,33 @@ def fetch_sentinelhub(req: SentinelHubFetchRequest):
     path = settings.raw_dir / filename
     path.write_bytes(png_bytes)
 
+    # Scarica anche la coppia Rosso+NIR in aggiunta al vero colore, per
+    # abilitare NDVI/falso colore infrarosso su questa ripresa (vedi
+    # /analysis/spectral_view). Un fallimento qui (es. banda momentaneamente
+    # non disponibile) non deve bloccare il download del vero colore, che
+    # resta comunque il prodotto principale: si ignora e basta, l'utente può
+    # sempre ri-scaricare più tardi per riprovare ad ottenere anche la banda NIR.
+    nir_relative_path = None
+    try:
+        nir_bytes = fetch_red_nir(
+            bbox=req.bbox,
+            date_from=req.date_from,
+            date_to=req.date_to,
+            width=req.width,
+            height=req.height,
+            max_cloud_coverage=req.max_cloud_coverage,
+        )
+        nir_filename = f"{file_id}_nir.png"
+        (settings.raw_dir / nir_filename).write_bytes(nir_bytes)
+        nir_relative_path = f"raw/{nir_filename}"
+    except SentinelHubError:
+        pass
+
     return {
         "id": file_id,
         "filename": filename,
         "relative_path": f"raw/{filename}",
+        "nir_relative_path": nir_relative_path,
         "source": "sentinel-2-l2a",
         "bbox": req.bbox,
         "date_from": req.date_from,

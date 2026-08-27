@@ -50,6 +50,9 @@ function build_enhance_steps(array $opts): array
     if (!empty($opts['sharpen'])) {
         $steps[] = ['filter' => 'sharpen', 'params' => ['amount' => (float) ($opts['sharpen_amount'] ?? 1.0)]];
     }
+    if (!empty($opts['desaturate'])) {
+        $steps[] = ['filter' => 'desaturate', 'params' => ['amount' => (float) ($opts['desaturate_amount'] ?? 1.0)]];
+    }
     return $steps;
 }
 

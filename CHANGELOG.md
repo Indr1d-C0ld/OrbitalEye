@@ -4,6 +4,64 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-08-27 (4) — Desaturazione B/N e indici spettrali NDVI/falso colore IR
+
+Due nuovi strumenti di analisi: un filtro di desaturazione universale (utile
+per concentrarsi su bordi/texture invece che su variazioni di colore) e il
+supporto NDVI/falso colore infrarosso per le riprese Sentinel Hub, che ora
+scaricano anche la banda NIR in coppia con il vero colore.
+
+- **[python-service/app/core/enhance.py](python-service/app/core/enhance.py)**
+  Nuovo filtro `desaturate(img, amount)`: sfuma gradualmente verso il
+  bianco e nero (0=originale, 1=B/N completo), registrato in
+  `FILTER_REGISTRY`. Disponibile ovunque (qualunque fonte), perché lavora
+  solo sui pixel RGB già scaricati.
+
+- **[python-service/app/core/sentinelhub_client.py](python-service/app/core/sentinelhub_client.py)**
+  Refactor: `_process_request()` condivide la logica di chiamata al Process
+  API tra `fetch_true_color()` (invariato) e la nuova `fetch_red_nir()`, che
+  scarica la coppia Rosso (B04) + vicino infrarosso (B08) per la stessa
+  area/periodo, codificata come PNG con lo stesso schema del vero colore.
+
+- **[python-service/app/routers/fetch.py](python-service/app/routers/fetch.py)**
+  `/fetch/sentinelhub` scarica ora anche la coppia Rosso+NIR in aggiunta al
+  vero colore; un fallimento del fetch NIR (es. banda momentaneamente non
+  disponibile) non blocca il download del vero colore, resta solo assente
+  `nir_relative_path` nella risposta.
+
+- **[python-service/app/core/spectral.py](python-service/app/core/spectral.py)** (nuovo)
+  `compute_ndvi()` (NDVI = (NIR-Rosso)/(NIR+Rosso) da scala di grigi),
+  `colorize_ndvi()` (palette diverging bruno→giallo→verde), `false_color_ir()`
+  (composito R=NIR, G=Rosso, B=Verde della ripresa vero-colore).
+
+- **[python-service/app/routers/analysis.py](python-service/app/routers/analysis.py)**
+  Nuovo endpoint `/analysis/spectral_view` (`true_color_path`,
+  `nir_red_path`, `mode`: 'ndvi'/'false_color_ir') che genera l'immagine
+  risultato a partire dalla coppia Rosso+NIR scaricata.
+
+- **[webapp/public/api/fetch_capture.php](webapp/public/api/fetch_capture.php)**
+  Salva `nir_relative_path` (se presente) in `meta_json` della Capture
+  Sentinel Hub creata: abilita i pulsanti NDVI/falso colore IR sulla scheda.
+
+- **[webapp/public/api/spectral_view.php](webapp/public/api/spectral_view.php)** (nuovo)
+  Verifica che la ripresa abbia la banda NIR (altrimenti errore chiaro) e
+  inoltra la richiesta al servizio Python.
+
+- **[webapp/public/api/compare.php](webapp/public/api/compare.php)**
+  `build_enhance_steps()` include ora anche `desaturate`/`desaturate_amount`.
+
+- **[webapp/public/study.php](webapp/public/study.php)**
+  Controllo desaturazione (checkbox + slider) sia nel pannello "Migliora"
+  sia nell'"Enhancement pre-analisi" del confronto; pulsanti "🌿 NDVI" e
+  "🌈 Falso colore IR" sulle schede ripresa Sentinel Hub con banda NIR
+  disponibile; nuovo pannello `#spectral-panel` per anteprima e salvataggio.
+
+- **[webapp/public/assets/js/study.js](webapp/public/assets/js/study.js)**
+  Bindings desaturate in `buildEnhanceSteps()`/`stepsToPipeline()` e nel
+  payload di `run-compare-btn`; nuova `setupSpectralPanel()` con
+  `window.openSpectralPanel()` (fetch, anteprima, salvataggio come nuova
+  ripresa).
+
 ## 2026-08-27 (3) — Pan/zoom nell'editor punti di controllo
 
 - **[webapp/public/study.php](webapp/public/study.php)**

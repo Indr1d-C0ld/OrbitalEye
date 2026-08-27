@@ -158,6 +158,7 @@
     ['opt-alpha', 'val-alpha'],
     ['opt-gamma', 'val-gamma'],
     ['opt-sharpen-amount', 'val-sharpen'],
+    ['opt-desaturate-amount', 'val-desaturate'],
   ];
   rangeBindings.forEach(([inputId, outId]) => {
     const input = $('#' + inputId);
@@ -222,6 +223,8 @@
           gamma: $('#opt-gamma').value,
           sharpen: $('#opt-sharpen').checked,
           sharpen_amount: $('#opt-sharpen-amount').value,
+          desaturate: $('#opt-desaturate').checked,
+          desaturate_amount: $('#opt-desaturate-amount').value,
         },
       };
 
@@ -1010,6 +1013,7 @@
     const ehRangeBindings = [
       ['eh-gamma', 'eh-val-gamma'],
       ['eh-sharpen-amount', 'eh-val-sharpen'],
+      ['eh-desaturate-amount', 'eh-val-desaturate'],
     ];
     ehRangeBindings.forEach(([inputId, outId]) => {
       const input = $('#' + inputId);
@@ -1029,6 +1033,8 @@
         gamma: $('#eh-gamma').value,
         sharpen: $('#eh-sharpen').checked,
         sharpen_amount: $('#eh-sharpen-amount').value,
+        desaturate: $('#eh-desaturate').checked,
+        desaturate_amount: $('#eh-desaturate-amount').value,
       };
     }
 
@@ -1043,6 +1049,7 @@
       if (opts.hist_eq) steps.push({ filter: 'histogram_equalization', params: {} });
       if (opts.gamma_enabled) steps.push({ filter: 'gamma', params: { gamma: parseFloat(opts.gamma) } });
       if (opts.sharpen) steps.push({ filter: 'sharpen', params: { amount: parseFloat(opts.sharpen_amount) } });
+      if (opts.desaturate) steps.push({ filter: 'desaturate', params: { amount: parseFloat(opts.desaturate_amount) } });
       return steps;
     }
 
@@ -1088,6 +1095,81 @@
             relative_path: lastPreviewPath,
             label: $('#enhance-save-label').value,
             steps: lastSteps,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Errore');
+        status.textContent = 'Salvata come nuova ripresa. Ricarico la pagina...';
+        setTimeout(() => window.location.reload(), 500);
+      } catch (err) {
+        status.textContent = 'Errore: ' + err.message;
+      }
+    });
+  })();
+
+  // ---------- Indici spettrali (NDVI / falso colore infrarosso) ----------
+  // Disponibili solo per riprese Sentinel Hub scaricate con la banda NIR in
+  // coppia (vedi fetch_red_nir lato servizio Python); i pulsanti sulla scheda
+  // ripresa compaiono solo quando meta_json.nir_relative_path è presente.
+  (function setupSpectralPanel() {
+    const panel = $('#spectral-panel');
+    if (!panel) return;
+
+    const TITLES = { ndvi: 'NDVI (vigore vegetazione)', false_color_ir: 'Falso colore infrarosso' };
+    const HINTS = {
+      ndvi: 'Verde = vegetazione densa/in salute, giallo/bruno = vegetazione scarsa o assente (suolo nudo, superfici artificiali, acqua).',
+      false_color_ir: 'La vegetazione viva appare in rosso acceso (riflette molto il vicino infrarosso): utile per distinguere vegetazione reale da superfici solo apparentemente verdi, o viceversa.',
+    };
+
+    window.openSpectralPanel = async function (captureId, mode, label) {
+      const capture = window.ORBITALEYE.captures.find((c) => c.id === captureId);
+      $('#spectral-title').textContent = TITLES[mode] || 'Indice spettrale';
+      $('#spectral-hint').textContent = HINTS[mode] || '';
+      $('#spectral-result-title').textContent = (TITLES[mode] || 'Risultato') + ' — ' + (label || ('ripresa #' + captureId));
+      $('#spectral-img-before').src = capture ? window.ORBITALEYE.mediaBase + encodeURIComponent(capture.relative_path) : '';
+      $('#spectral-img-after').src = '';
+      $('#spectral-save-label').value = '';
+      $('#spectral-status').textContent = 'Calcolo in corso...';
+      panel.style.display = '';
+      panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+      panel.dataset.captureId = captureId;
+      panel.dataset.mode = mode;
+      panel.dataset.relativePath = '';
+
+      try {
+        const res = await fetch('api/spectral_view.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ capture_id: captureId, mode }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Errore');
+        $('#spectral-img-after').src = data.url + '&_=' + Date.now();
+        panel.dataset.relativePath = data.relative_path;
+        $('#spectral-status').textContent = 'Fatto.';
+      } catch (err) {
+        $('#spectral-status').textContent = 'Errore: ' + err.message;
+      }
+    };
+
+    $('#spectral-close-btn').addEventListener('click', () => { panel.style.display = 'none'; });
+
+    $('#spectral-save-btn').addEventListener('click', async () => {
+      const relativePath = panel.dataset.relativePath;
+      const captureId = parseInt(panel.dataset.captureId, 10);
+      if (!relativePath || !captureId) return;
+      const status = $('#spectral-status');
+      status.textContent = 'Salvataggio in corso...';
+      try {
+        const res = await fetch('api/save_enhanced_capture.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            source_capture_id: captureId,
+            relative_path: relativePath,
+            label: $('#spectral-save-label').value || (TITLES[panel.dataset.mode] || 'Indice spettrale'),
+            steps: [{ filter: panel.dataset.mode, params: {} }],
           }),
         });
         const data = await res.json();

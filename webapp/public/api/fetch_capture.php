@@ -71,7 +71,14 @@ if ($source === 'sentinelhub') {
         $result['relative_path'],
         $result['width'],
         $result['height'],
-        ['bbox' => $bbox, 'date_from' => $dateFrom, 'date_to' => $dateTo, 'source' => 'sentinel-2-l2a']
+        [
+            'bbox' => $bbox, 'date_from' => $dateFrom, 'date_to' => $dateTo, 'source' => 'sentinel-2-l2a',
+            // Presente solo se il fetch della banda NIR è andato a buon fine
+            // (vedi fetch.py): abilita i pulsanti NDVI/Falso colore IR sulla
+            // scheda di questa ripresa. Assente per le riprese scaricate
+            // prima dell'introduzione di questa funzione.
+            'nir_relative_path' => $result['nir_relative_path'] ?? null,
+        ]
     );
 } else {
     try {
