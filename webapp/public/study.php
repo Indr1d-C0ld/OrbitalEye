@@ -161,12 +161,69 @@ require __DIR__ . '/partials/nav.php';
                 Elimina
               </button>
             </div>
+            <button type="button" class="btn btn-sm" style="width:100%; margin-top:4px;"
+              onclick="event.stopPropagation(); openEnhancePanel(<?= (int)$c['id'] ?>, <?= e(json_encode(storage_url($c['relative_path']))) ?>, <?= e(json_encode($c['label'] ?: ('Ripresa #' . $c['id']))) ?>)"
+              title="Applica filtri di miglioramento a questa sola ripresa, senza eseguire un confronto">
+              ✨ Migliora
+            </button>
           </div>
         </div>
       <?php endforeach; ?>
       <?php if (empty($captures)): ?>
         <div class="empty-state" style="grid-column: 1/-1;">Nessuna ripresa ancora caricata.</div>
       <?php endif; ?>
+    </div>
+  </div>
+</div>
+
+<div class="panel" id="enhance-panel" style="display:none;">
+  <h2>Miglioramento immagine singola</h2>
+  <div class="hint" style="margin-bottom:12px;">Applica filtri di enhancing a <strong id="enhance-target-label"></strong> senza eseguire un confronto — utile per pulire/valutare una ripresa da sola, o per ottenerne una versione migliorata da scaricare o riusare in un confronto.</div>
+  <div class="grid grid-2">
+    <div>
+      <div class="checkbox-row field"><input type="checkbox" id="eh-wb"><label style="margin:0;">Bilanciamento del bianco</label></div>
+      <div class="checkbox-row field"><input type="checkbox" id="eh-denoise"><label style="margin:0;">Riduzione rumore</label></div>
+      <div class="grid grid-2" style="margin-bottom:12px;">
+        <select id="eh-denoise-method">
+          <option value="gaussian">Gaussiano</option>
+          <option value="median">Mediano</option>
+          <option value="bilateral">Bilaterale</option>
+          <option value="nlmeans">Non-local means</option>
+        </select>
+        <input type="range" id="eh-denoise-strength" min="1" max="10" value="3">
+      </div>
+      <div class="checkbox-row field"><input type="checkbox" id="eh-clahe"><label style="margin:0;">CLAHE (contrasto adattivo)</label></div>
+      <div class="checkbox-row field"><input type="checkbox" id="eh-hist-eq"><label style="margin:0;">Equalizzazione istogramma</label></div>
+    </div>
+    <div>
+      <div class="checkbox-row field"><input type="checkbox" id="eh-gamma-enabled"><label style="margin:0;">Correzione gamma</label></div>
+      <div class="field">
+        <label>Gamma <span class="val" id="eh-val-gamma" style="margin-left:auto;">1.0</span></label>
+        <input type="range" id="eh-gamma" min="0.2" max="3" step="0.1" value="1.0">
+      </div>
+      <div class="checkbox-row field"><input type="checkbox" id="eh-sharpen"><label style="margin:0;">Sharpening</label></div>
+      <div class="field">
+        <label>Intensità sharpen <span class="val" id="eh-val-sharpen" style="margin-left:auto;">1.0</span></label>
+        <input type="range" id="eh-sharpen-amount" min="0" max="3" step="0.1" value="1.0">
+      </div>
+    </div>
+  </div>
+  <button class="btn btn-primary" type="button" id="enhance-apply-btn">▶ Applica e anteprima</button>
+  <button class="btn btn-sm" type="button" id="enhance-close-btn">✕ Chiudi</button>
+  <span class="hint" id="enhance-status"></span>
+
+  <div class="grid grid-2" id="enhance-preview-row" style="display:none; margin-top:16px;">
+    <div>
+      <h3>Originale</h3>
+      <div class="viewer-stage"><img id="enhance-img-before" style="width:100%; display:block;" alt=""></div>
+    </div>
+    <div>
+      <h3>Con filtri applicati</h3>
+      <div class="viewer-stage"><img id="enhance-img-after" style="width:100%; display:block;" alt=""></div>
+      <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
+        <input type="text" id="enhance-save-label" placeholder="Etichetta (opzionale)" style="flex:1; min-width:160px;">
+        <button class="btn btn-primary btn-sm" type="button" id="enhance-save-btn">💾 Salva come nuova ripresa</button>
+      </div>
     </div>
   </div>
 </div>

@@ -13,8 +13,14 @@ Strategia a due stadi:
      converge bene quando le immagini sono già quasi sovrapposte.
 
 Se il feature matching fallisce (poche feature, area troppo uniforme come
-mare/deserto), si degrada a un semplice allineamento via ECC diretto o,
-in ultima istanza, nessun allineamento (identità) con un flag di warning.
+mare/deserto, oppure fonti visivamente molto diverse tra loro come Esri
+World Imagery vs Sentinel Hub), si degrada a un allineamento via ECC diretto
+con moto affine (rotazione + scala + shear, non solo traslazione/rotazione)
+o, in ultima istanza, nessun allineamento (identità) con un flag di warning.
+
+Per rendere il matching più robusto tra fonti con bilanciamento colore e
+contrasto molto diversi, sia ORB che ECC lavorano su versioni delle immagini
+normalizzate con CLAHE (vedi `_clahe_normalize`) invece che sui grigi grezzi.
 """
 from dataclasses import dataclass, field
 
@@ -47,10 +53,27 @@ def _erode_valid_mask(mask: np.ndarray, margin: int = 4) -> np.ndarray:
     return cv2.erode(mask, kernel, iterations=1)
 
 
+def _clahe_normalize(gray: np.ndarray) -> np.ndarray:
+    """Normalizza il contrasto locale prima del feature matching / ECC.
+
+    Fonti diverse (es. Esri World Imagery vs Sentinel Hub) hanno bilanciamento
+    colore, contrasto e curve di tono molto differenti anche sulla stessa
+    identica area: senza questa normalizzazione ORB trova pochissime feature
+    in comune tra le due fonti, l'omografia fallisce (o resta con pochi
+    inlier) e si degrada al fallback ECC diretto che, con un moto solo
+    euclideo, non recupera differenze di scala/inclinazione tra le due
+    riprese — il risultato è l'allineamento "storto" percepito con coppie
+    cross-fonte."""
+    clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
+    return clahe.apply(gray)
+
+
 def _orb_homography(gray_a: np.ndarray, gray_b: np.ndarray, max_features: int = 4000):
+    norm_a = _clahe_normalize(gray_a)
+    norm_b = _clahe_normalize(gray_b)
     orb = cv2.ORB_create(nfeatures=max_features)
-    kp_a, des_a = orb.detectAndCompute(gray_a, None)
-    kp_b, des_b = orb.detectAndCompute(gray_b, None)
+    kp_a, des_a = orb.detectAndCompute(norm_a, None)
+    kp_b, des_b = orb.detectAndCompute(norm_b, None)
 
     if des_a is None or des_b is None or len(kp_a) < 8 or len(kp_b) < 8:
         return None, 0
@@ -78,11 +101,16 @@ def _orb_homography(gray_a: np.ndarray, gray_b: np.ndarray, max_features: int = 
 
 
 def _ecc_refine(gray_a: np.ndarray, gray_b_warped: np.ndarray, warp_mode=cv2.MOTION_EUCLIDEAN):
+    """Rifinisce l'allineamento massimizzando la correlazione (ECC) tra le due
+    immagini, lavorando su versioni CLAHE-normalizzate: l'ECC confronta
+    direttamente le intensità dei pixel, quindi differenze di bilanciamento
+    colore/contrasto tra fonti diverse fanno fallire la convergenza molto più
+    spesso che con il matching a feature locali (ORB)."""
     warp_matrix = np.eye(2, 3, dtype=np.float32)
     criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 200, 1e-6)
     try:
         _, warp_matrix = cv2.findTransformECC(
-            gray_a, gray_b_warped, warp_matrix, warp_mode, criteria, None, 5
+            _clahe_normalize(gray_a), _clahe_normalize(gray_b_warped), warp_matrix, warp_mode, criteria, None, 5
         )
         return warp_matrix, True
     except cv2.error:
@@ -138,7 +166,15 @@ def register_images(img_a: np.ndarray, img_b: np.ndarray) -> RegistrationResult:
             confidence=confidence,
         )
 
-    warp2x3, ecc_ok = _ecc_refine(gray_a, gray_b)
+    # Fallback: nessuna omografia ORB affidabile (tipico quando le due fonti
+    # hanno stile visivo molto diverso, es. Esri World Imagery vs Sentinel
+    # Hub, e il feature matching non trova abbastanza corrispondenze). Si usa
+    # un moto affine (rotazione + scala + shear + traslazione, 6 gradi di
+    # libertà) invece che euclideo (solo rotazione + traslazione): l'euclideo
+    # da solo non può correggere differenze di scala/inclinazione tra
+    # riprese della stessa area provenienti da fonti diverse, ed è la causa
+    # più probabile dell'allineamento "storto" osservato in questi casi.
+    warp2x3, ecc_ok = _ecc_refine(gray_a, gray_b, warp_mode=cv2.MOTION_AFFINE)
     if ecc_ok:
         aligned = cv2.warpAffine(
             img_b_resized, warp2x3, (w, h), flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP,
@@ -150,7 +186,7 @@ def register_images(img_a: np.ndarray, img_b: np.ndarray) -> RegistrationResult:
         )
         return RegistrationResult(
             aligned=aligned,
-            method="ecc",
+            method="ecc-affine",
             success=True,
             valid_mask=_erode_valid_mask(valid_mask),
             warp_matrix=warp2x3.tolist(),

@@ -67,6 +67,17 @@
       }
     });
     $('#compare-panel').style.display = state.selectedA && state.selectedB ? '' : 'none';
+
+    // Se la selezione corrente non è più la stessa coppia di riprese del
+    // risultato mostrato, nascondi il pannello invece di lasciarlo "congelato"
+    // su un confronto ormai non corrispondente a ciò che è selezionato adesso.
+    if (
+      state.currentComparison &&
+      (state.currentComparison.captureAId !== state.selectedA || state.currentComparison.captureBId !== state.selectedB)
+    ) {
+      $('#results-panel').style.display = 'none';
+      state.currentComparison = null;
+    }
   }
 
   $$('.thumb-card').forEach((card) => {
@@ -214,6 +225,8 @@
         status.textContent = 'Completato.';
         renderResult({
           comparisonId: data.comparison_id,
+          captureAId: state.selectedA,
+          captureBId: state.selectedB,
           stats: data.stats,
           regions: data.regions,
           urls: data.urls,
@@ -234,12 +247,20 @@
     Object.keys(cmp.result_paths).forEach((k) => {
       urls[k] = window.ORBITALEYE.mediaBase + encodeURIComponent(cmp.result_paths[k]);
     });
+    // Fondamentale: senza questo, "Originale A/B" e lo swipe prima/dopo non
+    // sanno più quali riprese sono state usate (restano su null), quindi
+    // falliscono silenziosamente o mostrano la stessa immagine due volte.
+    state.selectedA = parseInt(cmp.capture_a_id, 10);
+    state.selectedB = parseInt(cmp.capture_b_id, 10);
     renderResult({
       comparisonId: cmp.id,
+      captureAId: state.selectedA,
+      captureBId: state.selectedB,
       stats: cmp.stats,
       regions: cmp.regions,
       urls,
     });
+    refreshSelectionUI();
     $('#result-title').value = cmp.title || '';
     $('#results-panel').scrollIntoView({ behavior: 'smooth' });
   };
@@ -947,6 +968,124 @@
       if (Math.hypot(t.clientX - startClientX, t.clientY - startClientY) > TAP_THRESHOLD) return;
       const idx = hitTestRegion(t.clientX, t.clientY);
       if (idx !== null) selectRegion(idx);
+    });
+  })();
+
+  // ---------- Miglioramento immagine singola (nessun confronto) ----------
+  (function setupEnhancePanel() {
+    const panel = $('#enhance-panel');
+    if (!panel) return;
+
+    let currentCaptureId = null;
+    let currentOriginalUrl = null;
+    let lastPreviewPath = null;
+    let lastSteps = null;
+
+    window.openEnhancePanel = function (captureId, imgUrl, label) {
+      currentCaptureId = captureId;
+      currentOriginalUrl = imgUrl;
+      lastPreviewPath = null;
+      $('#enhance-target-label').textContent = label || ('ripresa #' + captureId);
+      $('#enhance-preview-row').style.display = 'none';
+      $('#enhance-status').textContent = '';
+      panel.style.display = '';
+      panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+
+    $('#enhance-close-btn').addEventListener('click', () => {
+      panel.style.display = 'none';
+    });
+
+    const ehRangeBindings = [
+      ['eh-gamma', 'eh-val-gamma'],
+      ['eh-sharpen-amount', 'eh-val-sharpen'],
+    ];
+    ehRangeBindings.forEach(([inputId, outId]) => {
+      const input = $('#' + inputId);
+      const out = $('#' + outId);
+      if (input && out) input.addEventListener('input', () => (out.textContent = input.value));
+    });
+
+    function buildEnhanceSteps() {
+      return {
+        white_balance: $('#eh-wb').checked,
+        denoise: $('#eh-denoise').checked,
+        denoise_method: $('#eh-denoise-method').value,
+        denoise_strength: $('#eh-denoise-strength').value,
+        clahe: $('#eh-clahe').checked,
+        hist_eq: $('#eh-hist-eq').checked,
+        gamma_enabled: $('#eh-gamma-enabled').checked,
+        gamma: $('#eh-gamma').value,
+        sharpen: $('#eh-sharpen').checked,
+        sharpen_amount: $('#eh-sharpen-amount').value,
+      };
+    }
+
+    // Stessa logica di build_enhance_steps lato server (api/compare.php),
+    // riprodotta qui perché l'endpoint /analysis/enhance del servizio Python
+    // si aspetta la lista già pronta, non l'oggetto con le sole spunte.
+    function stepsToPipeline(opts) {
+      const steps = [];
+      if (opts.white_balance) steps.push({ filter: 'white_balance', params: {} });
+      if (opts.denoise) steps.push({ filter: 'denoise', params: { method: opts.denoise_method, strength: parseInt(opts.denoise_strength, 10) } });
+      if (opts.clahe) steps.push({ filter: 'clahe', params: {} });
+      if (opts.hist_eq) steps.push({ filter: 'histogram_equalization', params: {} });
+      if (opts.gamma_enabled) steps.push({ filter: 'gamma', params: { gamma: parseFloat(opts.gamma) } });
+      if (opts.sharpen) steps.push({ filter: 'sharpen', params: { amount: parseFloat(opts.sharpen_amount) } });
+      return steps;
+    }
+
+    $('#enhance-apply-btn').addEventListener('click', async () => {
+      if (!currentCaptureId) return;
+      const status = $('#enhance-status');
+      const opts = buildEnhanceSteps();
+      const steps = stepsToPipeline(opts);
+      if (!steps.length) {
+        status.textContent = 'Seleziona almeno un filtro.';
+        return;
+      }
+      status.textContent = 'Elaborazione in corso...';
+      try {
+        const res = await fetch('api/enhance_capture.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ capture_id: currentCaptureId, steps, preview: true }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Errore');
+        lastPreviewPath = data.relative_path;
+        lastSteps = steps;
+        $('#enhance-img-before').src = currentOriginalUrl;
+        $('#enhance-img-after').src = data.url + '&_=' + Date.now(); // evita cache su rielaborazioni successive
+        $('#enhance-preview-row').style.display = '';
+        status.textContent = 'Anteprima generata. Se ti convince, salvala come nuova ripresa.';
+      } catch (err) {
+        status.textContent = 'Errore: ' + err.message;
+      }
+    });
+
+    $('#enhance-save-btn').addEventListener('click', async () => {
+      if (!lastPreviewPath) return;
+      const status = $('#enhance-status');
+      status.textContent = 'Salvataggio in corso...';
+      try {
+        const res = await fetch('api/save_enhanced_capture.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            source_capture_id: currentCaptureId,
+            relative_path: lastPreviewPath,
+            label: $('#enhance-save-label').value,
+            steps: lastSteps,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Errore');
+        status.textContent = 'Salvata come nuova ripresa. Ricarico la pagina...';
+        setTimeout(() => window.location.reload(), 500);
+      } catch (err) {
+        status.textContent = 'Errore: ' + err.message;
+      }
     });
   })();
 
