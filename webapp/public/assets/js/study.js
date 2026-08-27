@@ -1116,6 +1116,65 @@
     let draft = null; // {ax, ay} in attesa del punto corrispondente su B
     let natA = { w: 0, h: 0 };
     let natB = { w: 0, h: 0 };
+    let cpMode = 'point'; // 'point' (clic piazza un punto) | 'pan' (trascina per spostare la vista)
+
+    $$('.cp-mode-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        cpMode = btn.dataset.mode;
+        $$('.cp-mode-btn').forEach((b) => b.classList.toggle('active', b === btn));
+        ['a', 'b'].forEach((side) => {
+          $('#cp-scroll-' + side).style.cursor = cpMode === 'pan' ? 'grab' : '';
+        });
+      });
+    });
+
+    // ---------- Pan a trascinamento (mouse + touch) sui contenitori scroll ----------
+    // Attivo solo in modalità "Sposta": in modalità "Punto" lo scroll nativo
+    // (barre di scorrimento / touch-scroll) resta comunque disponibile, ma il
+    // trascinamento esplicito qui evita di dover cercare le scrollbar quando
+    // si è ingranditi molto per posizionare un punto con precisione.
+    function setupPan(side) {
+      const scroll = $('#cp-scroll-' + side);
+      let dragging = false;
+      let startX = 0, startY = 0, startLeft = 0, startTop = 0;
+
+      scroll.addEventListener('mousedown', (e) => {
+        if (cpMode !== 'pan') return;
+        dragging = true;
+        startX = e.clientX; startY = e.clientY;
+        startLeft = scroll.scrollLeft; startTop = scroll.scrollTop;
+        scroll.style.cursor = 'grabbing';
+        e.preventDefault();
+      });
+      window.addEventListener('mousemove', (e) => {
+        if (!dragging) return;
+        scroll.scrollLeft = startLeft - (e.clientX - startX);
+        scroll.scrollTop = startTop - (e.clientY - startY);
+      });
+      window.addEventListener('mouseup', () => {
+        if (!dragging) return;
+        dragging = false;
+        scroll.style.cursor = 'grab';
+      });
+
+      scroll.addEventListener('touchstart', (e) => {
+        if (cpMode !== 'pan' || e.touches.length !== 1) return;
+        dragging = true;
+        const t = e.touches[0];
+        startX = t.clientX; startY = t.clientY;
+        startLeft = scroll.scrollLeft; startTop = scroll.scrollTop;
+      }, { passive: true });
+      scroll.addEventListener('touchmove', (e) => {
+        if (!dragging || e.touches.length !== 1) return;
+        e.preventDefault();
+        const t = e.touches[0];
+        scroll.scrollLeft = startLeft - (t.clientX - startX);
+        scroll.scrollTop = startTop - (t.clientY - startY);
+      }, { passive: false });
+      scroll.addEventListener('touchend', () => { dragging = false; });
+    }
+    setupPan('a');
+    setupPan('b');
 
     const alignModeBtns = $$('.align-mode-btn');
     const manualBlock = $('#manual-align-block');
@@ -1184,6 +1243,9 @@
       draft = null;
       natA = { w: 0, h: 0 };
       natB = { w: 0, h: 0 };
+      cpMode = 'point';
+      $$('.cp-mode-btn').forEach((b) => b.classList.toggle('active', b.dataset.mode === 'point'));
+      ['a', 'b'].forEach((side) => { $('#cp-scroll-' + side).style.cursor = ''; });
       $('#cp-preview-row').style.display = 'none';
       $('#cp-status').textContent = '';
 
@@ -1205,6 +1267,12 @@
       btn.addEventListener('click', () => setZoom(btn.dataset.target, btn.dataset.zoom));
     });
 
+    ['a', 'b'].forEach((side) => {
+      const slider = $('#cp-zoom-slider-' + side);
+      if (!slider) return;
+      slider.addEventListener('input', () => setZoom(side, parseInt(slider.value, 10) / 100));
+    });
+
     function setZoom(target, spec) {
       const img = $('#cp-img-' + target);
       const scroll = $('#cp-scroll-' + target);
@@ -1214,6 +1282,13 @@
       img.style.width = Math.round(nat.w * factor) + 'px';
       img.style.height = Math.round(nat.h * factor) + 'px';
       $$('.cp-zoom-btn[data-target="' + target + '"]').forEach((b) => b.classList.toggle('active', b.dataset.zoom === spec));
+      // Slider e pulsanti restano sincronizzati indipendentemente da quale dei
+      // due ha innescato il cambio di zoom (slider trascinato o preset cliccato).
+      const slider = $('#cp-zoom-slider-' + target);
+      const label = $('#cp-zoom-val-' + target);
+      const pct = Math.round(factor * 100);
+      if (slider) slider.value = Math.min(800, Math.max(10, pct));
+      if (label) label.textContent = pct + '%';
       renderMarkers();
     }
 
@@ -1257,7 +1332,7 @@
     }
 
     $('#cp-img-a').addEventListener('click', (e) => {
-      if (!natA.w) return;
+      if (!natA.w || cpMode !== 'point') return;
       const p = clientToNatural(e.target, natA, e.clientX, e.clientY);
       draft = { ax: p.x, ay: p.y };
       $('#cp-status').textContent = 'Punto impostato su A — ora clicca il punto corrispondente su B.';
@@ -1265,7 +1340,7 @@
     });
 
     $('#cp-img-b').addEventListener('click', (e) => {
-      if (!natB.w) return;
+      if (!natB.w || cpMode !== 'point') return;
       if (!draft) {
         $('#cp-status').textContent = 'Clicca prima il punto su A, poi quello corrispondente qui su B.';
         return;

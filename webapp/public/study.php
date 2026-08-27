@@ -231,10 +231,14 @@ require __DIR__ . '/partials/nav.php';
 <div class="panel" id="control-points-panel" style="display:none;">
   <h2>Editor punti di controllo (allineamento manuale)</h2>
   <div class="hint" style="margin-bottom:12px;">
-    Clicca un punto su <strong>A</strong> (un dettaglio riconoscibile: un incrocio, un angolo di edificio, ecc.), poi clicca lo <strong>stesso identico punto reale</strong> su B: la coppia si evidenzia con lo stesso numero e colore su entrambe le immagini. Servono almeno <strong>3 punti</strong> (4+ tollerano qualche imprecisione di click grazie al filtro RANSAC). Usa i pulsanti di zoom per posizionare i punti con precisione.
+    Clicca un punto su <strong>A</strong> (un dettaglio riconoscibile: un incrocio, un angolo di edificio, ecc.), poi clicca lo <strong>stesso identico punto reale</strong> su B: la coppia si evidenzia con lo stesso numero e colore su entrambe le immagini. Servono almeno <strong>3 punti</strong> (4+ tollerano qualche imprecisione di click grazie al filtro RANSAC). Usa zoom e trascinamento per posizionare i punti con precisione.
+  </div>
+  <div class="tag-row" style="margin-bottom:12px;">
+    <button type="button" class="btn btn-sm cp-mode-btn active" data-mode="point">✎ Punto <span class="info-tip" tabindex="0" data-tip="Clic su un'immagine posiziona un punto di controllo. Passa a Sposta per trascinare la vista senza rischiare di piazzare punti per sbaglio.">?</span></button>
+    <button type="button" class="btn btn-sm cp-mode-btn" data-mode="pan">✋ Sposta</button>
   </div>
   <div class="grid grid-2">
-    <div>
+    <div style="min-width:0;">
       <h3>A — riferimento</h3>
       <div class="tag-row" style="margin-bottom:6px;">
         <button type="button" class="btn btn-sm cp-zoom-btn" data-target="a" data-zoom="fit">Adatta</button>
@@ -242,19 +246,27 @@ require __DIR__ . '/partials/nav.php';
         <button type="button" class="btn btn-sm cp-zoom-btn" data-target="a" data-zoom="2">200%</button>
         <button type="button" class="btn btn-sm cp-zoom-btn" data-target="a" data-zoom="4">400%</button>
       </div>
+      <div class="field" style="margin-bottom:6px;">
+        <label style="margin:0;">Zoom <span class="val" id="cp-zoom-val-a" style="margin-left:auto;">100%</span></label>
+        <input type="range" id="cp-zoom-slider-a" min="10" max="800" step="1" value="100">
+      </div>
       <div class="cp-scroll" id="cp-scroll-a" style="overflow:auto; max-height:420px; border:1px solid var(--border-color, #333); position:relative;">
         <div class="cp-wrap" id="cp-wrap-a" style="position:relative; display:inline-block; line-height:0;">
           <img id="cp-img-a" src="" alt="" style="display:block; max-width:none;">
         </div>
       </div>
     </div>
-    <div>
+    <div style="min-width:0;">
       <h3>B — da allineare</h3>
       <div class="tag-row" style="margin-bottom:6px;">
         <button type="button" class="btn btn-sm cp-zoom-btn" data-target="b" data-zoom="fit">Adatta</button>
         <button type="button" class="btn btn-sm cp-zoom-btn" data-target="b" data-zoom="1">100%</button>
         <button type="button" class="btn btn-sm cp-zoom-btn" data-target="b" data-zoom="2">200%</button>
         <button type="button" class="btn btn-sm cp-zoom-btn" data-target="b" data-zoom="4">400%</button>
+      </div>
+      <div class="field" style="margin-bottom:6px;">
+        <label style="margin:0;">Zoom <span class="val" id="cp-zoom-val-b" style="margin-left:auto;">100%</span></label>
+        <input type="range" id="cp-zoom-slider-b" min="10" max="800" step="1" value="100">
       </div>
       <div class="cp-scroll" id="cp-scroll-b" style="overflow:auto; max-height:420px; border:1px solid var(--border-color, #333); position:relative;">
         <div class="cp-wrap" id="cp-wrap-b" style="position:relative; display:inline-block; line-height:0;">

@@ -4,6 +4,27 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-08-27 (3) — Pan/zoom nell'editor punti di controllo
+
+- **[webapp/public/study.php](webapp/public/study.php)**
+  - Nuovo toggle **✎ Punto / ✋ Sposta** nell'editor punti di controllo: in
+    "Sposta" il trascinamento sposta la vista invece di piazzare un punto.
+  - Nuovo slider di zoom (10%–800%) per ciascuna ripresa, accanto ai preset
+    Adatta/100/200/400% già presenti.
+  - Fix: le due colonne griglia (`grid-template-columns: 1fr 1fr`) si
+    espandevano per contenere l'immagine ingrandita invece di ritagliarla con
+    lo scroll (il classico "grid blowout" da `min-width:auto` implicito sulle
+    colonne `1fr`) — a zoom alto il contenitore cresceva a piena larghezza
+    dell'immagine invece di mostrare le barre di scorrimento, rendendo
+    panning/zoom inutilizzabili oltre il 100%. Corretto con `min-width:0`
+    sulle due colonne.
+
+- **[webapp/public/assets/js/study.js](webapp/public/assets/js/study.js)**
+  `setupControlPointsEditor()`: nuova gestione modalità Punto/Sposta
+  (`cpMode`), trascinamento a mouse e touch sui contenitori scroll (attivo
+  solo in modalità Sposta, così il clic in modalità Punto resta affidabile),
+  slider di zoom sincronizzato bidirezionalmente con i pulsanti preset.
+
 ## 2026-08-27 (2) — Allineamento manuale a punti di controllo
 
 Nuovo fallback assistito per l'allineamento tra due riprese, per i casi in
