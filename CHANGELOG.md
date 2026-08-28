@@ -4,6 +4,49 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-08-28 — Nuova modalità "Analisi ripresa singola"
+
+Nuova pagina dedicata per analizzare una ripresa da sola, senza doverla
+confrontare con un'altra né passare dal roundtrip server del pannello
+"Migliora": due riquadri affiancati (originale/copia di lavoro) con
+zoom/panning sincronizzato, regolazioni istantanee (luminosità, contrasto,
+saturazione, nitidezza, gamma) calcolate nel browser, un secondo livello di
+filtri avanzati che riusa il motore server già esistente per gli algoritmi
+che richiedono statistiche sull'intera immagine, annotazioni, e salvataggio
+del risultato come nuova ripresa permanente.
+
+- **[webapp/public/analyze_capture.php](webapp/public/analyze_capture.php)** (nuovo)
+  Pagina dedicata (`?id=<capture_id>`): due `.viewer-stage` (Originale /
+  Copia di lavoro), toolbar Sposta/Annota + controlli zoom, 5 slider di
+  regolazione in tempo reale, pannello "Filtri avanzati" (bilanciamento del
+  bianco, riduzione rumore, CLAHE, equalizzazione istogramma, contorni) con
+  pulsanti Applica/Ripristina originale, lista annotazioni.
+
+- **[webapp/public/assets/js/analyze.js](webapp/public/assets/js/analyze.js)** (nuovo)
+  - Zoom/pan **sincronizzato** tra i due riquadri (stato scale/tx/ty
+    condiviso, non due controller indipendenti): rotellina, drag in
+    modalità Sposta, pinch-to-zoom touch.
+  - Regolazioni istantanee via filtri nativi del browser: `brightness()`,
+    `contrast()`, `saturate()` CSS; nitidezza e gamma via filtri SVG
+    dinamici (`feConvolveMatrix` per un kernel di sharpening, `feComponentTransfer
+    type="gamma"`) il cui stato si ricalcola ad ogni movimento slider —
+    nessuna chiamata di rete per queste cinque regolazioni.
+  - Filtri avanzati: POST a `api/enhance_capture.php` (stesso endpoint di
+    "Migliora", `preview:true`) — il risultato ripunta l'`<img>` della copia
+    di lavoro, su cui le regolazioni in tempo reale continuano ad agire.
+  - "Salva come nuova ripresa": ridisegna via canvas, alla risoluzione
+    originale, le stesse formule dei filtri live (luminosità → contrasto →
+    saturazione → gamma → nitidezza, stesso ordine della catena CSS) e
+    carica il PNG risultante tramite `api/upload_capture.php` (riusato
+    così com'è, nessun nuovo endpoint necessario).
+  - Annotazioni: stesso sistema (`api/annotations.php`) già usato altrove,
+    con `target_image` dedicato (`capture<id>_analyze`) per non collidere
+    con le annotazioni di eventuali confronti sulla stessa ripresa.
+
+- **[webapp/public/study.php](webapp/public/study.php)**
+  Nuovo pulsante "🔬 Analizza" su ogni scheda ripresa in archivio, accanto a
+  "✨ Migliora".
+
 ## 2026-08-27 (5) — Fix: l'enhancement pre-analisi su A non era mai visibile
 
 L'enhancement pre-analisi (denoise, desaturazione, ecc.) veniva applicato

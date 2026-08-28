@@ -1,0 +1,154 @@
+<?php
+require __DIR__ . '/../src/bootstrap.php';
+Auth::requireLogin();
+
+$captureId = (int) ($_GET['id'] ?? 0);
+$capture = $captureId ? Capture::find($captureId) : null;
+if (!$capture) {
+    http_response_code(404);
+    exit('Ripresa non trovata');
+}
+$study = Study::find((int) $capture['study_id']);
+if (!$study) {
+    http_response_code(404);
+    exit('Studio non trovato');
+}
+
+$pageTitle = 'Analisi — ' . ($capture['label'] ?: ('Ripresa #' . $capture['id']));
+$activeNav = 'dashboard';
+require __DIR__ . '/partials/head.php';
+require __DIR__ . '/partials/nav.php';
+?>
+
+<div class="panel">
+  <div class="hint">
+    <a href="study.php?id=<?= (int)$study['id'] ?>">← Torna a «<?= e($study['title']) ?>»</a>
+  </div>
+  <h2>🔬 Analisi ripresa singola</h2>
+  <div class="hint">
+    <?= e($capture['label'] ?: ('Ripresa #' . $capture['id'])) ?>
+    &nbsp;·&nbsp; <?= format_date_it($capture['capture_date']) ?> · <?= e($capture['source']) ?>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="stage-toolbar">
+    <div class="mode-toggle" id="an-mode-toggle">
+      <button type="button" class="mode-btn" data-mode="pan" title="Trascina per spostare la vista (su entrambi i riquadri, sincronizzati)">✋ Sposta</button>
+      <button type="button" class="mode-btn active" data-mode="annotate" title="Trascina sulla copia di lavoro per disegnare un'annotazione">✎ Annota</button>
+    </div>
+    <div class="zoom-controls">
+      <button type="button" class="btn btn-sm" id="an-zoom-out" title="Riduci zoom">−</button>
+      <span class="zoom-level" id="an-zoom-level">100%</span>
+      <button type="button" class="btn btn-sm" id="an-zoom-in" title="Aumenta zoom">+</button>
+      <button type="button" class="btn btn-sm" id="an-zoom-reset" title="Ripristina zoom e posizione">Reset</button>
+    </div>
+  </div>
+  <div class="hint" style="margin-bottom:10px;">Rotellina del mouse per zoomare (i due riquadri restano sincronizzati sulla stessa area, per confrontare a colpo d'occhio originale e copia di lavoro). Modalità <strong>Sposta</strong>: trascina per spostarti quando sei ingrandito. Modalità <strong>Annota</strong>: trascina sulla copia di lavoro (destra) per disegnare un'annotazione.</div>
+
+  <div class="grid grid-2">
+    <div>
+      <h3>Originale</h3>
+      <div class="viewer-stage" id="an-stage-left">
+        <div class="zoom-viewport" id="an-viewport-left">
+          <div class="zoom-content" id="an-content-left">
+            <img id="an-img-left" src="<?= e(storage_url($capture['relative_path'])) ?>" alt="">
+          </div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <h3>Copia di lavoro <span class="info-tip" tabindex="0" data-tip="Gli slider qui sotto agiscono in tempo reale, in locale nel browser, senza mai toccare l'originale: nessuna elaborazione lato server finché non premi 'Salva come nuova ripresa'.">?</span></h3>
+      <div class="viewer-stage" id="an-stage-right">
+        <div class="zoom-viewport" id="an-viewport-right">
+          <div class="zoom-content" id="an-content-right">
+            <img id="an-img-right" src="<?= e(storage_url($capture['relative_path'])) ?>" alt="">
+            <canvas id="an-annotate-canvas"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>Regolazioni in tempo reale</h2>
+  <div class="grid grid-2">
+    <div>
+      <div class="field">
+        <label>Luminosità <span class="info-tip" tabindex="0" data-tip="Schiarisce o scurisce l'intera immagine in modo uniforme. Utile su riprese sovra/sotto-esposte per far emergere dettagli in ombra o troppo chiari.">?</span><span class="val" id="an-val-brightness" style="margin-left:auto;">100%</span></label>
+        <input type="range" id="an-brightness" min="30" max="250" value="100">
+      </div>
+      <div class="field">
+        <label>Contrasto <span class="info-tip" tabindex="0" data-tip="Accentua o riduce la differenza tra zone chiare e scure. Utile per far risaltare strutture su sfondi poco differenziati (es. terreno uniforme, foschia).">?</span><span class="val" id="an-val-contrast" style="margin-left:auto;">100%</span></label>
+        <input type="range" id="an-contrast" min="30" max="250" value="100">
+      </div>
+    </div>
+    <div>
+      <div class="field">
+        <label>Saturazione <span class="info-tip" tabindex="0" data-tip="A 0% desatura fino al bianco e nero completo: aiuta a concentrarsi su bordi/texture/ombre (i dettagli strutturali) invece che sul colore. Sopra 100% accentua l'intensità dei colori.">?</span><span class="val" id="an-val-saturate" style="margin-left:auto;">100%</span></label>
+        <input type="range" id="an-saturate" min="0" max="200" value="100">
+      </div>
+      <div class="field">
+        <label>Nitidezza <span class="info-tip" tabindex="0" data-tip="Accentua i bordi e i dettagli fini. Utile per rendere più leggibili i contorni di strutture in riprese leggermente sfocate. Valori alti possono introdurre aloni artificiali.">?</span><span class="val" id="an-val-sharpen" style="margin-left:auto;">0</span></label>
+        <input type="range" id="an-sharpen" min="0" max="100" value="0">
+      </div>
+      <div class="field">
+        <label>Gamma <span class="info-tip" tabindex="0" data-tip="Schiarisce o scurisce l'immagine in modo non lineare. Valori sopra 1 schiariscono le zone scure, valori sotto 1 le scuriscono ulteriormente. Utile su riprese sovra/sotto-esposte.">?</span><span class="val" id="an-val-gamma" style="margin-left:auto;">1.0</span></label>
+        <input type="range" id="an-gamma" min="0.2" max="3" step="0.1" value="1.0">
+      </div>
+    </div>
+  </div>
+  <div class="tag-row" style="margin-top:6px; align-items:center;">
+    <button type="button" class="btn btn-sm" id="an-reset-btn">↺ Reset regolazioni</button>
+    <input type="text" id="an-save-label" placeholder="Etichetta (opzionale)" style="flex:1; min-width:160px;">
+    <button type="button" class="btn btn-primary btn-sm" id="an-save-btn" title="Salva la copia di lavoro (con le regolazioni correnti applicate ai pixel) come nuova ripresa permanente in archivio.">💾 Salva come nuova ripresa</button>
+  </div>
+  <span class="hint" id="an-status"></span>
+</div>
+
+<div class="panel">
+  <h2>Filtri avanzati <span class="info-tip" tabindex="0" data-tip="A differenza delle regolazioni sopra (istantanee, calcolate nel browser), questi filtri richiedono di analizzare l'intera immagine (istogramma, medie canale, ecc.) e vengono elaborati dal servizio di analisi — stesso identico algoritmo usato in 'Migliora' e nei confronti, per risultati coerenti in tutta la piattaforma. Premi Applica per elaborarli; il risultato diventa la nuova base su cui continuano ad agire le regolazioni in tempo reale sopra.">?</span></h2>
+  <div class="grid grid-2">
+    <div>
+      <div class="checkbox-row field"><input type="checkbox" id="an-wb"><label style="margin:0;">Bilanciamento del bianco <span class="info-tip" tabindex="0" data-tip="Corregge eventuali dominanti di colore (es. dovute a condizioni atmosferiche o al sensore) tramite l'algoritmo gray-world, rendendo i colori dell'immagine più naturali e bilanciati.">?</span></label></div>
+      <div class="checkbox-row field"><input type="checkbox" id="an-denoise"><label style="margin:0;">Riduzione rumore <span class="info-tip" tabindex="0" data-tip="Attenua il rumore fotografico/di compressione, utile per pulire una ripresa rumorosa prima di esportarla o riusarla in un confronto.">?</span></label></div>
+      <div class="grid grid-2" style="margin-bottom:4px;">
+        <select id="an-denoise-method">
+          <option value="gaussian">Gaussiano</option>
+          <option value="median">Mediano</option>
+          <option value="bilateral">Bilaterale</option>
+          <option value="nlmeans">Non-local means</option>
+        </select>
+        <input type="range" id="an-denoise-strength" min="1" max="10" value="3">
+      </div>
+      <div class="hint" style="margin-bottom:12px;">Gaussiano: sfocatura morbida generica. Mediano: efficace contro il rumore isolato tipo "sale e pepe". Bilaterale: riduce il rumore preservando meglio i bordi netti. Non-local means: il più efficace, anche il più lento.</div>
+    </div>
+    <div>
+      <div class="checkbox-row field"><input type="checkbox" id="an-clahe"><label style="margin:0;">CLAHE (contrasto adattivo) <span class="info-tip" tabindex="0" data-tip="Migliora il contrasto locale dell'immagine in modo adattivo, utile su riprese con foschia o forte variazione di illuminazione tra zone diverse della stessa immagine.">?</span></label></div>
+      <div class="checkbox-row field"><input type="checkbox" id="an-hist-eq"><label style="margin:0;">Equalizzazione istogramma <span class="info-tip" tabindex="0" data-tip="Ridistribuisce l'intera gamma tonale dell'immagine per massimizzare il contrasto globale. Alternativa più semplice e uniforme al CLAHE: usa questa se il CLAHE introduce aloni innaturali, il CLAHE se invece serve un miglioramento più localizzato.">?</span></label></div>
+      <div class="checkbox-row field"><input type="checkbox" id="an-edge"><label style="margin:0;">Contorni <span class="info-tip" tabindex="0" data-tip="Sostituisce l'immagine con la mappa dei bordi netti (Canny): utile per isolare il profilo di strutture/edifici dal resto della scena.">?</span></label></div>
+    </div>
+  </div>
+  <div class="tag-row" style="margin-top:6px;">
+    <button type="button" class="btn btn-primary btn-sm" id="an-advanced-apply-btn">▶ Applica filtri avanzati</button>
+    <button type="button" class="btn btn-sm" id="an-advanced-reset-btn" title="Torna all'immagine originale (annulla anche i filtri avanzati già applicati) e azzera le regolazioni in tempo reale.">🗑 Ripristina originale</button>
+  </div>
+  <span class="hint" id="an-advanced-status"></span>
+</div>
+
+<div class="panel">
+  <h2>Annotazioni</h2>
+  <div id="an-annotation-list"><div class="hint">Nessuna annotazione su questa ripresa.</div></div>
+</div>
+
+<script>
+window.ORBITALEYE_ANALYZE = {
+  studyId: <?= (int)$study['id'] ?>,
+  captureId: <?= (int)$capture['id'] ?>,
+  imageUrl: <?= json_encode(storage_url($capture['relative_path'])) ?>,
+};
+</script>
+<script src="assets/js/analyze.js?v=<?= @filemtime(__DIR__ . '/assets/js/analyze.js') ?: time() ?>"></script>
+
+<?php require __DIR__ . '/partials/footer.php'; ?>

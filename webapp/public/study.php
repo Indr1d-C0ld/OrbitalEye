@@ -163,11 +163,17 @@ require __DIR__ . '/partials/nav.php';
                 Elimina
               </button>
             </div>
-            <button type="button" class="btn btn-sm" style="width:100%; margin-top:4px;"
-              onclick="event.stopPropagation(); openEnhancePanel(<?= (int)$c['id'] ?>, <?= e(json_encode(storage_url($c['relative_path']))) ?>, <?= e(json_encode($c['label'] ?: ('Ripresa #' . $c['id']))) ?>)"
-              title="Applica filtri di miglioramento a questa sola ripresa, senza eseguire un confronto">
-              ✨ Migliora
-            </button>
+            <div style="display:flex; gap:4px; margin-top:4px;">
+              <button type="button" class="btn btn-sm" style="flex:1;"
+                onclick="event.stopPropagation(); openEnhancePanel(<?= (int)$c['id'] ?>, <?= e(json_encode(storage_url($c['relative_path']))) ?>, <?= e(json_encode($c['label'] ?: ('Ripresa #' . $c['id']))) ?>)"
+                title="Applica filtri di miglioramento (elaborati lato server) a questa sola ripresa, senza eseguire un confronto">
+                ✨ Migliora
+              </button>
+              <a class="btn btn-sm" style="flex:1; text-align:center;" href="analyze_capture.php?id=<?= (int)$c['id'] ?>" onclick="event.stopPropagation();"
+                title="Apri la vista di analisi dedicata: zoom/panning approfondito, regolazioni in tempo reale (luminosità, contrasto, saturazione, nitidezza) e annotazioni, su questa sola ripresa.">
+                🔬 Analizza
+              </a>
+            </div>
             <?php if ($hasNir): ?>
               <div style="display:flex; gap:4px; margin-top:4px;">
                 <button type="button" class="btn btn-sm" style="flex:1;"
