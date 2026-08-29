@@ -50,6 +50,7 @@ require __DIR__ . '/partials/nav.php';
       <button type="button" class="mode-btn active" data-mode="annotate" title="Trascina sulla copia di lavoro per disegnare un'annotazione">✎ Annota</button>
       <button type="button" class="mode-btn" data-mode="measure" title="Trascina sulla copia di lavoro per misurare una distanza reale sul terreno">📏 Misura</button>
       <button type="button" class="mode-btn" data-mode="crop" title="Trascina sulla copia di lavoro per ritagliare un frammento da usare in una ricerca inversa per immagini">🔍 Ritaglia</button>
+      <button type="button" class="mode-btn" data-mode="overlay" title="Trascina sulla copia di lavoro per spostare l'immagine sovrapposta caricata qui sotto">🖼 Sovrapponi</button>
     </div>
     <div class="zoom-controls">
       <button type="button" class="btn btn-sm" id="an-undo-btn" disabled title="Annulla l'ultima azione (annotazione, misurazione o filtro avanzato). Scorciatoia: Ctrl+Z">↶ Annulla</button>
@@ -59,13 +60,16 @@ require __DIR__ . '/partials/nav.php';
       <button type="button" class="btn btn-sm" id="an-zoom-reset" title="Ripristina zoom e posizione">Reset</button>
     </div>
   </div>
-  <div class="hint" style="margin-bottom:10px;">Rotellina del mouse per zoomare (i due riquadri restano sincronizzati sulla stessa area, per confrontare a colpo d'occhio originale e copia di lavoro). Modalità <strong>Sposta</strong>: trascina per spostarti quando sei ingrandito. Modalità <strong>Annota</strong>: trascina per disegnarne una nuova, trascina un angolo o l'interno di una già esistente per ridimensionarla/spostarla. Modalità <strong>Misura</strong>: trascina per disegnarne una nuova, trascina un estremo di una già esistente per aggiustarla. Modalità <strong>Ritaglia</strong>: trascina per selezionare un frammento da usare in una ricerca inversa per immagini. <strong>↶ Annulla</strong> (o Ctrl+Z) disfa l'ultima azione.</div>
+  <div class="hint" style="margin-bottom:10px;">Rotellina del mouse per zoomare (i due riquadri restano sincronizzati sulla stessa area, per confrontare a colpo d'occhio originale e copia di lavoro). Modalità <strong>Sposta</strong>: trascina per spostarti quando sei ingrandito. Modalità <strong>Annota</strong>: trascina per disegnarne una nuova, trascina un angolo o l'interno di una già esistente per ridimensionarla/spostarla. Modalità <strong>Misura</strong>: trascina per disegnarne una nuova, trascina un estremo di una già esistente per aggiustarla. Modalità <strong>Ritaglia</strong>: trascina per selezionare un frammento da usare in una ricerca inversa per immagini. Modalità <strong>Sovrapponi</strong>: trascina per spostare l'immagine sovrapposta caricata (regolala con gli slider dedicati più sotto). <strong>↶ Annulla</strong> (o Ctrl+Z) disfa l'ultima azione.</div>
   <div class="tag-row" style="margin-bottom:10px; align-items:center;">
     <label style="display:flex; align-items:center; gap:6px; margin:0; font-size:12px; color:var(--text-secondary);">
       Colore annotazioni <input type="color" id="an-annotate-color" value="#00fff2" title="Colore delle prossime annotazioni disegnate (quelle già esistenti si ricolorano dalla lista Annotazioni più sotto)">
     </label>
     <label style="display:flex; align-items:center; gap:6px; margin:0; font-size:12px; color:var(--text-secondary);">
       Colore misurazioni <input type="color" id="an-measure-color" value="#ffb020" title="Colore delle prossime misurazioni disegnate (quelle già esistenti si ricolorano dalla lista Misurazioni più sotto)">
+    </label>
+    <label style="display:flex; align-items:center; gap:6px; margin:0; font-size:12px; color:var(--text-secondary);">
+      Dimensione maniglie <input type="range" id="an-handle-size" min="2" max="12" value="5" style="width:80px;" title="Raggio delle maniglie trascinabili di annotazioni e misurazioni: riducilo se ti risultano troppo ingombranti, aumentalo se fai fatica a centrarle.">
     </label>
     <span class="hint" style="margin:0;">Utile per far risaltare meglio i segni a seconda dello sfondo della ripresa.</span>
   </div>
@@ -87,12 +91,50 @@ require __DIR__ . '/partials/nav.php';
         <div class="zoom-viewport" id="an-viewport-right">
           <div class="zoom-content" id="an-content-right">
             <img id="an-img-right" src="<?= e(storage_url($capture['relative_path'])) ?>" alt="">
+            <img id="an-overlay-img" src="" alt="" style="display:none; position:absolute; pointer-events:none; transform-origin:center center;">
             <canvas id="an-annotate-canvas"></canvas>
           </div>
         </div>
       </div>
     </div>
   </div>
+</div>
+
+<div class="panel">
+  <h2>Sovrapposizione immagine <span class="info-tip" tabindex="0" data-tip="Carica una tua immagine (una mappa, un diagramma, un'altra foto) e sovrapponila alla copia di lavoro per confrontarla visivamente con la ripresa satellitare: resta solo nel browser finché non premi 'Salva come nuova ripresa', che la incorpora definitivamente nel file salvato.">?</span></h2>
+  <div class="hint" style="margin-bottom:10px;">Passa a modalità Sovrapponi e trascina per riposizionarla; usa gli slider per ridimensionarla, ruotarla, inclinarla e regolarne la trasparenza.</div>
+  <div class="tag-row" style="margin-bottom:10px; align-items:center;">
+    <input type="file" id="an-overlay-file" accept="image/png,image/jpeg,image/webp" style="max-width:260px;">
+    <button type="button" class="btn btn-sm" id="an-overlay-remove-btn">🗑 Rimuovi sovrapposizione</button>
+    <button type="button" class="btn btn-sm" id="an-overlay-reset-btn">↺ Reset trasformazioni</button>
+  </div>
+  <div class="grid grid-2">
+    <div>
+      <div class="field">
+        <label>Scala <span class="val" id="an-val-overlay-scale" style="margin-left:auto;">100%</span></label>
+        <input type="range" id="an-overlay-scale" min="10" max="300" value="100">
+      </div>
+      <div class="field">
+        <label>Rotazione <span class="info-tip" tabindex="0" data-tip="Ruota l'immagine sovrapposta attorno al proprio centro.">?</span><span class="val" id="an-val-overlay-rotation" style="margin-left:auto;">0°</span></label>
+        <input type="range" id="an-overlay-rotation" min="-180" max="180" value="0">
+      </div>
+    </div>
+    <div>
+      <div class="field">
+        <label>Inclinazione orizzontale <span class="info-tip" tabindex="0" data-tip="Inclina (shear) l'immagine sovrapposta lungo l'asse orizzontale: utile per correggere una prospettiva leggermente obliqua rispetto alla ripresa satellitare.">?</span><span class="val" id="an-val-overlay-skewx" style="margin-left:auto;">0°</span></label>
+        <input type="range" id="an-overlay-skewx" min="-45" max="45" value="0">
+      </div>
+      <div class="field">
+        <label>Inclinazione verticale <span class="val" id="an-val-overlay-skewy" style="margin-left:auto;">0°</span></label>
+        <input type="range" id="an-overlay-skewy" min="-45" max="45" value="0">
+      </div>
+      <div class="field">
+        <label>Opacità <span class="val" id="an-val-overlay-opacity" style="margin-left:auto;">70%</span></label>
+        <input type="range" id="an-overlay-opacity" min="0" max="100" value="70">
+      </div>
+    </div>
+  </div>
+  <span class="hint" id="an-overlay-status"></span>
 </div>
 
 <div class="panel">

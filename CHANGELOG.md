@@ -4,6 +4,43 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-08-29 (2) — Sovrapposizione di un'immagine propria + dimensione maniglie regolabile
+
+- **[webapp/public/analyze_capture.php](webapp/public/analyze_capture.php)**
+  - Nuova modalità toolbar "🖼 Sovrapponi" (trascina per riposizionare
+    l'immagine caricata) e nuovo pannello "Sovrapposizione immagine":
+    input file, slider Scala/Rotazione/Inclinazione orizzontale/Inclinazione
+    verticale/Opacità, pulsanti Rimuovi e Reset trasformazioni.
+  - Nuovo `<img id="an-overlay-img">` dentro `#an-content-right` (zooma/pan
+    insieme al resto, essendo figlio dello stesso `.zoom-content`).
+  - Nuovo slider "Dimensione maniglie" nella toolbar: il raggio delle
+    maniglie di annotazioni/misurazioni era fisso (e già cambiato una volta
+    su segnalazione contrastante — comodo per alcuni, ingombrante per altri),
+    ora regolabile in tempo reale.
+
+- **[webapp/public/assets/js/analyze.js](webapp/public/assets/js/analyze.js)**
+  - Stato `overlay` (centro, dimensione base dal rapporto d'aspetto reale,
+    scala, rotazione, inclinazione X/Y, opacità) espresso come frazioni di
+    `canvas.width/height` — resta valido a qualunque zoom senza ricalcoli,
+    stessa convenzione delle annotazioni.
+  - `renderOverlay()` applica posizione/trasformazione via CSS
+    (`transform: rotate() skew()`) per un'anteprima istantanea, zero rete.
+  - Nuova modalità di interazione `'overlay'` nel dispatcher esistente
+    (drag per riposizionare, stesso meccanismo di annotate/measure/crop).
+  - `drawOverlayOnto()`: replica la stessa trasformazione via Canvas 2D
+    (`ctx.transform` con la matrice equivalente a CSS `skew()`), chiamata da
+    `renderAdjustedCanvas()` così "Salva come nuova ripresa" incorpora
+    definitivamente la sovrapposizione nel file — mai inviata al servizio
+    prima di quel momento, resta lato browser.
+  - `HANDLE_R` da costante a variabile pilotata dallo slider dedicato;
+    `HANDLE_HIT_R` diventato `handleHitR()` (funzione, con minimo di 8px
+    garantito anche a maniglie molto piccole) invece di un valore
+    precalcolato una sola volta.
+  - Bug corretto durante l'implementazione: `overlay` referenziato da
+    `resizeAnnotateCanvas()` prima di essere dichiarato (temporal dead
+    zone) — spostata la dichiarazione dello stato più in alto, stesso
+    trattamento già applicato in precedenza a `measurements`.
+
 ## 2026-08-29 — Colore personalizzabile per annotazioni/misurazioni + undo mancante sui filtri avanzati
 
 Completamento dell'editor di "Analisi ripresa singola": durante un giro di

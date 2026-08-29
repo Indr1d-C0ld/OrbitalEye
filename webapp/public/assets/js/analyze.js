@@ -315,6 +315,10 @@
     const ctx = canvas.getContext('2d');
     ctx.drawImage(imgRight, 0, 0);
     applyPixelAdjustments(ctx, canvas.width, canvas.height);
+    // La sovrapposizione (se caricata) va sopra, fuori dalle regolazioni
+    // pixel della ripresa base: è un riferimento esterno, non fa parte
+    // della ripresa satellitare e non va storto da luminosità/contrasto/ecc.
+    drawOverlayOnto(ctx, canvas.width, canvas.height);
     return canvas;
   }
 
@@ -439,6 +443,23 @@
   if (annotateColorInput) annotateColorInput.addEventListener('input', () => { currentAnnotateColor = annotateColorInput.value; });
   if (measureColorInput) measureColorInput.addEventListener('input', () => { currentMeasureColor = measureColorInput.value; });
 
+  // Stato sovrapposizione immagine (vedi sezione dedicata più sotto per il
+  // resto della logica): dichiarato qui, non più giù, per lo stesso motivo
+  // di annotations/measurements sopra — resizeAnnotateCanvas() lo referenzia
+  // (tramite renderOverlay) e può scattare in modo sincrono già durante il
+  // caricamento della pagina.
+  const overlayImgEl = $('#an-overlay-img');
+  const overlay = {
+    img: null,
+    loaded: false,
+    cx: 0.5, cy: 0.5, // centro, frazione di canvas.width/height
+    baseWFrac: 0.3, baseHFrac: 0.3, // dimensione "1x" calcolata al caricamento dal rapporto d'aspetto reale
+    scale: 1.0,
+    rotation: 0, // gradi
+    skewX: 0, skewY: 0, // gradi
+    opacity: 0.7,
+  };
+
   // ---------- Undo globale ----------
   // Pila di azioni "strutturali" (creare/eliminare/spostare un'annotazione o
   // una misurazione, applicare filtri avanzati): ogni voce sa da sola come
@@ -471,6 +492,7 @@
     canvas.width = imgRight.clientWidth;
     canvas.height = imgRight.clientHeight;
     redrawAnnotations();
+    renderOverlay();
   }
   window.addEventListener('resize', resizeAnnotateCanvas);
   imgRight.addEventListener('load', resizeAnnotateCanvas);
@@ -489,7 +511,18 @@
   // Nonostante il nome (storico, condiviso con study.js), ridisegna sia le
   // annotazioni persistenti sia le misurazioni correnti: condividono lo
   // stesso canvas overlay sulla copia di lavoro.
-  const HANDLE_R = 7; // raggio visivo delle maniglie disegnate (px canvas)
+  // Raggio delle maniglie: regolabile dallo slider "Dimensione maniglie"
+  // nella toolbar (non più fisso) — quel che va bene su un monitor grande
+  // può risultare ingombrante su uno piccolo, o viceversa scomodo al tocco.
+  let HANDLE_R = 5;
+  const handleSizeInput = $('#an-handle-size');
+  if (handleSizeInput) {
+    HANDLE_R = parseFloat(handleSizeInput.value) || HANDLE_R;
+    handleSizeInput.addEventListener('input', () => {
+      HANDLE_R = parseFloat(handleSizeInput.value);
+      redrawAnnotations();
+    });
+  }
 
   function redrawAnnotations() {
     const ctx = canvas.getContext('2d');
@@ -846,8 +879,124 @@
   $('#an-crop-open-bing').addEventListener('click', () => window.open('https://www.bing.com/visualsearch', '_blank'));
   $('#an-crop-open-tineye').addEventListener('click', () => window.open('https://tineye.com/', '_blank'));
 
+  // ---------- Sovrapposizione di un'immagine propria ----------
+  // Resta interamente lato browser (nessun upload al servizio, nessuna
+  // persistenza) finché non si preme "Salva come nuova ripresa": a quel
+  // punto viene incorporata definitivamente nel file salvato (vedi
+  // drawOverlayOnto, chiamata da renderAdjustedCanvas). Geometria salvata
+  // come frazioni di canvas.width/height (stessa convenzione delle
+  // annotazioni), così resta valida a qualunque livello di zoom senza
+  // bisogno di ricalcoli. (overlayImgEl/overlay dichiarati più in alto, vedi
+  // commento vicino a "let annotations" — resizeAnnotateCanvas() li
+  // referenzia e può scattare in modo sincrono già durante il caricamento.)
+
+  function renderOverlay() {
+    if (!overlay.loaded) { overlayImgEl.style.display = 'none'; return; }
+    const w = overlay.baseWFrac * overlay.scale * canvas.width;
+    const h = overlay.baseHFrac * overlay.scale * canvas.height;
+    const left = overlay.cx * canvas.width - w / 2;
+    const top = overlay.cy * canvas.height - h / 2;
+    overlayImgEl.style.display = '';
+    overlayImgEl.style.width = w + 'px';
+    overlayImgEl.style.height = h + 'px';
+    overlayImgEl.style.left = left + 'px';
+    overlayImgEl.style.top = top + 'px';
+    overlayImgEl.style.transform = `rotate(${overlay.rotation}deg) skew(${overlay.skewX}deg, ${overlay.skewY}deg)`;
+    overlayImgEl.style.opacity = overlay.opacity;
+  }
+
+  $('#an-overlay-file').addEventListener('change', (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      overlay.img = img;
+      overlay.loaded = true;
+      // Dimensione di partenza comoda: il lato maggiore occupa ~40% del
+      // riquadro, rapporto d'aspetto reale dell'immagine caricata preservato.
+      const aspect = img.naturalWidth / img.naturalHeight;
+      if (aspect >= 1) { overlay.baseWFrac = 0.4; overlay.baseHFrac = 0.4 / aspect; }
+      else { overlay.baseHFrac = 0.4; overlay.baseWFrac = 0.4 * aspect; }
+      overlay.cx = 0.5; overlay.cy = 0.5;
+      overlayImgEl.src = url;
+      renderOverlay();
+      $('#an-overlay-status').textContent = 'Immagine caricata: passa a modalità Sovrapponi per trascinarla, usa gli slider per il resto.';
+    };
+    img.src = url;
+  });
+
+  // toStored: converte il valore grezzo dello slider (quello mostrato in
+  // etichetta) nell'unità usata internamente da overlay.* (scale/opacity
+  // sono frazioni 0-x, rotazione/inclinazione restano in gradi as-is).
+  const OVERLAY_SLIDER_MAP = [
+    ['an-overlay-scale', 'an-val-overlay-scale', 'scale', (raw) => raw / 100, (raw) => Math.round(raw) + '%'],
+    ['an-overlay-rotation', 'an-val-overlay-rotation', 'rotation', (raw) => raw, (raw) => Math.round(raw) + '°'],
+    ['an-overlay-skewx', 'an-val-overlay-skewx', 'skewX', (raw) => raw, (raw) => Math.round(raw) + '°'],
+    ['an-overlay-skewy', 'an-val-overlay-skewy', 'skewY', (raw) => raw, (raw) => Math.round(raw) + '°'],
+    ['an-overlay-opacity', 'an-val-overlay-opacity', 'opacity', (raw) => raw / 100, (raw) => Math.round(raw) + '%'],
+  ];
+  OVERLAY_SLIDER_MAP.forEach(([inputId, outId, key, toStored, fmt]) => {
+    const input = $('#' + inputId);
+    const out = $('#' + outId);
+    input.addEventListener('input', () => {
+      const raw = parseFloat(input.value);
+      overlay[key] = toStored(raw);
+      out.textContent = fmt(raw);
+      renderOverlay();
+    });
+  });
+
+  $('#an-overlay-reset-btn').addEventListener('click', () => {
+    overlay.cx = 0.5; overlay.cy = 0.5; overlay.scale = 1.0; overlay.rotation = 0; overlay.skewX = 0; overlay.skewY = 0; overlay.opacity = 0.7;
+    $('#an-overlay-scale').value = 100; $('#an-val-overlay-scale').textContent = '100%';
+    $('#an-overlay-rotation').value = 0; $('#an-val-overlay-rotation').textContent = '0°';
+    $('#an-overlay-skewx').value = 0; $('#an-val-overlay-skewx').textContent = '0°';
+    $('#an-overlay-skewy').value = 0; $('#an-val-overlay-skewy').textContent = '0°';
+    $('#an-overlay-opacity').value = 70; $('#an-val-overlay-opacity').textContent = '70%';
+    renderOverlay();
+    $('#an-overlay-status').textContent = 'Trasformazioni azzerate (posizione, scala, rotazione, inclinazione, opacità).';
+  });
+
+  $('#an-overlay-remove-btn').addEventListener('click', () => {
+    if (!overlay.loaded) return;
+    const prev = { ...overlay, img: overlay.img };
+    overlay.loaded = false;
+    renderOverlay();
+    $('#an-overlay-status').textContent = 'Sovrapposizione rimossa.';
+    pushUndo(() => {
+      Object.assign(overlay, prev);
+      overlay.loaded = true;
+      renderOverlay();
+      $('#an-overlay-status').textContent = 'Rimozione sovrapposizione annullata.';
+    });
+  });
+
+  // Disegna l'immagine sovrapposta (posizione/scala/rotazione/inclinazione/
+  // opacità correnti) su un canvas di destinazione qualunque risoluzione:
+  // le coordinate sono frazioni, quindi si adattano automaticamente sia
+  // all'anteprima a schermo sia al canvas a piena risoluzione del salvataggio.
+  function drawOverlayOnto(ctx, targetW, targetH) {
+    if (!overlay.loaded) return;
+    const w = overlay.baseWFrac * overlay.scale * targetW;
+    const h = overlay.baseHFrac * overlay.scale * targetH;
+    const cx = overlay.cx * targetW, cy = overlay.cy * targetH;
+    ctx.save();
+    ctx.globalAlpha = overlay.opacity;
+    ctx.translate(cx, cy);
+    ctx.rotate((overlay.rotation * Math.PI) / 180);
+    // Stessa matrice della funzione CSS skew(skewX, skewY): shear lungo X in
+    // base a Y (tan(skewY)) e lungo Y in base a X (tan(skewX)).
+    ctx.transform(1, Math.tan((overlay.skewY * Math.PI) / 180), Math.tan((overlay.skewX * Math.PI) / 180), 1, 0, 0);
+    ctx.drawImage(overlay.img, -w / 2, -h / 2, w, h);
+    ctx.restore();
+  }
+
   // ---------- Hit-test delle maniglie (angoli annotazioni, estremi misure) ----------
-  const HANDLE_HIT_R = HANDLE_R * 3; // area cliccabile più larga del solo disegno, più comoda al dito/mouse
+  // Funzione (non costante) perché HANDLE_R ora cambia dinamicamente con lo
+  // slider "Dimensione maniglie": l'area cliccabile deve restare sempre un
+  // po' più larga del solo disegno, comoda al dito/mouse a qualunque taglia.
+  function handleHitR() { return Math.max(8, HANDLE_R * 3); }
   const OPPOSITE_CORNER = { tl: 'br', tr: 'bl', bl: 'tr', br: 'tl' };
 
   function cornerPoint(rx, ry, rw, rh, name) {
@@ -863,7 +1012,7 @@
       const rx = c.x * canvas.width, ry = c.y * canvas.height, rw = c.w * canvas.width, rh = c.h * canvas.height;
       for (const name of ['tl', 'tr', 'bl', 'br']) {
         const [hx, hy] = cornerPoint(rx, ry, rw, rh, name);
-        if (Math.hypot(x - hx, y - hy) <= HANDLE_HIT_R) {
+        if (Math.hypot(x - hx, y - hy) <= handleHitR()) {
           const [fx, fy] = cornerPoint(rx, ry, rw, rh, OPPOSITE_CORNER[name]);
           return { ann: a, fixedX: fx, fixedY: fy };
         }
@@ -883,8 +1032,8 @@
 
   function hitMeasureHandle(x, y) {
     for (const m of measurements) {
-      if (Math.hypot(x - m.x1, y - m.y1) <= HANDLE_HIT_R) return { m, end: 1 };
-      if (Math.hypot(x - m.x2, y - m.y2) <= HANDLE_HIT_R) return { m, end: 2 };
+      if (Math.hypot(x - m.x1, y - m.y1) <= handleHitR()) return { m, end: 1 };
+      if (Math.hypot(x - m.x2, y - m.y2) <= handleHitR()) return { m, end: 2 };
     }
     return null;
   }
@@ -1011,6 +1160,13 @@
       } else if (mode === 'crop') {
         dragState = { type: 'draw-crop' };
         startX = x; startY = y;
+      } else if (mode === 'overlay') {
+        if (!overlay.loaded) { dragState = null; return; }
+        dragState = {
+          type: 'move-overlay',
+          grabDX: x - overlay.cx * canvas.width,
+          grabDY: y - overlay.cy * canvas.height,
+        };
       } else {
         dragState = null;
       }
@@ -1038,6 +1194,10 @@
         const { distanceM } = pixelDistance(m.x1, m.y1, m.x2, m.y2);
         m.distanceM = distanceM;
         redrawAnnotations();
+      } else if (dragState.type === 'move-overlay') {
+        overlay.cx = (x - dragState.grabDX) / canvas.width;
+        overlay.cy = (y - dragState.grabDY) / canvas.height;
+        renderOverlay();
       }
     }
 
@@ -1079,7 +1239,7 @@
     }
 
     function canInteract() {
-      return mode === 'annotate' || mode === 'measure' || mode === 'crop';
+      return mode === 'annotate' || mode === 'measure' || mode === 'crop' || mode === 'overlay';
     }
 
     canvas.addEventListener('mousedown', (e) => {
