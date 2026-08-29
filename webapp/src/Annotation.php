@@ -66,4 +66,36 @@ final class Annotation
         $stmt = Database::get()->prepare('DELETE FROM annotations WHERE id = :id');
         $stmt->execute([':id' => $id]);
     }
+
+    /** Aggiorna coordinate (spostamento/ridimensionamento), etichetta/note e
+     * opzionalmente il colore di un'annotazione esistente, mantenendo lo
+     * stesso id — usata sia dall'editor di analisi singola ripresa (drag
+     * delle maniglie, modifica testo, cambio colore) sia per l'undo di uno
+     * spostamento/modifica precedente. $color a null lascia il colore
+     * invariato (per gli aggiornamenti di sola posizione/testo). */
+    public static function update(int $id, array $coords, ?string $label, ?string $notes, ?string $color = null): void
+    {
+        if ($color !== null) {
+            $stmt = Database::get()->prepare(
+                'UPDATE annotations SET coords_json = :coords, label = :label, notes = :notes, color = :color WHERE id = :id'
+            );
+            $stmt->execute([
+                ':coords' => json_encode($coords),
+                ':label' => $label,
+                ':notes' => $notes,
+                ':color' => $color,
+                ':id' => $id,
+            ]);
+            return;
+        }
+        $stmt = Database::get()->prepare(
+            'UPDATE annotations SET coords_json = :coords, label = :label, notes = :notes WHERE id = :id'
+        );
+        $stmt->execute([
+            ':coords' => json_encode($coords),
+            ':label' => $label,
+            ':notes' => $notes,
+            ':id' => $id,
+        ]);
+    }
 }

@@ -4,6 +4,40 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-08-29 — Colore personalizzabile per annotazioni/misurazioni + undo mancante sui filtri avanzati
+
+Completamento dell'editor di "Analisi ripresa singola": durante un giro di
+verifica è emerso che undo, spostamento/ridimensionamento delle annotazioni
+e modifica del loro testo erano già stati implementati (nel lavoro del
+2026-08-28) ma non ancora testati né documentati — verificati ora con
+successo end-to-end. Quanto mancava davvero:
+
+- **[webapp/src/Annotation.php](webapp/src/Annotation.php)**
+  `update()` accetta ora un parametro `$color` opzionale (default `null` =
+  colore invariato): permette di ricolorare un'annotazione esistente senza
+  toccarne posizione/testo.
+
+- **[webapp/public/api/annotations.php](webapp/public/api/annotations.php)**
+  Il branch `PUT` inoltra `color` (se presente nel body) a `Annotation::update()`.
+
+- **[webapp/public/analyze_capture.php](webapp/public/analyze_capture.php)**
+  Due selettori colore nella toolbar ("Colore annotazioni"/"Colore
+  misurazioni") per le prossime forme disegnate.
+
+- **[webapp/public/assets/js/analyze.js](webapp/public/assets/js/analyze.js)**
+  - `currentAnnotateColor`/`currentMeasureColor`: usati da `finishAnnotate`/
+    `finishMeasure` invece dei colori fissi precedenti; l'anteprima durante
+    il disegno di una misura riflette già il colore scelto.
+  - Swatch colore (`<input type="color">`) per riga in entrambe le liste
+    Annotazioni/Misurazioni, per ricolorare singolarmente un elemento già
+    esistente — con voce di undo per ciascuna ricolorazione.
+  - Undo aggiunto anche per "Applica filtri avanzati" (ripristina l'immagine
+    precedente) e "Ripristina originale" (ripristina anche slider e
+    checkbox precedenti, non solo l'immagine) — mancava nonostante il
+    tooltip della toolbar lo dichiarasse già.
+  - `HANDLE_R`/`HANDLE_HIT_R` aumentati (5→7px, 2.5×→3× di area cliccabile)
+    per rendere le maniglie di trascinamento più comode da centrare col mouse.
+
 ## 2026-08-28 — Nuova modalità "Analisi ripresa singola"
 
 Nuova pagina dedicata per analizzare una ripresa da sola, senza doverla

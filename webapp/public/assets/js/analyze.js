@@ -244,13 +244,13 @@
   // in anteprima. Se sono stati applicati filtri avanzati (server-side),
   // imgRight punta già al risultato elaborato: questa funzione parte sempre
   // dall'immagine correntemente caricata, qualunque essa sia.
-  function renderAdjustedCanvas() {
-    const canvas = document.createElement('canvas');
-    canvas.width = imgRight.naturalWidth;
-    canvas.height = imgRight.naturalHeight;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(imgRight, 0, 0);
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  // Applica le regolazioni correnti (adjust.*) direttamente sui pixel di un
+  // canvas già disegnato — riusata sia per il salvataggio dell'intera copia
+  // di lavoro (renderAdjustedCanvas) sia per il ritaglio per la ricerca
+  // inversa (renderCropFromSelection), così il frammento ritagliato riflette
+  // le stesse regolazioni visibili in anteprima, non l'immagine "nuda".
+  function applyPixelAdjustments(ctx, w, h) {
+    const imageData = ctx.getImageData(0, 0, w, h);
     const data = imageData.data;
 
     const b = adjust.brightness / 100;
@@ -287,7 +287,6 @@
     if (adjust.sharpen > 0) {
       const k = (adjust.sharpen / 100) * 2;
       const kernel = [0, -k, 0, -k, 1 + 4 * k, -k, 0, -k, 0];
-      const w = canvas.width, h = canvas.height;
       const src = new Uint8ClampedArray(data); // copia pre-convoluzione
       for (let y = 0; y < h; y++) {
         for (let x = 0; x < w; x++) {
@@ -307,6 +306,15 @@
     }
 
     ctx.putImageData(imageData, 0, 0);
+  }
+
+  function renderAdjustedCanvas() {
+    const canvas = document.createElement('canvas');
+    canvas.width = imgRight.naturalWidth;
+    canvas.height = imgRight.naturalHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(imgRight, 0, 0);
+    applyPixelAdjustments(ctx, canvas.width, canvas.height);
     return canvas;
   }
 
@@ -363,6 +371,7 @@
       status.textContent = 'Seleziona almeno un filtro.';
       return;
     }
+    const prevSrc = imgRight.src; // per l'undo: potrebbe già essere un risultato di un'applicazione precedente
     status.textContent = 'Elaborazione in corso...';
     try {
       const res = await fetch('api/enhance_capture.php', {
@@ -374,21 +383,89 @@
       if (!res.ok) throw new Error(data.error || 'Errore');
       imgRight.src = data.url + '&_=' + Date.now();
       status.textContent = 'Filtri applicati: ora sono la nuova base per le regolazioni in tempo reale sopra.';
+      pushUndo(() => {
+        imgRight.src = prevSrc;
+        status.textContent = 'Filtri avanzati annullati.';
+      });
     } catch (err) {
       status.textContent = 'Errore: ' + err.message;
     }
   });
 
   $('#an-advanced-reset-btn').addEventListener('click', () => {
+    const prevSrc = imgRight.src;
+    const prevAdjust = { ...adjust };
+    const prevChecks = {};
+    ['an-wb', 'an-denoise', 'an-clahe', 'an-hist-eq', 'an-edge'].forEach((id) => { prevChecks[id] = $('#' + id).checked; });
+
     imgRight.src = CFG.imageUrl;
     resetSliders();
     ['an-wb', 'an-denoise', 'an-clahe', 'an-hist-eq', 'an-edge'].forEach((id) => { $('#' + id).checked = false; });
     $('#an-advanced-status').textContent = 'Ripristinata la ripresa originale.';
+
+    pushUndo(() => {
+      imgRight.src = prevSrc;
+      Object.assign(adjust, prevAdjust);
+      SLIDER_MAP.forEach(([inputId, outId, key, fmt]) => {
+        $('#' + inputId).value = adjust[key];
+        $('#' + outId).textContent = fmt(adjust[key]);
+      });
+      applyLiveFilters();
+      Object.entries(prevChecks).forEach(([id, checked]) => { $('#' + id).checked = checked; });
+      $('#an-advanced-status').textContent = 'Ripristino annullato.';
+    });
   });
 
   // ---------- Annotazioni (sulla copia di lavoro, a destra) ----------
   let annotations = [];
+  // Dichiarati qui (non più giù insieme al resto della logica di scala/
+  // misurazione) perché redrawAnnotations() li referenzia e può essere
+  // invocata già in modo sincrono più sotto (resizeAnnotateCanvas se
+  // l'immagine è già in cache) — dichiararli più in basso darebbe un errore
+  // "cannot access before initialization" (temporal dead zone).
+  let mppX = null, mppY = null, scaleSource = null; // scaleSource: 'geo' | 'manual' | null
+  const measurements = [];
   const canvas = $('#an-annotate-canvas');
+
+  // ---------- Colore corrente per nuove annotazioni/misurazioni ----------
+  // Scelto prima di disegnare (come in un editor grafico), per far risaltare
+  // meglio i segni a seconda dello sfondo della ripresa. Gli elementi già
+  // esistenti si ricolorano singolarmente dallo swatch nella loro lista, non
+  // cambiano retroattivamente quando si sceglie un nuovo colore qui.
+  let currentAnnotateColor = '#00fff2';
+  let currentMeasureColor = '#ffb020';
+  const annotateColorInput = $('#an-annotate-color');
+  const measureColorInput = $('#an-measure-color');
+  if (annotateColorInput) annotateColorInput.addEventListener('input', () => { currentAnnotateColor = annotateColorInput.value; });
+  if (measureColorInput) measureColorInput.addEventListener('input', () => { currentMeasureColor = measureColorInput.value; });
+
+  // ---------- Undo globale ----------
+  // Pila di azioni "strutturali" (creare/eliminare/spostare un'annotazione o
+  // una misurazione, applicare filtri avanzati): ogni voce sa da sola come
+  // disfarsi. Le regolazioni in tempo reale restano fuori (hanno già un loro
+  // "Reset regolazioni" dedicato, e includerle intaserebbe la pila ad ogni
+  // singolo movimento di uno slider).
+  const undoStack = [];
+  function pushUndo(undoFn) {
+    undoStack.push(undoFn);
+    const btn = $('#an-undo-btn');
+    if (btn) btn.disabled = false;
+  }
+  async function performUndo() {
+    const fn = undoStack.pop();
+    if (!fn) return;
+    await fn();
+    const btn = $('#an-undo-btn');
+    if (btn) btn.disabled = undoStack.length === 0;
+  }
+  const undoBtn = $('#an-undo-btn');
+  if (undoBtn) undoBtn.addEventListener('click', performUndo);
+  window.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+      e.preventDefault();
+      performUndo();
+    }
+  });
 
   function resizeAnnotateCanvas() {
     canvas.width = imgRight.clientWidth;
@@ -397,8 +474,9 @@
   }
   window.addEventListener('resize', resizeAnnotateCanvas);
   imgRight.addEventListener('load', resizeAnnotateCanvas);
-  imgLeft.addEventListener('load', resizeAnnotateCanvas);
+  imgLeft.addEventListener('load', () => { resizeAnnotateCanvas(); computeGeoScale(); });
   if (imgRight.complete) resizeAnnotateCanvas();
+  if (imgLeft.complete) computeGeoScale();
 
   async function loadAnnotations() {
     const res = await fetch(`api/annotations.php?study_id=${CFG.studyId}&target_image=${encodeURIComponent(TARGET_KEY)}`);
@@ -408,22 +486,140 @@
     renderAnnotationList();
   }
 
+  // Nonostante il nome (storico, condiviso con study.js), ridisegna sia le
+  // annotazioni persistenti sia le misurazioni correnti: condividono lo
+  // stesso canvas overlay sulla copia di lavoro.
+  const HANDLE_R = 7; // raggio visivo delle maniglie disegnate (px canvas)
+
   function redrawAnnotations() {
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     annotations.forEach((a) => {
       const c = a.coords;
+      const rx = c.x * canvas.width, ry = c.y * canvas.height, rw = c.w * canvas.width, rh = c.h * canvas.height;
       ctx.strokeStyle = a.color || '#00fff2';
       ctx.lineWidth = 2;
       ctx.shadowColor = a.color || '#00fff2';
       ctx.shadowBlur = 6;
-      ctx.strokeRect(c.x * canvas.width, c.y * canvas.height, c.w * canvas.width, c.h * canvas.height);
+      ctx.strokeRect(rx, ry, rw, rh);
       if (a.label) {
         ctx.font = '11px "Share Tech Mono", monospace';
         ctx.fillStyle = a.color || '#00fff2';
         ctx.shadowBlur = 0;
-        ctx.fillText(a.label, c.x * canvas.width + 3, c.y * canvas.height - 4);
+        ctx.fillText(a.label, rx + 3, ry - 4);
       }
+      // Maniglie d'angolo: visibili solo in modalità Annota, per far capire
+      // che un'annotazione già esistente si può ridimensionare/spostare
+      // trascinando, non solo cancellare dalla lista sotto.
+      if (mode === 'annotate') {
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = a.color || '#00fff2';
+        [[rx, ry], [rx + rw, ry], [rx, ry + rh], [rx + rw, ry + rh]].forEach(([hx, hy]) => {
+          ctx.beginPath();
+          ctx.arc(hx, hy, HANDLE_R, 0, Math.PI * 2);
+          ctx.fill();
+        });
+      }
+    });
+    measurements.forEach((m) => {
+      const mColor = m.color || '#ffb020';
+      ctx.strokeStyle = mColor;
+      ctx.lineWidth = 2;
+      ctx.shadowColor = mColor;
+      ctx.shadowBlur = 4;
+      ctx.beginPath();
+      ctx.moveTo(m.x1, m.y1);
+      ctx.lineTo(m.x2, m.y2);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.font = '12px "Share Tech Mono", monospace';
+      ctx.fillStyle = mColor;
+      ctx.fillText(formatDistance(m.distanceM), (m.x1 + m.x2) / 2 + 6, (m.y1 + m.y2) / 2 - 6);
+      // Maniglie agli estremi: visibili solo in modalità Misura, trascinabili
+      // per aggiustare la linea senza doverla cancellare e ridisegnare.
+      if (mode === 'measure') {
+        ctx.fillStyle = mColor;
+        [[m.x1, m.y1], [m.x2, m.y2]].forEach(([hx, hy]) => {
+          ctx.beginPath();
+          ctx.arc(hx, hy, HANDLE_R, 0, Math.PI * 2);
+          ctx.fill();
+        });
+      }
+    });
+  }
+
+  // ---------- Chiamate server per le annotazioni (create/update/delete) ----------
+  async function createAnnotationServer(coords, color, label, notes) {
+    const res = await fetch('api/annotations.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ study_id: CFG.studyId, capture_id: CFG.captureId, target_image: TARGET_KEY, shape_type: 'rect', coords, color, label, notes }),
+    });
+    const data = await res.json();
+    return data.id;
+  }
+  async function updateAnnotationServer(id, coords, label, notes, color) {
+    // color: passalo solo quando vuoi davvero cambiarlo (es. ricolorazione).
+    // Omesso (undefined), il PUT lato server lascia il colore invariato —
+    // così spostamento/ridimensionamento/modifica testo non lo alterano mai
+    // per sbaglio.
+    const body = { id, coords, label, notes };
+    if (color !== undefined) body.color = color;
+    await fetch('api/annotations.php', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  }
+  async function deleteAnnotationServer(id) {
+    await fetch('api/annotations.php?id=' + id, { method: 'DELETE' });
+  }
+
+  async function removeAnnotation(a) {
+    if (!confirm('Eliminare questa annotazione?')) return;
+    await deleteAnnotationServer(a.id);
+    const idx = annotations.indexOf(a);
+    if (idx !== -1) annotations.splice(idx, 1);
+    redrawAnnotations();
+    renderAnnotationList();
+    pushUndo(async () => {
+      a.id = await createAnnotationServer(a.coords, a.color, a.label, a.notes);
+      annotations.push(a);
+      redrawAnnotations();
+      renderAnnotationList();
+    });
+  }
+
+  async function editAnnotationText(a) {
+    const newLabel = prompt('Etichetta annotazione:', a.label || '');
+    if (newLabel === null) return;
+    const newNotes = prompt('Note (opzionale):', a.notes || '') ?? a.notes;
+    const prevLabel = a.label, prevNotes = a.notes;
+    await updateAnnotationServer(a.id, a.coords, newLabel, newNotes);
+    a.label = newLabel;
+    a.notes = newNotes;
+    redrawAnnotations();
+    renderAnnotationList();
+    pushUndo(async () => {
+      await updateAnnotationServer(a.id, a.coords, prevLabel, prevNotes);
+      a.label = prevLabel;
+      a.notes = prevNotes;
+      redrawAnnotations();
+      renderAnnotationList();
+    });
+  }
+
+  async function recolorAnnotation(a, newColor) {
+    const prevColor = a.color;
+    if (newColor === prevColor) return;
+    await updateAnnotationServer(a.id, a.coords, a.label, a.notes, newColor);
+    a.color = newColor;
+    redrawAnnotations();
+    pushUndo(async () => {
+      await updateAnnotationServer(a.id, a.coords, a.label, a.notes, prevColor);
+      a.color = prevColor;
+      redrawAnnotations();
+      renderAnnotationList();
     });
   }
 
@@ -443,16 +639,30 @@
       right.style.display = 'flex';
       right.style.alignItems = 'center';
       right.style.gap = '8px';
-      const dot = document.createElement('span');
-      dot.style.color = a.color || '#00fff2';
-      dot.textContent = '■';
+      const dot = document.createElement('input');
+      dot.type = 'color';
+      dot.value = a.color || '#00fff2';
+      dot.title = 'Cambia il colore di questa annotazione';
+      dot.style.width = '24px';
+      dot.style.height = '24px';
+      dot.style.padding = '0';
+      dot.style.border = 'none';
+      dot.style.background = 'none';
+      dot.addEventListener('input', () => recolorAnnotation(a, dot.value));
+      const edit = document.createElement('button');
+      edit.type = 'button';
+      edit.className = 'btn btn-sm';
+      edit.textContent = '✎';
+      edit.title = 'Modifica etichetta/note (per spostarla o ridimensionarla, trascina le sue maniglie in modalità Annota)';
+      edit.addEventListener('click', () => editAnnotationText(a));
       const del = document.createElement('button');
       del.type = 'button';
       del.className = 'btn btn-sm btn-danger';
       del.textContent = '✕';
       del.title = 'Elimina annotazione';
-      del.addEventListener('click', () => deleteEntity('annotation', a.id, 'analyze_capture.php?id=' + CFG.captureId, 'Eliminare questa annotazione?'));
+      del.addEventListener('click', () => removeAnnotation(a));
       right.appendChild(dot);
+      right.appendChild(edit);
       right.appendChild(del);
       div.appendChild(left);
       div.appendChild(right);
@@ -467,8 +677,221 @@
     return [(e.clientX - rect.left) * scaleX, (e.clientY - rect.top) * scaleY];
   }
 
+  // ---------- Scala e misurazione distanze ----------
+  // meters-per-pixel calcolato separatamente per X e Y (non assunto uguale):
+  // la bbox scaricata potrebbe avere un rapporto d'aspetto diverso da
+  // larghezza/altezza dell'immagine richiesta, quindi i "pixel" non sono
+  // necessariamente quadrati sul terreno. (mppX/mppY/scaleSource/measurements
+  // dichiarati più in alto, vedi commento vicino a "let annotations".)
+  function haversineMeters(lat1, lon1, lat2, lon2) {
+    const R = 6371000;
+    const toRad = (d) => (d * Math.PI) / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+    return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  function computeGeoScale() {
+    if (!CFG.bbox || !imgLeft.naturalWidth) return;
+    const [minLon, minLat, maxLon, maxLat] = CFG.bbox;
+    const centerLat = (minLat + maxLat) / 2;
+    const centerLon = (minLon + maxLon) / 2;
+    const widthM = haversineMeters(centerLat, minLon, centerLat, maxLon);
+    const heightM = haversineMeters(minLat, centerLon, maxLat, centerLon);
+    mppX = widthM / imgLeft.naturalWidth;
+    mppY = heightM / imgLeft.naturalHeight;
+    scaleSource = 'geo';
+    updateScaleStatus();
+  }
+
+  function updateScaleStatus() {
+    const el = $('#an-scale-status');
+    if (!el) return;
+    if (scaleSource === 'geo') {
+      el.textContent = `Scala da coordinate geografiche: ~${mppX.toFixed(2)} × ${mppY.toFixed(2)} m/pixel.`;
+    } else if (scaleSource === 'manual') {
+      el.textContent = `Scala da calibrazione manuale: ~${mppX.toFixed(2)} m/pixel (uniforme). Ricarica la pagina per ricalibrare.`;
+    } else {
+      el.textContent = 'Nessuna scala geografica nota per questa ripresa: la prima misurazione chiederà una lunghezza reale nota per calibrare la scala.';
+    }
+  }
+  updateScaleStatus();
+
+  function formatDistance(m) {
+    return m >= 1000 ? (m / 1000).toFixed(2) + ' km' : m.toFixed(1) + ' m';
+  }
+
+  function renderMeasurementList() {
+    const container = $('#an-measurement-list');
+    if (!measurements.length) {
+      container.innerHTML = '<div class="hint">Nessuna misurazione. Passa a modalità Misura e trascina sulla copia di lavoro.</div>';
+      return;
+    }
+    container.innerHTML = '';
+    measurements.forEach((m, i) => {
+      const div = document.createElement('div');
+      div.className = 'region-item';
+      const left = document.createElement('span');
+      left.textContent = `#${i + 1} — ${formatDistance(m.distanceM)}`;
+      const right = document.createElement('span');
+      right.style.display = 'flex';
+      right.style.alignItems = 'center';
+      right.style.gap = '8px';
+      const swatch = document.createElement('input');
+      swatch.type = 'color';
+      swatch.value = m.color || '#ffb020';
+      swatch.title = 'Cambia il colore di questa misurazione';
+      swatch.style.width = '24px';
+      swatch.style.height = '24px';
+      swatch.style.padding = '0';
+      swatch.style.border = 'none';
+      swatch.style.background = 'none';
+      swatch.addEventListener('input', () => {
+        const prevColor = m.color;
+        m.color = swatch.value;
+        redrawAnnotations();
+        pushUndo(() => {
+          m.color = prevColor;
+          redrawAnnotations();
+          renderMeasurementList();
+        });
+      });
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'btn btn-sm btn-danger';
+      del.textContent = '✕';
+      del.title = 'Rimuovi misurazione';
+      del.addEventListener('click', () => {
+        measurements.splice(i, 1);
+        redrawAnnotations();
+        renderMeasurementList();
+        pushUndo(() => {
+          measurements.push(m);
+          redrawAnnotations();
+          renderMeasurementList();
+        });
+      });
+      right.appendChild(swatch);
+      right.appendChild(del);
+      div.appendChild(left);
+      div.appendChild(right);
+      container.appendChild(div);
+    });
+  }
+
+  $('#an-measure-clear-btn').addEventListener('click', () => {
+    measurements.length = 0;
+    redrawAnnotations();
+    renderMeasurementList();
+  });
+
+  function pixelDistance(x1, y1, x2, y2) {
+    // Converte lo spostamento in pixel canvas in pixel dell'immagine
+    // originale (naturalWidth/Height), poi in metri reali per asse.
+    const natW = imgLeft.naturalWidth, natH = imgLeft.naturalHeight;
+    const dxPx = ((x2 - x1) / canvas.width) * natW;
+    const dyPx = ((y2 - y1) / canvas.height) * natH;
+    if (mppX && mppY) {
+      const dxM = dxPx * mppX, dyM = dyPx * mppY;
+      return { distanceM: Math.sqrt(dxM * dxM + dyM * dyM), dxPx, dyPx };
+    }
+    return { distanceM: null, dxPx, dyPx };
+  }
+
+  // ---------- Ritaglio per ricerca inversa per immagini ----------
+  let lastCropBlobUrl = null;
+
+  function renderCropFromSelection(x, y, w, h) {
+    const natW = imgRight.naturalWidth, natH = imgRight.naturalHeight;
+    const sx = (x / canvas.width) * natW;
+    const sy = (y / canvas.height) * natH;
+    const sw = (w / canvas.width) * natW;
+    const sh = (h / canvas.height) * natH;
+
+    const cropCanvas = document.createElement('canvas');
+    cropCanvas.width = Math.max(1, Math.round(sw));
+    cropCanvas.height = Math.max(1, Math.round(sh));
+    const ctx = cropCanvas.getContext('2d');
+    // Ritaglia dalla copia di lavoro così com'è mostrata (base server-side +
+    // regolazioni live "cotte" dentro, stessa logica di renderAdjustedCanvas
+    // ma limitata al solo rettangolo selezionato).
+    ctx.drawImage(imgRight, sx, sy, sw, sh, 0, 0, cropCanvas.width, cropCanvas.height);
+    applyPixelAdjustments(ctx, cropCanvas.width, cropCanvas.height);
+
+    cropCanvas.toBlob((blob) => {
+      if (!blob) return;
+      if (lastCropBlobUrl) URL.revokeObjectURL(lastCropBlobUrl);
+      lastCropBlobUrl = URL.createObjectURL(blob);
+      $('#an-crop-preview').src = lastCropBlobUrl;
+      $('#an-crop-result').style.display = '';
+    }, 'image/png');
+  }
+
+  $('#an-crop-download-btn').addEventListener('click', () => {
+    if (!lastCropBlobUrl) return;
+    const a = document.createElement('a');
+    a.href = lastCropBlobUrl;
+    a.download = 'frammento_ripresa' + CFG.captureId + '.png';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  });
+  // Apre solo la pagina del motore: l'invio del file resta sempre un gesto
+  // manuale ed esplicito dell'analista (trascina il frammento appena
+  // scaricato), mai automatico — importante quando si maneggiano riprese
+  // potenzialmente sensibili.
+  $('#an-crop-open-lens').addEventListener('click', () => window.open('https://lens.google.com/', '_blank'));
+  $('#an-crop-open-yandex').addEventListener('click', () => window.open('https://yandex.com/images/', '_blank'));
+  $('#an-crop-open-bing').addEventListener('click', () => window.open('https://www.bing.com/visualsearch', '_blank'));
+  $('#an-crop-open-tineye').addEventListener('click', () => window.open('https://tineye.com/', '_blank'));
+
+  // ---------- Hit-test delle maniglie (angoli annotazioni, estremi misure) ----------
+  const HANDLE_HIT_R = HANDLE_R * 3; // area cliccabile più larga del solo disegno, più comoda al dito/mouse
+  const OPPOSITE_CORNER = { tl: 'br', tr: 'bl', bl: 'tr', br: 'tl' };
+
+  function cornerPoint(rx, ry, rw, rh, name) {
+    if (name === 'tl') return [rx, ry];
+    if (name === 'tr') return [rx + rw, ry];
+    if (name === 'bl') return [rx, ry + rh];
+    return [rx + rw, ry + rh];
+  }
+
+  function hitAnnotationHandle(x, y) {
+    for (const a of annotations) {
+      const c = a.coords;
+      const rx = c.x * canvas.width, ry = c.y * canvas.height, rw = c.w * canvas.width, rh = c.h * canvas.height;
+      for (const name of ['tl', 'tr', 'bl', 'br']) {
+        const [hx, hy] = cornerPoint(rx, ry, rw, rh, name);
+        if (Math.hypot(x - hx, y - hy) <= HANDLE_HIT_R) {
+          const [fx, fy] = cornerPoint(rx, ry, rw, rh, OPPOSITE_CORNER[name]);
+          return { ann: a, fixedX: fx, fixedY: fy };
+        }
+      }
+    }
+    return null;
+  }
+
+  function hitAnnotationBody(x, y) {
+    for (const a of annotations) {
+      const c = a.coords;
+      const rx = c.x * canvas.width, ry = c.y * canvas.height, rw = c.w * canvas.width, rh = c.h * canvas.height;
+      if (x >= rx && x <= rx + rw && y >= ry && y <= ry + rh) return a;
+    }
+    return null;
+  }
+
+  function hitMeasureHandle(x, y) {
+    for (const m of measurements) {
+      if (Math.hypot(x - m.x1, y - m.y1) <= HANDLE_HIT_R) return { m, end: 1 };
+      if (Math.hypot(x - m.x2, y - m.y2) <= HANDLE_HIT_R) return { m, end: 2 };
+    }
+    return null;
+  }
+
   (function setupDrawing() {
-    let drawing = false, startX = 0, startY = 0;
+    let startX = 0, startY = 0;
+    let dragState = null; // vedi handleStart per le forme possibili
 
     function previewRect(x, y) {
       redrawAnnotations();
@@ -480,73 +903,218 @@
       ctx.setLineDash([]);
     }
 
-    async function finishDrawing(rawX, rawY) {
-      const endX = Math.max(0, Math.min(canvas.width, rawX));
-      const endY = Math.max(0, Math.min(canvas.height, rawY));
-      const x = Math.min(startX, endX), y = Math.min(startY, endY);
-      const w = Math.abs(endX - startX), h = Math.abs(endY - startY);
+    function previewLine(x1, y1, x2, y2) {
+      redrawAnnotations();
+      const ctx = canvas.getContext('2d');
+      ctx.strokeStyle = currentMeasureColor;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      const { distanceM } = pixelDistance(x1, y1, x2, y2);
+      if (distanceM !== null) {
+        ctx.font = '12px "Share Tech Mono", monospace';
+        ctx.fillStyle = currentMeasureColor;
+        ctx.fillText(formatDistance(distanceM), (x1 + x2) / 2 + 6, (y1 + y2) / 2 - 6);
+      }
+    }
+
+    async function finishAnnotate(x, y) {
+      const w = Math.abs(x - startX), h = Math.abs(y - startY);
+      const rx = Math.min(startX, x), ry = Math.min(startY, y);
       if (w < 6 || h < 6) { redrawAnnotations(); return; }
 
       const label = prompt('Etichetta annotazione (es. "Nuova struttura"):', '');
       if (label === null) { redrawAnnotations(); return; }
       const notes = prompt('Note (opzionale):', '') || '';
 
-      const coords = { x: x / canvas.width, y: y / canvas.height, w: w / canvas.width, h: h / canvas.height };
-      const res = await fetch('api/annotations.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          study_id: CFG.studyId,
-          capture_id: CFG.captureId,
-          target_image: TARGET_KEY,
-          shape_type: 'rect',
-          coords,
-          color: '#00fff2',
-          label,
-          notes,
-        }),
-      });
-      const data = await res.json();
-      annotations.push({ id: data.id, coords, color: '#00fff2', label, notes });
+      const coords = { x: rx / canvas.width, y: ry / canvas.height, w: w / canvas.width, h: h / canvas.height };
+      const id = await createAnnotationServer(coords, currentAnnotateColor, label, notes);
+      const a = { id, coords, color: currentAnnotateColor, label, notes };
+      annotations.push(a);
       redrawAnnotations();
       renderAnnotationList();
+      pushUndo(async () => {
+        await deleteAnnotationServer(a.id);
+        const idx = annotations.indexOf(a);
+        if (idx !== -1) annotations.splice(idx, 1);
+        redrawAnnotations();
+        renderAnnotationList();
+      });
+    }
+
+    function finishMeasure(x, y) {
+      const pixelLen = Math.hypot(x - startX, y - startY);
+      if (pixelLen < 6) { redrawAnnotations(); return; }
+
+      if (!mppX || !mppY) {
+        const known = prompt('Nessuna scala geografica nota per questa ripresa. Indica la lunghezza reale (in metri) di questa linea per calibrare la scala:', '');
+        const knownM = parseFloat(known);
+        if (!known || isNaN(knownM) || knownM <= 0) { redrawAnnotations(); return; }
+        const { dxPx, dyPx } = pixelDistance(startX, startY, x, y);
+        const pixelLenNat = Math.hypot(dxPx, dyPx);
+        mppX = mppY = knownM / pixelLenNat;
+        scaleSource = 'manual';
+        updateScaleStatus();
+      }
+
+      const { distanceM } = pixelDistance(startX, startY, x, y);
+      const m = { x1: startX, y1: startY, x2: x, y2: y, distanceM, color: currentMeasureColor };
+      measurements.push(m);
+      redrawAnnotations();
+      renderMeasurementList();
+      pushUndo(() => {
+        const idx = measurements.indexOf(m);
+        if (idx !== -1) measurements.splice(idx, 1);
+        redrawAnnotations();
+        renderMeasurementList();
+      });
+    }
+
+    function finishCrop(x, y) {
+      const w = Math.abs(x - startX), h = Math.abs(y - startY);
+      const rx = Math.min(startX, x), ry = Math.min(startY, y);
+      redrawAnnotations();
+      if (w < 10 || h < 10) return;
+      renderCropFromSelection(rx, ry, w, h);
+    }
+
+    function handleStart(x, y) {
+      if (mode === 'annotate') {
+        const handleHit = hitAnnotationHandle(x, y);
+        if (handleHit) {
+          dragState = { type: 'resize', ann: handleHit.ann, fixedX: handleHit.fixedX, fixedY: handleHit.fixedY, prevCoords: { ...handleHit.ann.coords } };
+          return;
+        }
+        const bodyHit = hitAnnotationBody(x, y);
+        if (bodyHit) {
+          const c = bodyHit.coords;
+          dragState = {
+            type: 'move', ann: bodyHit, prevCoords: { ...c },
+            grabDX: x - c.x * canvas.width, grabDY: y - c.y * canvas.height,
+          };
+          return;
+        }
+        dragState = { type: 'draw-annotate' };
+        startX = x; startY = y;
+      } else if (mode === 'measure') {
+        const handleHit = hitMeasureHandle(x, y);
+        if (handleHit) {
+          dragState = { type: 'drag-endpoint', m: handleHit.m, end: handleHit.end, prev: { x1: handleHit.m.x1, y1: handleHit.m.y1, x2: handleHit.m.x2, y2: handleHit.m.y2, distanceM: handleHit.m.distanceM } };
+          return;
+        }
+        dragState = { type: 'draw-measure' };
+        startX = x; startY = y;
+      } else if (mode === 'crop') {
+        dragState = { type: 'draw-crop' };
+        startX = x; startY = y;
+      } else {
+        dragState = null;
+      }
+    }
+
+    function handleMove(x, y) {
+      if (!dragState) return;
+      if (dragState.type === 'draw-annotate' || dragState.type === 'draw-crop') {
+        previewRect(x, y);
+      } else if (dragState.type === 'draw-measure') {
+        previewLine(startX, startY, x, y);
+      } else if (dragState.type === 'resize') {
+        const rx = Math.min(dragState.fixedX, x), ry = Math.min(dragState.fixedY, y);
+        const rw = Math.abs(x - dragState.fixedX), rh = Math.abs(y - dragState.fixedY);
+        dragState.ann.coords = { x: rx / canvas.width, y: ry / canvas.height, w: rw / canvas.width, h: rh / canvas.height };
+        redrawAnnotations();
+      } else if (dragState.type === 'move') {
+        const c = dragState.prevCoords;
+        const newRx = x - dragState.grabDX, newRy = y - dragState.grabDY;
+        dragState.ann.coords = { x: newRx / canvas.width, y: newRy / canvas.height, w: c.w, h: c.h };
+        redrawAnnotations();
+      } else if (dragState.type === 'drag-endpoint') {
+        const m = dragState.m;
+        if (dragState.end === 1) { m.x1 = x; m.y1 = y; } else { m.x2 = x; m.y2 = y; }
+        const { distanceM } = pixelDistance(m.x1, m.y1, m.x2, m.y2);
+        m.distanceM = distanceM;
+        redrawAnnotations();
+      }
+    }
+
+    async function handleEnd(x, y) {
+      if (!dragState) return;
+      const state = dragState;
+      dragState = null;
+
+      if (state.type === 'draw-annotate') { await finishAnnotate(x, y); return; }
+      if (state.type === 'draw-measure') { finishMeasure(x, y); return; }
+      if (state.type === 'draw-crop') { finishCrop(x, y); return; }
+
+      if (state.type === 'resize' || state.type === 'move') {
+        const a = state.ann;
+        const newCoords = { ...a.coords };
+        const prevCoords = state.prevCoords;
+        await updateAnnotationServer(a.id, newCoords, a.label, a.notes);
+        redrawAnnotations();
+        renderAnnotationList();
+        pushUndo(async () => {
+          a.coords = prevCoords;
+          await updateAnnotationServer(a.id, prevCoords, a.label, a.notes);
+          redrawAnnotations();
+          renderAnnotationList();
+        });
+      } else if (state.type === 'drag-endpoint') {
+        const m = state.m;
+        const newState = { x1: m.x1, y1: m.y1, x2: m.x2, y2: m.y2, distanceM: m.distanceM };
+        renderMeasurementList();
+        pushUndo(() => {
+          Object.assign(m, state.prev);
+          redrawAnnotations();
+          renderMeasurementList();
+        });
+        void newState; // valore già scritto in m durante il trascinamento
+      } else {
+        redrawAnnotations();
+      }
+    }
+
+    function canInteract() {
+      return mode === 'annotate' || mode === 'measure' || mode === 'crop';
     }
 
     canvas.addEventListener('mousedown', (e) => {
-      if (mode !== 'annotate') return;
+      if (!canInteract()) return;
       const [x, y] = toCanvasCoords(e);
-      startX = x; startY = y; drawing = true;
+      handleStart(x, y);
     });
     canvas.addEventListener('mousemove', (e) => {
-      if (!drawing) return;
+      if (!dragState) return;
       const [x, y] = toCanvasCoords(e);
-      previewRect(x, y);
+      handleMove(x, y);
     });
     window.addEventListener('mouseup', (e) => {
-      if (!drawing) return;
-      drawing = false;
+      if (!dragState) return;
       const [x, y] = toCanvasCoords(e);
-      finishDrawing(x, y);
+      handleEnd(x, y);
     });
 
     canvas.addEventListener('touchstart', (e) => {
-      if (mode !== 'annotate' || e.touches.length !== 1) return;
+      if (!canInteract() || e.touches.length !== 1) return;
       e.preventDefault();
       const [x, y] = toCanvasCoords(e.touches[0]);
-      startX = x; startY = y; drawing = true;
+      handleStart(x, y);
     }, { passive: false });
     canvas.addEventListener('touchmove', (e) => {
-      if (!drawing || e.touches.length !== 1) return;
+      if (!dragState || e.touches.length !== 1) return;
       e.preventDefault();
       const [x, y] = toCanvasCoords(e.touches[0]);
-      previewRect(x, y);
+      handleMove(x, y);
     }, { passive: false });
     canvas.addEventListener('touchend', (e) => {
-      if (!drawing) return;
-      drawing = false;
+      if (!dragState) return;
       const t = e.changedTouches[0];
       const [x, y] = toCanvasCoords(t);
-      finishDrawing(x, y);
+      handleEnd(x, y);
     });
   })();
 

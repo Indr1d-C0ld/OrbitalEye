@@ -32,6 +32,23 @@ if ($method === 'POST') {
     respond_json(['id' => $id]);
 }
 
+if ($method === 'PUT') {
+    $body = json_body();
+    $id = (int) ($body['id'] ?? 0);
+    $coords = $body['coords'] ?? null;
+    if (!$id || !is_array($coords)) {
+        respond_json(['error' => 'Dati mancanti'], 400);
+    }
+    Annotation::update(
+        $id,
+        $coords,
+        trim($body['label'] ?? '') ?: null,
+        trim($body['notes'] ?? '') ?: null,
+        isset($body['color']) ? (string) $body['color'] : null
+    );
+    respond_json(['ok' => true]);
+}
+
 if ($method === 'DELETE') {
     parse_str(file_get_contents('php://input'), $params);
     $id = (int) ($_GET['id'] ?? $params['id'] ?? 0);

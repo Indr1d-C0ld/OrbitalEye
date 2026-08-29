@@ -14,6 +14,18 @@ if (!$study) {
     exit('Studio non trovato');
 }
 
+// Bbox geografica per il calcolo della scala (metri/pixel): preferisce
+// quella specifica della ripresa (Sentinel Hub/Esri la salvano in meta_json
+// al momento del download), altrimenti ricade su quella dello studio se
+// presente. Assente per caricamenti manuali o riprese scaricate prima che
+// il download salvasse la bbox: in quel caso lo strumento di misura chiede
+// una calibrazione manuale invece di calcolare la scala automaticamente.
+$captureMeta = json_decode($capture['meta_json'] ?? '', true);
+$measureBbox = (is_array($captureMeta) && !empty($captureMeta['bbox'])) ? $captureMeta['bbox'] : null;
+if (!$measureBbox && !empty($study['bbox_json'])) {
+    $measureBbox = json_decode($study['bbox_json'], true);
+}
+
 $pageTitle = 'Analisi — ' . ($capture['label'] ?: ('Ripresa #' . $capture['id']));
 $activeNav = 'dashboard';
 require __DIR__ . '/partials/head.php';
@@ -36,15 +48,27 @@ require __DIR__ . '/partials/nav.php';
     <div class="mode-toggle" id="an-mode-toggle">
       <button type="button" class="mode-btn" data-mode="pan" title="Trascina per spostare la vista (su entrambi i riquadri, sincronizzati)">✋ Sposta</button>
       <button type="button" class="mode-btn active" data-mode="annotate" title="Trascina sulla copia di lavoro per disegnare un'annotazione">✎ Annota</button>
+      <button type="button" class="mode-btn" data-mode="measure" title="Trascina sulla copia di lavoro per misurare una distanza reale sul terreno">📏 Misura</button>
+      <button type="button" class="mode-btn" data-mode="crop" title="Trascina sulla copia di lavoro per ritagliare un frammento da usare in una ricerca inversa per immagini">🔍 Ritaglia</button>
     </div>
     <div class="zoom-controls">
+      <button type="button" class="btn btn-sm" id="an-undo-btn" disabled title="Annulla l'ultima azione (annotazione, misurazione o filtro avanzato). Scorciatoia: Ctrl+Z">↶ Annulla</button>
       <button type="button" class="btn btn-sm" id="an-zoom-out" title="Riduci zoom">−</button>
       <span class="zoom-level" id="an-zoom-level">100%</span>
       <button type="button" class="btn btn-sm" id="an-zoom-in" title="Aumenta zoom">+</button>
       <button type="button" class="btn btn-sm" id="an-zoom-reset" title="Ripristina zoom e posizione">Reset</button>
     </div>
   </div>
-  <div class="hint" style="margin-bottom:10px;">Rotellina del mouse per zoomare (i due riquadri restano sincronizzati sulla stessa area, per confrontare a colpo d'occhio originale e copia di lavoro). Modalità <strong>Sposta</strong>: trascina per spostarti quando sei ingrandito. Modalità <strong>Annota</strong>: trascina sulla copia di lavoro (destra) per disegnare un'annotazione.</div>
+  <div class="hint" style="margin-bottom:10px;">Rotellina del mouse per zoomare (i due riquadri restano sincronizzati sulla stessa area, per confrontare a colpo d'occhio originale e copia di lavoro). Modalità <strong>Sposta</strong>: trascina per spostarti quando sei ingrandito. Modalità <strong>Annota</strong>: trascina per disegnarne una nuova, trascina un angolo o l'interno di una già esistente per ridimensionarla/spostarla. Modalità <strong>Misura</strong>: trascina per disegnarne una nuova, trascina un estremo di una già esistente per aggiustarla. Modalità <strong>Ritaglia</strong>: trascina per selezionare un frammento da usare in una ricerca inversa per immagini. <strong>↶ Annulla</strong> (o Ctrl+Z) disfa l'ultima azione.</div>
+  <div class="tag-row" style="margin-bottom:10px; align-items:center;">
+    <label style="display:flex; align-items:center; gap:6px; margin:0; font-size:12px; color:var(--text-secondary);">
+      Colore annotazioni <input type="color" id="an-annotate-color" value="#00fff2" title="Colore delle prossime annotazioni disegnate (quelle già esistenti si ricolorano dalla lista Annotazioni più sotto)">
+    </label>
+    <label style="display:flex; align-items:center; gap:6px; margin:0; font-size:12px; color:var(--text-secondary);">
+      Colore misurazioni <input type="color" id="an-measure-color" value="#ffb020" title="Colore delle prossime misurazioni disegnate (quelle già esistenti si ricolorano dalla lista Misurazioni più sotto)">
+    </label>
+    <span class="hint" style="margin:0;">Utile per far risaltare meglio i segni a seconda dello sfondo della ripresa.</span>
+  </div>
 
   <div class="grid grid-2">
     <div>
@@ -142,11 +166,51 @@ require __DIR__ . '/partials/nav.php';
   <div id="an-annotation-list"><div class="hint">Nessuna annotazione su questa ripresa.</div></div>
 </div>
 
+<div class="panel">
+  <h2>Misurazioni <span class="info-tip" tabindex="0" data-tip="Stima calcolata dalle coordinate geografiche dell'area scaricata (o da una calibrazione manuale se non disponibili): assume una ripresa verticale (nadir) senza rilievo significativo — per oggetti alti o riprese oblique, la misura reale sul terreno può differire da quella apparente nell'immagine. Le misurazioni non vengono salvate: servono per la lettura immediata durante l'analisi.">?</span></h2>
+  <div class="hint" id="an-scale-status" style="margin-bottom:8px;"></div>
+  <div id="an-measurement-list"><div class="hint">Nessuna misurazione. Passa a modalità Misura e trascina sulla copia di lavoro.</div></div>
+  <div class="tag-row" style="margin-top:6px;">
+    <button type="button" class="btn btn-sm" id="an-measure-clear-btn">🗑 Cancella tutte</button>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>Ricerca inversa per immagini <span class="info-tip" tabindex="0" data-tip="Nessun grande motore offre un modo pulito e diretto per automatizzare l'invio a un servizio esterno: dopo il ritaglio, scarica il frammento e trascinalo tu manualmente nella pagina del motore che apri — così l'invio a terzi resta sempre una tua scelta esplicita, mai automatica, importante quando si maneggiano riprese potenzialmente sensibili.">?</span></h2>
+  <div class="hint" style="margin-bottom:10px;">Passa a modalità Ritaglia e trascina sulla copia di lavoro per selezionare un frammento.</div>
+  <div id="an-crop-result" style="display:none;">
+    <div class="grid grid-2">
+      <div>
+        <h3>Frammento ritagliato</h3>
+        <div class="viewer-stage"><img id="an-crop-preview" style="width:100%; display:block;" alt=""></div>
+      </div>
+      <div>
+        <h3>Passi</h3>
+        <ol style="color:var(--text-secondary); font-size:13px; padding-left:18px; line-height:1.7;">
+          <li>Scarica il frammento.</li>
+          <li>Apri il motore che preferisci (nuova scheda).</li>
+          <li>Trascina lì il file appena scaricato.</li>
+        </ol>
+        <div class="tag-row">
+          <button type="button" class="btn btn-primary btn-sm" id="an-crop-download-btn">⬇ Scarica frammento</button>
+        </div>
+        <div class="tag-row" style="margin-top:8px;">
+          <button type="button" class="btn btn-sm" id="an-crop-open-lens">Google Lens ↗</button>
+          <button type="button" class="btn btn-sm" id="an-crop-open-yandex">Yandex Images ↗</button>
+          <button type="button" class="btn btn-sm" id="an-crop-open-bing">Bing Visual Search ↗</button>
+          <button type="button" class="btn btn-sm" id="an-crop-open-tineye">TinEye ↗</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 window.ORBITALEYE_ANALYZE = {
   studyId: <?= (int)$study['id'] ?>,
   captureId: <?= (int)$capture['id'] ?>,
   imageUrl: <?= json_encode(storage_url($capture['relative_path'])) ?>,
+  bbox: <?= $measureBbox ? json_encode(array_map('floatval', $measureBbox)) : 'null' ?>,
 };
 </script>
 <script src="assets/js/analyze.js?v=<?= @filemtime(__DIR__ . '/assets/js/analyze.js') ?: time() ?>"></script>
