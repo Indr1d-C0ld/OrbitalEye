@@ -99,7 +99,17 @@ if ($source === 'sentinelhub') {
         $result['relative_path'],
         $result['width'],
         $result['height'],
-        ['bbox' => $bbox, 'source' => 'esri-world-imagery', 'fetched_at' => date('c')]
+        [
+            // $result['bbox'] è la bbox EFFETTIVAMENTE coperta dall'immagine
+            // (il servizio Esri, se l'aspect ratio richiesto non combacia,
+            // espande la bbox per evitare distorsioni: senza usare quella
+            // corretta qui, lo strumento di misura calcolerebbe una scala
+            // sbagliata — anche di un fattore 2× o più su bbox molto
+            // rettangolari). Fallback a $bbox solo per compatibilità con
+            // un servizio Python non ancora aggiornato.
+            'bbox' => $result['bbox'] ?? $bbox,
+            'source' => 'esri-world-imagery', 'fetched_at' => date('c'),
+        ]
     );
 }
 

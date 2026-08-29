@@ -4,6 +4,38 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-08-29 (3) — Fix: scala errata sulle riprese Esri con bbox non quadrata
+
+L'operazione "export" di ArcGIS MapServer (World Imagery) espande
+automaticamente la bbox richiesta quando il suo rapporto larghezza/altezza
+in gradi non combacia con quello dell'immagine richiesta (di norma
+quadrata), per evitare di restituire un'immagine distorta — ma la
+piattaforma continuava a salvare la bbox *originale* come riferimento
+geografico invece di quella *effettivamente coperta*. Su bbox molto
+rettangolari l'errore di scala risultante nello strumento di misura poteva
+arrivare a un fattore 2× o più (verificato: 0.56 m/pixel calcolati contro
+1.37 m/pixel reali su un caso con rapporto d'aspetto 2.43). Sentinel Hub
+non è affetto (la Process API campiona esattamente la bbox richiesta).
+
+- **[python-service/app/core/esri_client.py](python-service/app/core/esri_client.py)**
+  Nuova `_adjust_bbox_to_aspect()`: pre-adatta la bbox richiesta esattamente
+  con la stessa logica di ArcGIS (confronto diretto lon/lat vs width/height,
+  senza conversione a metri) *prima* di inviarla — ArcGIS non deve più
+  modificarla. `fetch_world_imagery()` ora ritorna una tupla
+  `(bytes, bbox_effettiva)` invece del solo `bytes`.
+
+- **[python-service/app/routers/fetch.py](python-service/app/routers/fetch.py)**
+  `/fetch/esri` include la bbox effettiva (non quella richiesta) nella
+  risposta.
+
+- **[webapp/public/api/fetch_capture.php](webapp/public/api/fetch_capture.php)**
+  Salva `$result['bbox']` (quella effettiva restituita dal servizio) in
+  `meta_json`, non più la bbox originale del form.
+
+Corretta retroattivamente anche la ripresa Esri già presente in produzione,
+ricalcolando la bbox corretta dai dati già noti (width/height/bbox
+originale), senza doverla riscaricare.
+
 ## 2026-08-29 (2) — Sovrapposizione di un'immagine propria + dimensione maniglie regolabile
 
 - **[webapp/public/analyze_capture.php](webapp/public/analyze_capture.php)**

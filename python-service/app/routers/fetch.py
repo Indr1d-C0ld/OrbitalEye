@@ -86,7 +86,7 @@ class EsriFetchRequest(BaseModel):
 @router.post("/esri")
 def fetch_esri(req: EsriFetchRequest):
     try:
-        jpg_bytes = fetch_world_imagery(bbox=req.bbox, width=req.width, height=req.height)
+        jpg_bytes, adjusted_bbox = fetch_world_imagery(bbox=req.bbox, width=req.width, height=req.height)
     except EsriError as e:
         raise HTTPException(status_code=502, detail=str(e))
 
@@ -100,7 +100,11 @@ def fetch_esri(req: EsriFetchRequest):
         "filename": filename,
         "relative_path": f"raw/{filename}",
         "source": "esri-world-imagery",
-        "bbox": req.bbox,
+        # bbox effettivamente coperta dall'immagine (può differire da quella
+        # richiesta se ArcGIS ha dovuto adattarne il rapporto d'aspetto —
+        # vedi _adjust_bbox_to_aspect in esri_client.py): è questa che va
+        # salvata come riferimento geografico della ripresa.
+        "bbox": adjusted_bbox,
         "fetched_at": datetime.utcnow().isoformat() + "Z",
         "width": req.width,
         "height": req.height,
