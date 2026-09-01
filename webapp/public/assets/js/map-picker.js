@@ -10,7 +10,20 @@
  *
  * initMapPicker(mapDivId, fields, toggles) ->
  *   fields:  { minLon, minLat, maxLon, maxLat }  id degli <input> da sincronizzare
- *   toggles: { draw, pan, mapView, satView }      id dei pulsanti di modalità/basemap
+ *   toggles: { draw, pan, mapView, satView,
+ *              rotation, rotationOut, rotationReset }  id dei pulsanti di
+ *              modalità/basemap e (opzionali) dello slider di rotazione
+ *              dell'area, della sua etichetta e del pulsante di reset
+ *
+ * Rotazione dell'area: i 4 campi lon/lat continuano a rappresentare il
+ * rettangolo "di base" così come disegnato (non ruotato) — è il contratto
+ * già usato da tutto il resto della piattaforma (validazione server,
+ * calcolo scala, ecc.) e non va toccato. La rotazione è un valore in più,
+ * puramente visuale qui sulla mappa (fa vedere all'utente esattamente quale
+ * area verrà ritagliata), inviato al server in un campo separato: è lì
+ * (fetch_capture.php + ImageRotateCrop.php) che viene effettivamente
+ * applicata scaricando un'area di raccolta più ampia e ritagliando poi la
+ * ripresa ruotata.
  */
 function initMapPicker(mapDivId, fields, toggles) {
   const mapDiv = document.getElementById(mapDivId);
@@ -32,13 +45,43 @@ function initMapPicker(mapDivId, fields, toggles) {
   let rectLayer = null;
   let drawing = false;
   let startLatLng = null;
-  let drawMode = true;
+  let drawMode = false;
+  let rotationDeg = 0;
 
   function fieldEl(key) { return document.getElementById(fields[key]); }
 
+  // Calcola i 4 angoli del rettangolo "di base" ruotati di angleDeg attorno
+  // al proprio centro, lavorando in coordinate schermo (proiezione Leaflet
+  // a uno zoom di riferimento) e non in lon/lat grezze: così la rotazione
+  // appare visivamente corretta a qualunque latitudine/zoom, esattamente
+  // come l'utente se l'aspetta trascinando lo slider. Convenzione: positivo
+  // = orario, stessa di rotate() CSS/canvas già usata per l'overlay in
+  // analyze.js (coerenza tra le rotazioni mostrate nella piattaforma).
+  function rotatedCorners(bounds, angleDeg) {
+    if (!angleDeg) return null;
+    const zoom = map.getZoom();
+    const nw = map.project(bounds.getNorthWest(), zoom);
+    const se = map.project(bounds.getSouthEast(), zoom);
+    const center = L.point((nw.x + se.x) / 2, (nw.y + se.y) / 2);
+    const rad = (angleDeg * Math.PI) / 180;
+    const rotatePoint = (p) => {
+      const dx = p.x - center.x, dy = p.y - center.y;
+      return L.point(
+        center.x + dx * Math.cos(rad) - dy * Math.sin(rad),
+        center.y + dx * Math.sin(rad) + dy * Math.cos(rad)
+      );
+    };
+    return [
+      L.point(nw.x, nw.y), L.point(se.x, nw.y), L.point(se.x, se.y), L.point(nw.x, se.y),
+    ].map((p) => map.unproject(rotatePoint(p), zoom));
+  }
+
   function paintRect(bounds) {
     if (rectLayer) map.removeLayer(rectLayer);
-    rectLayer = L.rectangle(bounds, { color: '#00fff2', weight: 2, fillOpacity: 0.08 }).addTo(map);
+    const corners = rotatedCorners(bounds, rotationDeg);
+    rectLayer = corners
+      ? L.polygon(corners, { color: '#00fff2', weight: 2, fillOpacity: 0.08 }).addTo(map)
+      : L.rectangle(bounds, { color: '#00fff2', weight: 2, fillOpacity: 0.08 }).addTo(map);
   }
 
   function boundsToFields(bounds) {
@@ -89,6 +132,34 @@ function initMapPicker(mapDivId, fields, toggles) {
   }
   if (mapViewBtn) mapViewBtn.addEventListener('click', () => setBasemap('osm'));
   if (satViewBtn) satViewBtn.addEventListener('click', () => setBasemap('sat'));
+
+  // Rotazione area (opzionale: solo se il chiamante ha passato gli id in
+  // toggles). Lo slider di rotazione ha il proprio attributo name="rotation"
+  // nell'HTML del form: study.js lo legge da FormData come gli altri campi,
+  // qui serve solo per ridisegnare l'anteprima quando cambia.
+  const rotationInput = toggles.rotation ? document.getElementById(toggles.rotation) : null;
+  const rotationOut = toggles.rotationOut ? document.getElementById(toggles.rotationOut) : null;
+  const rotationResetBtn = toggles.rotationReset ? document.getElementById(toggles.rotationReset) : null;
+  function repaintFromFields() {
+    const b = fieldsToBounds();
+    if (b) paintRect(b);
+  }
+  if (rotationInput) {
+    rotationDeg = parseFloat(rotationInput.value) || 0;
+    rotationInput.addEventListener('input', () => {
+      rotationDeg = parseFloat(rotationInput.value) || 0;
+      if (rotationOut) rotationOut.textContent = Math.round(rotationDeg) + '°';
+      repaintFromFields();
+    });
+  }
+  if (rotationResetBtn) {
+    rotationResetBtn.addEventListener('click', () => {
+      rotationDeg = 0;
+      if (rotationInput) rotationInput.value = 0;
+      if (rotationOut) rotationOut.textContent = '0°';
+      repaintFromFields();
+    });
+  }
 
   map.on('mousedown', (e) => {
     if (!drawMode) return;
@@ -143,7 +214,10 @@ function initMapPicker(mapDivId, fields, toggles) {
     map.fitBounds(initialBounds, { maxZoom: 14, animate: false });
   }
 
-  setDrawMode(true);
+  // Sposta mappa di default (non Disegna area): appena apri la sezione vuoi
+  // prima esplorare/inquadrare la mappa, disegnare l'area è un'azione
+  // volontaria successiva.
+  setDrawMode(false);
 
   // Leaflet ha bisogno di conoscere le dimensioni reali del contenitore:
   // se il tab/pannello era nascosto al momento dell'init, ricalcola dopo che

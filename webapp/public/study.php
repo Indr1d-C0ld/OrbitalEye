@@ -74,8 +74,14 @@ require __DIR__ . '/partials/nav.php';
           <label>Area di interesse <span class="info-tip" tabindex="0" data-tip="Disegna un rettangolo trascinando sulla mappa (o scrivi le coordinate a mano nei campi sotto). Passa a Satellite se vuoi riconoscere visivamente l'area prima di selezionarla.">?</span></label>
           <div class="stage-toolbar">
             <div class="mode-toggle">
-              <button type="button" class="mode-btn active" id="sh-map-draw" title="Trascina per disegnare l'area">✎ Disegna area</button>
-              <button type="button" class="mode-btn" id="sh-map-pan" title="Trascina per spostare la mappa">✋ Sposta mappa</button>
+              <button type="button" class="mode-btn" id="sh-map-draw" title="Trascina per disegnare l'area">✎ Disegna area</button>
+              <button type="button" class="mode-btn active" id="sh-map-pan" title="Trascina per spostare la mappa">✋ Sposta mappa</button>
+            </div>
+            <div class="mode-toggle" style="gap:6px; align-items:center;">
+              <span class="hint" title="Ruota l'area da scaricare: il servizio scarica automaticamente una zona di raccolta più ampia e ritaglia poi la ripresa già ruotata come mostrato in anteprima sulla mappa.">↻ Rotazione</span>
+              <input type="range" id="sh-map-rotation" name="rotation" min="-180" max="180" value="0" step="1" style="width:100px;">
+              <span class="hint" id="sh-map-rotation-out">0°</span>
+              <button type="button" class="btn btn-sm" id="sh-map-rotation-reset" title="Azzera la rotazione">↺</button>
             </div>
             <div class="mode-toggle">
               <button type="button" class="mode-btn active" id="sh-map-osm" title="Mappa stradale (OpenStreetMap)">🗺 Mappa</button>
@@ -101,6 +107,40 @@ require __DIR__ . '/partials/nav.php';
         </div>
         <button class="btn btn-primary" type="submit">Scarica composito Sentinel-2</button>
         <span class="hint fetch-status"></span>
+
+        <div class="schedule-panel" style="margin-top:16px; padding-top:16px; border-top:1px solid var(--line);">
+          <label class="checkbox-row" style="cursor:pointer;">
+            <input type="checkbox" class="schedule-toggle">
+            <span>↻ Scaricamento automatico pianificato per quest'area (controlla se è arrivata una ripresa diversa e ti avvisa — vedi 🔔 Alert)</span>
+          </label>
+          <div class="schedule-fields grid grid-3" style="display:none; margin-top:10px;">
+            <div class="field">
+              <label>Ogni</label>
+              <div style="display:flex; gap:6px; align-items:center;">
+                <input type="number" class="schedule-interval-value" value="1" min="1" style="width:70px;">
+                <select class="schedule-interval-unit">
+                  <option value="1">giorni</option>
+                  <option value="7">settimane</option>
+                </select>
+              </div>
+            </div>
+            <div class="field">
+              <label title="Finestra di ricerca del composito ad ogni controllo: 'ultimi N giorni da oggi', non date fisse.">Finestra ricerca composito</label>
+              <div style="display:flex; gap:6px; align-items:center;">
+                <input type="number" class="schedule-window-days" value="90" min="1" style="width:70px;"> <span class="hint">giorni</span>
+              </div>
+            </div>
+            <div class="field">
+              <label title="Percentuale di pixel cambiati sotto la quale una nuova ripresa è considerata identica alla precedente e viene scartata automaticamente.">Soglia duplicato</label>
+              <div style="display:flex; gap:6px; align-items:center;">
+                <input type="number" class="schedule-threshold" value="0.5" min="0" max="100" step="0.1" style="width:70px;"> <span class="hint">% variazione minima</span>
+              </div>
+            </div>
+          </div>
+          <button type="button" class="btn btn-sm schedule-save-btn" style="display:none; margin-top:10px;">Attiva pianificazione</button>
+          <span class="hint schedule-status"></span>
+          <div class="schedule-list" style="margin-top:10px;"></div>
+        </div>
       </form>
       <div class="hint" style="margin-top:10px;">Copernicus/Sentinel-2: risoluzione ~10m/pixel, intervallo di date storico selezionabile. Richiede credenziali configurate in <a href="settings.php">Impostazioni</a>.</div>
     </div>
@@ -113,8 +153,14 @@ require __DIR__ . '/partials/nav.php';
           <label>Area di interesse <span class="info-tip" tabindex="0" data-tip="Disegna un rettangolo trascinando sulla mappa (o scrivi le coordinate a mano nei campi sotto). Passa a Satellite se vuoi riconoscere visivamente l'area prima di selezionarla.">?</span></label>
           <div class="stage-toolbar">
             <div class="mode-toggle">
-              <button type="button" class="mode-btn active" id="esri-map-draw" title="Trascina per disegnare l'area">✎ Disegna area</button>
-              <button type="button" class="mode-btn" id="esri-map-pan" title="Trascina per spostare la mappa">✋ Sposta mappa</button>
+              <button type="button" class="mode-btn" id="esri-map-draw" title="Trascina per disegnare l'area">✎ Disegna area</button>
+              <button type="button" class="mode-btn active" id="esri-map-pan" title="Trascina per spostare la mappa">✋ Sposta mappa</button>
+            </div>
+            <div class="mode-toggle" style="gap:6px; align-items:center;">
+              <span class="hint" title="Ruota l'area da scaricare: il servizio scarica automaticamente una zona di raccolta più ampia e ritaglia poi la ripresa già ruotata come mostrato in anteprima sulla mappa.">↻ Rotazione</span>
+              <input type="range" id="esri-map-rotation" name="rotation" min="-180" max="180" value="0" step="1" style="width:100px;">
+              <span class="hint" id="esri-map-rotation-out">0°</span>
+              <button type="button" class="btn btn-sm" id="esri-map-rotation-reset" title="Azzera la rotazione">↺</button>
             </div>
             <div class="mode-toggle">
               <button type="button" class="mode-btn active" id="esri-map-osm" title="Mappa stradale (OpenStreetMap)">🗺 Mappa</button>
@@ -132,6 +178,34 @@ require __DIR__ . '/partials/nav.php';
         </div>
         <button class="btn btn-primary" type="submit">Scarica da Esri World Imagery</button>
         <span class="hint fetch-status"></span>
+
+        <div class="schedule-panel" style="margin-top:16px; padding-top:16px; border-top:1px solid var(--line);">
+          <label class="checkbox-row" style="cursor:pointer;">
+            <input type="checkbox" class="schedule-toggle">
+            <span>↻ Scaricamento automatico pianificato per quest'area (controlla se è arrivata una ripresa diversa e ti avvisa — vedi 🔔 Alert)</span>
+          </label>
+          <div class="schedule-fields grid grid-2" style="display:none; margin-top:10px;">
+            <div class="field">
+              <label>Ogni</label>
+              <div style="display:flex; gap:6px; align-items:center;">
+                <input type="number" class="schedule-interval-value" value="1" min="1" style="width:70px;">
+                <select class="schedule-interval-unit">
+                  <option value="1">giorni</option>
+                  <option value="7">settimane</option>
+                </select>
+              </div>
+            </div>
+            <div class="field">
+              <label title="Percentuale di pixel cambiati sotto la quale una nuova ripresa è considerata identica alla precedente e viene scartata automaticamente.">Soglia duplicato</label>
+              <div style="display:flex; gap:6px; align-items:center;">
+                <input type="number" class="schedule-threshold" value="0.5" min="0" max="100" step="0.1" style="width:70px;"> <span class="hint">% variazione minima</span>
+              </div>
+            </div>
+          </div>
+          <button type="button" class="btn btn-sm schedule-save-btn" style="display:none; margin-top:10px;">Attiva pianificazione</button>
+          <span class="hint schedule-status"></span>
+          <div class="schedule-list" style="margin-top:10px;"></div>
+        </div>
       </form>
       <div class="hint" style="margin-top:10px;">Esri World Imagery: risoluzione spesso più alta (sub-metrica in molte aree, varia per zona), ma solo il composito "più recente disponibile" — nessuna scelta di data. Funziona anche senza API key per uso leggero (impostabile in <a href="settings.php">Impostazioni</a> per uso sostenuto).</div>
     </div>
@@ -467,8 +541,8 @@ require __DIR__ . '/partials/nav.php';
     <div>
       <div class="stage-toolbar">
         <div class="mode-toggle" id="mode-toggle">
-          <button type="button" class="mode-btn active" data-mode="annotate" title="Trascina per disegnare un'annotazione">✎ Annota</button>
-          <button type="button" class="mode-btn" data-mode="pan" title="Trascina per spostare l'immagine ingrandita">✋ Sposta</button>
+          <button type="button" class="mode-btn" data-mode="annotate" title="Trascina per disegnare un'annotazione">✎ Annota</button>
+          <button type="button" class="mode-btn active" data-mode="pan" title="Trascina per spostare l'immagine ingrandita">✋ Sposta</button>
         </div>
         <div class="zoom-controls">
           <button type="button" class="btn btn-sm" id="zoom-out" title="Riduci zoom">−</button>

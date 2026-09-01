@@ -15,7 +15,10 @@
   // dettaglio prima/dopo le regolazioni.
   const MIN_SCALE = 1, MAX_SCALE = 10, STEP = 1.25;
   let scale = 1, tx = 0, ty = 0;
-  let mode = 'annotate';
+  // Sposta di default (non Annota): appena apri la pagina vuoi prima
+  // esplorare/zoomare, annotare/misurare/ritagliare/sovrapporre sono azioni
+  // volontarie successive.
+  let mode = 'pan';
 
   const viewportLeft = $('#an-viewport-left');
   const viewportRight = $('#an-viewport-right');
@@ -138,6 +141,12 @@
       $$('#an-mode-toggle .mode-btn').forEach((b) => b.classList.toggle('active', b === btn));
       viewportLeft.classList.toggle('mode-pan', mode === 'pan');
       viewportRight.classList.toggle('mode-pan', mode === 'pan');
+      // Le maniglie (annotazioni/misure/overlay) dipendono da `mode` per
+      // decidere se disegnarsi: al cambio modalità vanno ridisegnate subito,
+      // altrimenti restano quelle (assenti o presenti) della modalità
+      // precedente fino al prossimo evento che tocchi il canvas.
+      redrawAnnotations();
+      renderOverlay();
     });
   });
   viewportLeft.classList.toggle('mode-pan', mode === 'pan');
@@ -903,6 +912,94 @@
     overlayImgEl.style.top = top + 'px';
     overlayImgEl.style.transform = `rotate(${overlay.rotation}deg) skew(${overlay.skewX}deg, ${overlay.skewY}deg)`;
     overlayImgEl.style.opacity = overlay.opacity;
+    if (mode === 'overlay') drawOverlayHandles();
+  }
+
+  const OVERLAY_ROTATE_HANDLE_OFFSET = 28; // px canvas, oltre l'angolo in alto
+
+  // Trasforma un punto "locale" (relativo al centro dell'overlay, in pixel
+  // canvas, PRIMA di scala/skew/rotazione) nelle coordinate canvas correnti
+  // — stessa composizione skew-poi-rotazione di renderOverlay()/
+  // drawOverlayOnto(), così le maniglie disegnate seguono esattamente la
+  // forma visibile qualunque sia la trasformazione corrente.
+  function overlayLocalToCanvas(lx, ly) {
+    const skewXRad = (overlay.skewX * Math.PI) / 180;
+    const skewYRad = (overlay.skewY * Math.PI) / 180;
+    const skewedX = lx + Math.tan(skewXRad) * ly;
+    const skewedY = Math.tan(skewYRad) * lx + ly;
+    const rotRad = (overlay.rotation * Math.PI) / 180;
+    const rotX = skewedX * Math.cos(rotRad) - skewedY * Math.sin(rotRad);
+    const rotY = skewedX * Math.sin(rotRad) + skewedY * Math.cos(rotRad);
+    return [overlay.cx * canvas.width + rotX, overlay.cy * canvas.height + rotY];
+  }
+
+  function overlayHalfExtents() {
+    return [
+      (overlay.baseWFrac * overlay.scale * canvas.width) / 2,
+      (overlay.baseHFrac * overlay.scale * canvas.height) / 2,
+    ];
+  }
+
+  // Angoli (per il ridimensionamento) + maniglia di rotazione, in coordinate
+  // canvas correnti — usata sia per disegnarle sia per il loro hit-test.
+  function overlayHandlePoints() {
+    const [hw, hh] = overlayHalfExtents();
+    const corners = {
+      nw: overlayLocalToCanvas(-hw, -hh),
+      ne: overlayLocalToCanvas(hw, -hh),
+      sw: overlayLocalToCanvas(-hw, hh),
+      se: overlayLocalToCanvas(hw, hh),
+    };
+    const rotate = overlayLocalToCanvas(0, -hh - OVERLAY_ROTATE_HANDLE_OFFSET);
+    return { corners, rotate };
+  }
+
+  function drawOverlayHandles() {
+    const ctx = canvas.getContext('2d');
+    const { corners, rotate } = overlayHandlePoints();
+    const center = [overlay.cx * canvas.width, overlay.cy * canvas.height];
+    const topMid = overlayLocalToCanvas(0, -overlayHalfExtents()[1]);
+
+    ctx.save();
+    ctx.strokeStyle = '#00fff2';
+    ctx.setLineDash([3, 3]);
+    ctx.lineWidth = 1;
+    // Contorno della selezione (i 4 lati), per far capire subito cosa si sta
+    // manipolando quando si passa a modalità Sovrapponi.
+    ctx.beginPath();
+    ctx.moveTo(...corners.nw); ctx.lineTo(...corners.ne); ctx.lineTo(...corners.se); ctx.lineTo(...corners.sw); ctx.closePath();
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // Linea guida dal centro-alto alla maniglia di rotazione.
+    ctx.beginPath();
+    ctx.moveTo(...topMid); ctx.lineTo(...rotate);
+    ctx.stroke();
+
+    ctx.fillStyle = '#00fff2';
+    Object.values(corners).forEach(([hx, hy]) => {
+      ctx.beginPath(); ctx.arc(hx, hy, HANDLE_R, 0, Math.PI * 2); ctx.fill();
+    });
+    // Maniglia di rotazione: cerchio vuoto, per distinguerla a colpo
+    // d'occhio dalle maniglie d'angolo (piene, resize).
+    ctx.beginPath();
+    ctx.arc(rotate[0], rotate[1], HANDLE_R, 0, Math.PI * 2);
+    ctx.fillStyle = '#0a0a0a';
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.restore();
+
+    void center; // riferimento già incluso in overlayLocalToCanvas, tenuto per chiarezza
+  }
+
+  function hitOverlayHandle(x, y) {
+    if (!overlay.loaded || mode !== 'overlay') return null;
+    const { corners, rotate } = overlayHandlePoints();
+    if (Math.hypot(x - rotate[0], y - rotate[1]) <= handleHitR()) return { type: 'rotate' };
+    for (const [name, [hx, hy]] of Object.entries(corners)) {
+      if (Math.hypot(x - hx, y - hy) <= handleHitR()) return { type: 'resize-corner', corner: name };
+    }
+    return null;
   }
 
   $('#an-overlay-file').addEventListener('change', (e) => {
@@ -946,6 +1043,20 @@
       renderOverlay();
     });
   });
+
+  // Aggiorna slider + etichetta a partire da overlay[key] già impostato
+  // direttamente da un trascinamento maniglia (resize/rotazione), così
+  // maniglie e slider restano sempre coerenti tra loro. Funziona per
+  // scale/rotation (le uniche chiavi pilotabili da maniglia) perché per
+  // entrambe la conversione raw->stored è invertibile in modo semplice.
+  function syncOverlaySliderFromStored(key) {
+    const entry = OVERLAY_SLIDER_MAP.find((e) => e[2] === key);
+    if (!entry) return;
+    const [inputId, outId, , , fmt] = entry;
+    const raw = key === 'scale' ? overlay.scale * 100 : overlay[key];
+    $('#' + inputId).value = raw;
+    $('#' + outId).textContent = fmt(raw);
+  }
 
   $('#an-overlay-reset-btn').addEventListener('click', () => {
     overlay.cx = 0.5; overlay.cy = 0.5; overlay.scale = 1.0; overlay.rotation = 0; overlay.skewX = 0; overlay.skewY = 0; overlay.opacity = 0.7;
@@ -1162,6 +1273,17 @@
         startX = x; startY = y;
       } else if (mode === 'overlay') {
         if (!overlay.loaded) { dragState = null; return; }
+        const overlayHandleHit = hitOverlayHandle(x, y);
+        if (overlayHandleHit && overlayHandleHit.type === 'rotate') {
+          dragState = { type: 'rotate-overlay' };
+          return;
+        }
+        if (overlayHandleHit && overlayHandleHit.type === 'resize-corner') {
+          const hw0 = (overlay.baseWFrac * canvas.width) / 2;
+          const hh0 = (overlay.baseHFrac * canvas.height) / 2;
+          dragState = { type: 'resize-overlay', baseDiag: Math.hypot(hw0, hh0) };
+          return;
+        }
         dragState = {
           type: 'move-overlay',
           grabDX: x - overlay.cx * canvas.width,
@@ -1197,6 +1319,28 @@
       } else if (dragState.type === 'move-overlay') {
         overlay.cx = (x - dragState.grabDX) / canvas.width;
         overlay.cy = (y - dragState.grabDY) / canvas.height;
+        renderOverlay();
+      } else if (dragState.type === 'resize-overlay') {
+        const cx = overlay.cx * canvas.width, cy = overlay.cy * canvas.height;
+        const rotRad = (overlay.rotation * Math.PI) / 180;
+        const dx = x - cx, dy = y - cy;
+        // Riporta il punto nel sistema locale non ruotato (inverte la
+        // rotazione corrente); lo skew viene ignorato qui come
+        // approssimazione accettata, per mantenere il ridimensionamento
+        // un'operazione uniforme e prevedibile dal centro.
+        const lx = dx * Math.cos(-rotRad) - dy * Math.sin(-rotRad);
+        const ly = dx * Math.sin(-rotRad) + dy * Math.cos(-rotRad);
+        const newScale = Math.hypot(lx, ly) / dragState.baseDiag;
+        overlay.scale = Math.max(0.1, Math.min(3, newScale));
+        syncOverlaySliderFromStored('scale');
+        renderOverlay();
+      } else if (dragState.type === 'rotate-overlay') {
+        const cx = overlay.cx * canvas.width, cy = overlay.cy * canvas.height;
+        let deg = (Math.atan2(y - cy, x - cx) * 180) / Math.PI + 90;
+        if (deg > 180) deg -= 360;
+        if (deg < -180) deg += 360;
+        overlay.rotation = deg;
+        syncOverlaySliderFromStored('rotation');
         renderOverlay();
       }
     }
@@ -1235,6 +1379,11 @@
         void newState; // valore già scritto in m durante il trascinamento
       } else {
         redrawAnnotations();
+        // redrawAnnotations() pulisce l'intero canvas overlay (stesso
+        // canvas usato dalle maniglie di overlay); in modalità Sovrapponi
+        // vanno quindi rimesse a schermo, altrimenti spariscono a ogni fine
+        // trascinamento (move/resize/rotate) fino al prossimo slider.
+        if (mode === 'overlay') renderOverlay();
       }
     }
 

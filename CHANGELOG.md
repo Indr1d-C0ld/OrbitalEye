@@ -4,6 +4,192 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-09-01 (4) — Scaricamento automatico pianificato, con rilevamento duplicati e alert
+
+Nuovo meccanismo, pensato per il monitoraggio nel tempo di un'area senza
+doverla riscaricare a mano ogni volta: per ogni sezione di scaricamento
+(Sentinel Hub/Esri) si può ora attivare un controllo periodico che scarica
+di nuovo la stessa area, la confronta automaticamente con l'ultima ripresa
+già tenuta e scarta da sola le riprese identiche (nessun accumulo di
+doppioni), generando invece un alert quando arriva qualcosa di
+effettivamente diverso. Esecuzione da cron (non da richiesta web): nessuna
+modifica al python-service, riusa l'endpoint `/analysis/compare` già
+esistente (stessa pipeline SSIM+maschera del confronto manuale) per
+decidere se scartare o tenere.
+
+- **[webapp/schema.sql](webapp/schema.sql)**
+  Due nuove tabelle: `scheduled_downloads` (area/fonte/parametri di fetch,
+  intervallo in giorni, soglia di duplicato, esito/ripresa dell'ultima
+  esecuzione) e `alerts` (notifiche "nuova ripresa diversa dalla precedente",
+  legate a studio/ripresa/pianificazione).
+
+- **[webapp/src/CaptureFetcher.php](webapp/src/CaptureFetcher.php)** (nuovo)
+  Estrae in una classe condivisa la logica di scaricamento che prima viveva
+  interamente in `api/fetch_capture.php` (validazione, rotazione/ritaglio,
+  chiamata al servizio Python, salvataggio) — necessaria sia alla richiesta
+  interattiva dell'utente sia al cron, senza duplicare ~150 righe. Le
+  condizioni d'errore diventano `CaptureFetchException` con uno
+  `httpStatus` associato (404/400/502/500 a seconda del caso), così chi
+  chiama da HTTP può rispondere col codice giusto e chi chiama da CLI può
+  semplicemente loggare il messaggio.
+
+- **[webapp/public/api/fetch_capture.php](webapp/public/api/fetch_capture.php)**
+  Ridotto a un sottile wrapper attorno a `CaptureFetcher::fetchAndSave()`:
+  stesso comportamento/contratto di prima, logica vera altrove.
+
+- **[webapp/src/ScheduledDownload.php](webapp/src/ScheduledDownload.php)** (nuovo)
+  CRUD sulle pianificazioni + `due()` (quelle la cui prossima esecuzione è
+  scaduta, calcolato interamente in SQL con `datetime(last_run_at, '+N days')`)
+  + `recordRun()` (registra esito/ripresa/errore di ogni esecuzione).
+
+- **[webapp/src/Alert.php](webapp/src/Alert.php)** (nuovo)
+  Creazione/lettura degli alert, conteggio non letti (per il badge in
+  sidebar), segna-come-letto singolo/tutti.
+
+- **[webapp/cli/run_scheduled_downloads.php](webapp/cli/run_scheduled_downloads.php)** (nuovo)
+  Entrypoint da cron. Per ogni pianificazione scaduta: ricalcola la finestra
+  di date "scorrevole" per Sentinel Hub (`date_window_days` giorni indietro
+  da *oggi*, mai date fisse), scarica, e se esiste già una ripresa
+  precedente per quella pianificazione la confronta via `/analysis/compare`
+  (SSIM, allineamento automatico): sotto la soglia di duplicato configurata
+  scarta la nuova ripresa (`Capture::delete`, nessun file orfano), altrimenti
+  la tiene e crea un alert. Un fallimento nel confronto non scarta mai per
+  prudenza (tiene la ripresa e segnala di verificarla a mano).
+
+- **[webapp/public/api/schedule_download.php](webapp/public/api/schedule_download.php)** (nuovo)
+  GET (elenco pianificazioni di uno studio), POST con `action`
+  create/toggle/delete. La creazione scarica subito una prima ripresa di
+  base (così la pianificazione non resta vuota fino al prossimo passaggio
+  del cron, anche a un giorno di distanza) e genera il primo alert
+  "pianificazione avviata".
+
+- **[webapp/public/api/alerts.php](webapp/public/api/alerts.php)** (nuovo)
+  GET (elenco + conteggio non letti), POST `mark_read`/`mark_all_read`.
+
+- **[webapp/public/alerts.php](webapp/public/alerts.php)** (nuovo)
+  Pagina dedicata: elenco alert con link diretto alla ripresa, segna
+  letto/tutti letti.
+
+- **[webapp/public/partials/nav.php](webapp/public/partials/nav.php)**
+  Nuova voce "🔔 Alert" in sidebar con badge del conteggio non letti.
+
+- **[webapp/public/study.php](webapp/public/study.php)** / **[webapp/public/assets/js/study.js](webapp/public/assets/js/study.js)**
+  Nuovo pannello "Scaricamento automatico pianificato" in ciascuna sezione
+  di scaricamento: checkbox di attivazione, intervallo (giorni/settimane,
+  minimo 1 giorno), finestra di ricerca composito (solo Sentinel Hub), soglia
+  di duplicato (% variazione minima), elenco delle pianificazioni già attive
+  per quell'area con sospendi/riattiva/elimina.
+
+Nessun canale email per gli alert (solo notifica integrata in piattaforma) e
+intervallo minimo di un giorno: entrambe scelte esplicite per restare
+coerenti con la reale cadenza di revisit di queste fonti (Sentinel-2 ~5
+giorni, i compositi Esri si aggiornano sporadicamente) ed evitare consumi
+inutili delle rispettive quote API.
+
+## 2026-09-01 (3) — Rotazione dell'area di interesse in fase di scaricamento
+
+Controlli di rotazione per il rettangolo di selezione, vicino al toggle
+"Sposta mappa" di entrambe le sezioni Sentinel Hub/Esri: né l'API Sentinel
+Hub né quella Esri supportano bbox ruotate nativamente, quindi la
+piattaforma scarica un'area di raccolta più ampia (che racchiude per intero
+il rettangolo ruotato, a risoluzione aumentata di conseguenza per non
+perdere metri/pixel) e la ritaglia server-side per ottenere esattamente
+l'area voluta, già dritta.
+
+- **[webapp/src/ImageRotateCrop.php](webapp/src/ImageRotateCrop.php)** (nuovo)
+  `enclosingBbox()` (bbox non ruotata che racchiude il rettangolo ruotato,
+  simmetrica rispetto al segno dell'angolo, con margine di sicurezza 3%),
+  `scaledFetchSize()` (pixel da richiedere sull'area allargata per
+  mantenere lo stesso metri/pixel del rettangolo originale, con tetto
+  configurabile) e `rotateAndCrop()` (ruota via GD l'immagine scaricata e
+  ne ritaglia esattamente le dimensioni del rettangolo originale — verificata
+  con test pixel su più angoli, inclusi i segni di rotazione di GD, che
+  ruota in senso antiorario per angoli positivi).
+
+- **[webapp/public/api/fetch_capture.php](webapp/public/api/fetch_capture.php)**
+  Nuovo campo `rotation` nel body: se diverso da zero, calcola la bbox
+  allargata da scaricare davvero, applica il ritaglio ruotato al risultato
+  ed elimina il file grezzo allargato (non serve più a nessun uso
+  successivo). `meta_json.bbox` salvato resta **sempre** il rettangolo di
+  base (mai quello allargato): lo strumento di misura continua a funzionare
+  esattamente come prima, nessuna modifica al calcolo della scala.
+
+- **[webapp/public/assets/js/map-picker.js](webapp/public/assets/js/map-picker.js)**
+  Rettangolo disegnato come `L.polygon` (invece di `L.rectangle`) quando la
+  rotazione è diversa da zero, con i 4 angoli ruotati in coordinate schermo
+  (proiezione Leaflet, non lon/lat grezze) attorno al proprio centro —
+  anteprima visivamente corretta a qualunque zoom/latitudine. I 4 campi
+  lon/lat continuano a rappresentare il rettangolo di base non ruotato,
+  invariati per tutto il resto della piattaforma.
+
+- **[webapp/public/study.php](webapp/public/study.php)**
+  Slider di rotazione (-180°/180°) + pulsante di reset, vicino al toggle
+  "Sposta mappa" di entrambe le sezioni, come richiesto.
+
+- **[webapp/public/assets/js/study.js](webapp/public/assets/js/study.js)**
+  Il valore di rotazione (se diverso da zero) viene incluso nel payload
+  inviato a `fetch_capture.php`.
+
+## 2026-09-01 (2) — Maniglie dirette per ridimensionare/ruotare l'overlay
+
+Controlli diretti sul livello di sovrapposizione, oltre agli slider già
+esistenti: 4 maniglie d'angolo per ridimensionare dal centro, 1 maniglia
+sopra per ruotare, trascinabili direttamente sull'immagine sovrapposta.
+Inclinazione e opacità restano solo a slider (scelta di scope, per non
+moltiplicare la complessità delle maniglie).
+
+- **[webapp/public/assets/js/analyze.js](webapp/public/assets/js/analyze.js)**
+  - `overlayLocalToCanvas()`: trasforma un punto locale (relativo al centro
+    dell'overlay, prima di scala/inclinazione/rotazione) in coordinate
+    canvas correnti, con la stessa identica composizione
+    inclinazione-poi-rotazione già usata e verificata in `drawOverlayOnto()`
+    — le maniglie seguono esattamente la forma visibile qualunque sia la
+    trasformazione corrente.
+  - `drawOverlayHandles()` / `hitOverlayHandle()`: disegno e hit-test delle
+    4 maniglie d'angolo (ridimensiona) + 1 di rotazione (cerchio vuoto, per
+    distinguerla a colpo d'occhio), visibili solo in modalità "Sovrapponi".
+  - `handleStart`/`handleMove` estesi con due nuovi stati di trascinamento,
+    `resize-overlay` (ridimensionamento uniforme dal centro, ignorando
+    l'inclinazione corrente come approssimazione accettata) e
+    `rotate-overlay` (angolo calcolato con `atan2` rispetto al centro) —
+    entrambi sincronizzano in tempo reale gli slider corrispondenti.
+  - Corretto un piccolo effetto collaterale scoperto durante
+    l'implementazione: `redrawAnnotations()` pulisce l'intero canvas
+    condiviso, quindi a fine trascinamento in modalità overlay va
+    richiamato anche `renderOverlay()` per farlo ricomparire (già capitava,
+    solo poco visibile, anche per il trascinamento del corpo dell'overlay
+    esistente da prima).
+
+- **[webapp/public/analyze_capture.php](webapp/public/analyze_capture.php)**
+  Titolo del pulsante "🖼 Sovrapponi" aggiornato per descrivere anche le
+  nuove maniglie (corpo per spostare, angoli per ridimensionare, maniglia
+  sopra per ruotare).
+
+## 2026-09-01 — Modalità "Sposta" attiva di default ovunque presente
+
+In ogni sezione con un toggle "Sposta"/"Sposta mappa" accanto ad altre
+modalità (Annota, Disegna area, ecc.), ora si apre già in modalità Sposta:
+la prima cosa che si vuole fare aprendo un confronto o un selettore di area
+è quasi sempre esplorare/inquadrare, non disegnare — partire già in modalità
+attiva rischiava annotazioni/aree accidentali durante la prima esplorazione.
+
+- **[webapp/public/analyze_capture.php](webapp/public/analyze_capture.php)**
+  Pulsante attivo di default nel toolbar della pagina: "✋ Sposta" invece di
+  "✎ Annota".
+- **[webapp/public/study.php](webapp/public/study.php)**
+  Stesso cambio sul toolbar del riquadro di confronto principale e su
+  entrambi i map-picker (Sentinel Hub ed Esri): "✋ Sposta"/"✋ Sposta mappa"
+  attivi di default.
+- **[webapp/public/assets/js/study.js](webapp/public/assets/js/study.js)**
+  `stageMode` iniziale cambiato da `'annotate'` a `'pan'`.
+- **[webapp/public/assets/js/map-picker.js](webapp/public/assets/js/map-picker.js)**
+  `drawMode` iniziale cambiato da disegno ad attivo-spento, con
+  `setDrawMode(false)` esplicito in fase di init (la funzione già gestiva
+  correttamente lo stato visivo di entrambi i pulsanti, nessun'altra
+  modifica necessaria).
+- **[webapp/public/assets/js/analyze.js](webapp/public/assets/js/analyze.js)**
+  `mode` iniziale cambiato da `'annotate'` a `'pan'`.
+
 ## 2026-08-29 (3) — Fix: scala errata sulle riprese Esri con bbox non quadrata
 
 L'operazione "export" di ArcGIS MapServer (World Imagery) espande

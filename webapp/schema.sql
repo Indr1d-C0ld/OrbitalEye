@@ -82,7 +82,49 @@ CREATE TABLE IF NOT EXISTS manual_control_points (
     UNIQUE(capture_a_id, capture_b_id)
 );
 
+-- Scaricamento automatico a intervalli regolari per una data area/fonte di
+-- uno studio (vedi src/ScheduledDownload.php + cli/run_scheduled_downloads.php,
+-- eseguito da cron). params_json contiene tutto il necessario per rieseguire
+-- lo stesso fetch fatto a mano (bbox, rotation, width/height, e per Sentinel
+-- Hub anche date_from_days_ago/date_to_days_ago: una finestra "scorrevole"
+-- rispetto ad "adesso", non date fisse, altrimenti ogni esecuzione futura
+-- richiederebbe le stesse identiche date già passate). last_result: 'new'
+-- (ripresa diversa dalla precedente, tenuta) | 'duplicate' (scartata
+-- automaticamente) | 'error' (fetch fallito, vedi last_error).
+CREATE TABLE IF NOT EXISTS scheduled_downloads (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    study_id INTEGER NOT NULL REFERENCES studies(id) ON DELETE CASCADE,
+    source TEXT NOT NULL,
+    params_json TEXT NOT NULL,
+    interval_days INTEGER NOT NULL DEFAULT 1,
+    duplicate_threshold REAL NOT NULL DEFAULT 0.005,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    last_run_at TEXT,
+    last_capture_id INTEGER REFERENCES captures(id) ON DELETE SET NULL,
+    last_result TEXT,
+    last_error TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Notifiche "nuova ripresa diversa dalla precedente rilevata" generate dallo
+-- scaricamento automatico (vedi sopra). Puramente interne alla piattaforma
+-- (nessun invio email): un'icona con badge nella barra laterale + una
+-- pagina dedicata (alerts.php) le mostrano appena l'utente riapre l'app.
+CREATE TABLE IF NOT EXISTS alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    study_id INTEGER NOT NULL REFERENCES studies(id) ON DELETE CASCADE,
+    capture_id INTEGER REFERENCES captures(id) ON DELETE CASCADE,
+    schedule_id INTEGER REFERENCES scheduled_downloads(id) ON DELETE SET NULL,
+    message TEXT NOT NULL,
+    is_read INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_captures_study ON captures(study_id);
 CREATE INDEX IF NOT EXISTS idx_comparisons_study ON comparisons(study_id);
 CREATE INDEX IF NOT EXISTS idx_annotations_study ON annotations(study_id);
 CREATE INDEX IF NOT EXISTS idx_manual_cp_pair ON manual_control_points(capture_a_id, capture_b_id);
+CREATE INDEX IF NOT EXISTS idx_scheduled_downloads_study ON scheduled_downloads(study_id);
+CREATE INDEX IF NOT EXISTS idx_scheduled_downloads_active ON scheduled_downloads(is_active);
+CREATE INDEX IF NOT EXISTS idx_alerts_study ON alerts(study_id);
+CREATE INDEX IF NOT EXISTS idx_alerts_unread ON alerts(is_read);

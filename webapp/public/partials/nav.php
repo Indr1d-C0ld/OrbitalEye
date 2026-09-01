@@ -3,6 +3,7 @@
 /** @var string $pageTitle */
 $appName = Config::get()['app_name'] ?? 'ORBITALEYE';
 $serviceOk = (new PythonServiceClient())->health();
+$unreadAlerts = Alert::unreadCount();
 ?>
 <div class="mobile-topbar">
   <button type="button" class="hamburger-btn" id="hamburger-btn" aria-label="Apri il menu" aria-expanded="false">☰</button>
@@ -19,6 +20,10 @@ $serviceOk = (new PythonServiceClient())->health();
       <a href="index.php" class="<?= $activeNav === 'dashboard' ? 'active' : '' ?>"><span class="icon">▣</span> Dashboard</a>
       <a href="new_study.php" class="<?= $activeNav === 'new_study' ? 'active' : '' ?>"><span class="icon">✚</span> Nuovo Studio</a>
       <a href="library.php" class="<?= $activeNav === 'library' ? 'active' : '' ?>"><span class="icon">▤</span> Libreria</a>
+      <a href="alerts.php" class="<?= $activeNav === 'alerts' ? 'active' : '' ?>">
+        <span class="icon">🔔</span> Alert
+        <?php if ($unreadAlerts > 0): ?><span class="badge badge-amber" style="margin-left:6px;"><?= $unreadAlerts ?></span><?php endif; ?>
+      </a>
       <a href="settings.php" class="<?= $activeNav === 'settings' ? 'active' : '' ?>"><span class="icon">⚙</span> Impostazioni</a>
     </nav>
     <div class="sidebar-footer">

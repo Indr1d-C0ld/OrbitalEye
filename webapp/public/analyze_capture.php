@@ -46,11 +46,11 @@ require __DIR__ . '/partials/nav.php';
 <div class="panel">
   <div class="stage-toolbar">
     <div class="mode-toggle" id="an-mode-toggle">
-      <button type="button" class="mode-btn" data-mode="pan" title="Trascina per spostare la vista (su entrambi i riquadri, sincronizzati)">✋ Sposta</button>
-      <button type="button" class="mode-btn active" data-mode="annotate" title="Trascina sulla copia di lavoro per disegnare un'annotazione">✎ Annota</button>
+      <button type="button" class="mode-btn active" data-mode="pan" title="Trascina per spostare la vista (su entrambi i riquadri, sincronizzati)">✋ Sposta</button>
+      <button type="button" class="mode-btn" data-mode="annotate" title="Trascina sulla copia di lavoro per disegnare un'annotazione">✎ Annota</button>
       <button type="button" class="mode-btn" data-mode="measure" title="Trascina sulla copia di lavoro per misurare una distanza reale sul terreno">📏 Misura</button>
       <button type="button" class="mode-btn" data-mode="crop" title="Trascina sulla copia di lavoro per ritagliare un frammento da usare in una ricerca inversa per immagini">🔍 Ritaglia</button>
-      <button type="button" class="mode-btn" data-mode="overlay" title="Trascina sulla copia di lavoro per spostare l'immagine sovrapposta caricata qui sotto">🖼 Sovrapponi</button>
+      <button type="button" class="mode-btn" data-mode="overlay" title="Trascina il corpo per spostare l'immagine sovrapposta, gli angoli per ridimensionarla, la maniglia sopra per ruotarla">🖼 Sovrapponi</button>
     </div>
     <div class="zoom-controls">
       <button type="button" class="btn btn-sm" id="an-undo-btn" disabled title="Annulla l'ultima azione (annotazione, misurazione o filtro avanzato). Scorciatoia: Ctrl+Z">↶ Annulla</button>

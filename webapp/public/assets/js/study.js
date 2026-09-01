@@ -22,12 +22,18 @@
     'tab-sentinelhub': {
       div: 'sh-map-picker',
       fields: { minLon: 'sh-min-lon', minLat: 'sh-min-lat', maxLon: 'sh-max-lon', maxLat: 'sh-max-lat' },
-      toggles: { draw: 'sh-map-draw', pan: 'sh-map-pan', mapView: 'sh-map-osm', satView: 'sh-map-sat' },
+      toggles: {
+        draw: 'sh-map-draw', pan: 'sh-map-pan', mapView: 'sh-map-osm', satView: 'sh-map-sat',
+        rotation: 'sh-map-rotation', rotationOut: 'sh-map-rotation-out', rotationReset: 'sh-map-rotation-reset',
+      },
     },
     'tab-esri': {
       div: 'esri-map-picker',
       fields: { minLon: 'esri-min-lon', minLat: 'esri-min-lat', maxLon: 'esri-max-lon', maxLat: 'esri-max-lat' },
-      toggles: { draw: 'esri-map-draw', pan: 'esri-map-pan', mapView: 'esri-map-osm', satView: 'esri-map-sat' },
+      toggles: {
+        draw: 'esri-map-draw', pan: 'esri-map-pan', mapView: 'esri-map-osm', satView: 'esri-map-sat',
+        rotation: 'esri-map-rotation', rotationOut: 'esri-map-rotation-out', rotationReset: 'esri-map-rotation-reset',
+      },
     },
   };
   $$('.tab-btn').forEach((btn) => {
@@ -133,6 +139,10 @@
       if (fd.has('date_from')) payload.date_from = fd.get('date_from');
       if (fd.has('date_to')) payload.date_to = fd.get('date_to');
       if (fd.has('max_cloud_coverage')) payload.max_cloud_coverage = fd.get('max_cloud_coverage');
+      // Rotazione area (vedi map-picker.js): 0/assente = comportamento
+      // invariato, nessuna area aggiuntiva scaricata né alcun ritaglio.
+      const rotationRaw = fd.has('rotation') ? parseFloat(fd.get('rotation')) : 0;
+      if (rotationRaw) payload.rotation = rotationRaw;
 
       try {
         const res = await fetch('api/fetch_capture.php', {
@@ -144,6 +154,108 @@
         if (!res.ok) throw new Error(data.error || 'Errore');
         status.textContent = 'Ripresa scaricata. Ricarico la pagina...';
         setTimeout(() => window.location.reload(), 400);
+      } catch (err) {
+        status.textContent = 'Errore: ' + err.message;
+      }
+    });
+  });
+
+  // ---------- Scaricamento automatico pianificato (vedi ScheduledDownload.php
+  // + cli/run_scheduled_downloads.php) — stessa area/form di sopra, un
+  // pannello indipendente per attivare il controllo periodico e vedere le
+  // pianificazioni già attive per questa sezione. ----------
+  $$('.fetch-form').forEach((form) => {
+    const panel = form.querySelector('.schedule-panel');
+    if (!panel) return;
+    const toggle = panel.querySelector('.schedule-toggle');
+    const fields = panel.querySelector('.schedule-fields');
+    const saveBtn = panel.querySelector('.schedule-save-btn');
+    const status = panel.querySelector('.schedule-status');
+    const listEl = panel.querySelector('.schedule-list');
+    const source = form.dataset.source;
+
+    toggle.addEventListener('change', () => {
+      fields.style.display = toggle.checked ? '' : 'none';
+      saveBtn.style.display = toggle.checked ? '' : 'none';
+    });
+
+    function renderScheduleList(schedules) {
+      const mine = schedules.filter((s) => s.source === source);
+      if (!mine.length) { listEl.innerHTML = ''; return; }
+      listEl.innerHTML = '<div class="hint" style="margin-bottom:6px;">Pianificazioni attive per quest\'area:</div>' + mine.map((s) => {
+        const lastResultLabel = { new: '✓ nuova ripresa', duplicate: '= scartata (duplicato)', error: '✕ errore' }[s.last_result] || 'in attesa del primo controllo';
+        const lastRun = s.last_run_at ? new Date(s.last_run_at.replace(' ', 'T') + 'Z').toLocaleString('it-IT') : 'mai eseguita';
+        return `<div class="hint" style="display:flex; justify-content:space-between; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid var(--line);">
+          <span>Ogni ${s.interval_days} giorni · ultimo controllo: ${lastRun} (${lastResultLabel})${s.is_active ? '' : ' · <b>disattivata</b>'}</span>
+          <span style="display:flex; gap:4px;">
+            <button type="button" class="btn btn-sm sched-toggle-btn" data-id="${s.id}">${s.is_active ? 'Sospendi' : 'Riattiva'}</button>
+            <button type="button" class="btn btn-sm btn-danger sched-delete-btn" data-id="${s.id}">Elimina</button>
+          </span>
+        </div>`;
+      }).join('');
+      listEl.querySelectorAll('.sched-toggle-btn').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          await fetch('api/schedule_download.php', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'toggle', id: parseInt(btn.dataset.id, 10) }),
+          });
+          loadSchedules();
+        });
+      });
+      listEl.querySelectorAll('.sched-delete-btn').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('Eliminare questa pianificazione? Le riprese già scaricate restano, solo il controllo automatico si ferma.')) return;
+          await fetch('api/schedule_download.php', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'delete', id: parseInt(btn.dataset.id, 10) }),
+          });
+          loadSchedules();
+        });
+      });
+    }
+
+    async function loadSchedules() {
+      try {
+        const res = await fetch('api/schedule_download.php?study_id=' + encodeURIComponent(form.querySelector('[name=study_id]').value));
+        const data = await res.json();
+        renderScheduleList(data.schedules || []);
+      } catch (e) { /* pannello secondario: un errore qui non deve interrompere il resto della pagina */ }
+    }
+    loadSchedules();
+
+    saveBtn.addEventListener('click', async () => {
+      const fd = new FormData(form);
+      const intervalUnit = parseInt(panel.querySelector('.schedule-interval-unit').value, 10);
+      const intervalValue = parseInt(panel.querySelector('.schedule-interval-value').value, 10) || 1;
+      const payload = {
+        action: 'create',
+        study_id: parseInt(fd.get('study_id'), 10),
+        source,
+        bbox: [fd.get('min_lon'), fd.get('min_lat'), fd.get('max_lon'), fd.get('max_lat')],
+        interval_days: intervalValue * intervalUnit,
+        duplicate_threshold: (parseFloat(panel.querySelector('.schedule-threshold').value) || 0.5) / 100,
+      };
+      const rotationRaw = fd.has('rotation') ? parseFloat(fd.get('rotation')) : 0;
+      if (rotationRaw) payload.rotation = rotationRaw;
+      if (source === 'sentinelhub') {
+        payload.max_cloud_coverage = fd.get('max_cloud_coverage');
+        const windowInput = panel.querySelector('.schedule-window-days');
+        payload.date_window_days = windowInput ? (parseInt(windowInput.value, 10) || 90) : 90;
+      }
+
+      status.textContent = 'Attivo la pianificazione e scarico la prima ripresa di base (può richiedere qualche secondo)...';
+      try {
+        const res = await fetch('api/schedule_download.php', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Errore');
+        status.textContent = data.warning || 'Pianificazione attiva.';
+        toggle.checked = false;
+        fields.style.display = 'none';
+        saveBtn.style.display = 'none';
+        loadSchedules();
+        if (!data.warning) setTimeout(() => window.location.reload(), 600);
       } catch (err) {
         status.textContent = 'Errore: ' + err.message;
       }
@@ -578,7 +690,7 @@
   }
 
   const stageZoom = createZoomPan($('#stage-viewport'), $('#stage-content'), {
-    mode: 'annotate',
+    mode: 'pan',
     onChange: (s) => { $('#zoom-level').textContent = Math.round(s * 100) + '%'; },
   });
   const swipeZoom = createZoomPan($('#swipe-viewport'), $('#swipe-content'), {
@@ -586,7 +698,11 @@
     onChange: (s) => { $('#zoom-level').textContent = Math.round(s * 100) + '%'; },
   });
   let activeZoom = stageZoom;
-  let stageMode = 'annotate';
+  // Sposta di default (non Annota): appena apri un confronto vuoi prima
+  // esplorarlo/zoomarci dentro, l'annotazione è un'azione volontaria
+  // successiva — partire già in modalità disegno rischiava annotazioni
+  // accidentali durante la prima esplorazione.
+  let stageMode = 'pan';
 
   $$('#mode-toggle .mode-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
