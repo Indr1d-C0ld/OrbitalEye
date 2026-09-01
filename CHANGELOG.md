@@ -4,6 +4,91 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-09-01 (5) — Fix: misurazione imprecisa e overlay distorto sulle riprese ruotate/non quadrate
+
+Due difetti di onestà dei dati segnalati da un uso reale della funzione di
+rotazione area introdotta in questa stessa giornata (voce (3) più sotto),
+entrambi con causa più profonda della sola rotazione — corretti alla
+radice, non solo per il caso segnalato.
+
+**1) Scala di misurazione sbagliata sulle riprese ruotate.** `pixelDistance()`
+applicava le scale m/pixel per asse (mppX/mppY, calcolate su lon/lat)
+assumendo che l'asse X dell'immagine fosse sempre l'asse longitudine e Y
+sempre l'asse latitudine — vero per ogni ripresa normale, falso per una
+ripresa scaricata ruotata (i suoi assi pixel sono ruotati di quell'angolo
+rispetto a lon/lat). L'errore cresce con l'angolo e con l'anisotropia
+mppX/mppY (già frequente: la compressione di un grado di longitudine in
+metri varia con la latitudine), fino a un fattore prossimo a mppX/mppY per
+misurazioni vicine a 45°/135° rispetto all'asse ruotato.
+
+- **[webapp/public/assets/js/analyze.js](webapp/public/assets/js/analyze.js)**
+  `pixelDistance()` ora riporta lo spostamento nel sistema locale allineato
+  a lon/lat (ruotandolo indietro di `CFG.rotation`, inversa esatta della
+  trasformazione applicata in `ImageRotateCrop.php` in fase di
+  scaricamento) *prima* di applicare mppX/mppY — verificato con test
+  numerico indipendente su più angoli e direzioni di misura.
+  Nessun cambiamento per `CFG.rotation` assente/zero (la stragrande
+  maggioranza delle riprese esistenti).
+
+- **[webapp/public/analyze_capture.php](webapp/public/analyze_capture.php)**
+  Nuovo campo `rotation` in `window.ORBITALEYE_ANALYZE`, letto da
+  `meta_json`.
+
+**2) Overlay distorto su riprese non quadrate.** Le frazioni di dimensione
+dell'overlay (`baseWFrac`/`baseHFrac`, calcolate al caricamento per
+preservare il rapporto d'aspetto reale dell'immagine sovrapposta) venivano
+poi moltiplicate ciascuna per `canvas.width`/`canvas.height` *separatamente*
+in `renderOverlay()`/`drawOverlayOnto()`: corretto solo se il canvas è
+quadrato. Su qualunque ripresa non quadrata (un ritaglio rettangolare,
+sempre più comune da quando esiste la rotazione dell'area) la sovrapposizione
+risultava distorta di un fattore pari al rapporto d'aspetto del canvas.
+Bug preesistente alla rotazione, solo reso più evidente da essa.
+
+- **[webapp/public/assets/js/analyze.js](webapp/public/assets/js/analyze.js)**
+  Il calcolo di `baseWFrac`/`baseHFrac` ora considera anche l'aspect ratio
+  del canvas (`aspect / canvasAspect` al posto del solo `aspect`
+  dell'immagine caricata): su canvas quadrato il comportamento è invariato
+  (era già corretto in quel caso), su canvas non quadrato l'overlay
+  mantiene finalmente il proprio rapporto d'aspetto reale.
+
+**3) Causa più a monte scoperta durante l'indagine: risoluzione silenziosamente
+degradata su un asse per rettangoli molto allungati ruotati anche di pochi
+gradi.** `scaledFetchSize()` derivava larghezza/altezza da richiedere al
+provider da `rect` (rapporto d'aspetto A), ma il bbox da scaricare per
+davvero ha un rapporto d'aspetto diverso (B, cambia con l'angolo) — se A e B
+divergono abbastanza, Esri applica una propria correzione indipendente
+(`_adjust_bbox_to_aspect`, pensata per il caso normale non ruotato) che
+espande il bbox in modo non prevedibile da qui. Caso reale che ha innescato
+l'indagine: un'area 2.5:1 (Sigonella) ruotata di soli 6° aveva prodotto un
+ritaglio 1024×409 invece dei 1024×1024 attesi — non distorto, ma con una
+risoluzione reale su un asse 2.5 volte inferiore al previsto (e una scala
+d'immagine complessivamente meno accurata).
+
+- **[webapp/src/ImageRotateCrop.php](webapp/src/ImageRotateCrop.php)**
+  - `scaledFetchSize()` ora richiede sempre larghezza/altezza con lo STESSO
+    rapporto d'aspetto del bbox da scaricare (usando la maggiore delle due
+    densità pixel/grado implicite in `rect`, applicata a entrambi gli assi
+    del bbox allargato) — la correzione di Esri diventa un no-op nella
+    stragrande maggioranza dei casi. Il clamp al limite massimo per lato
+    ora riscala entrambe le dimensioni dello stesso fattore (non più
+    indipendentemente), preservando l'aspect ratio anche quando scatta.
+  - `rotateAndCrop()` accetta due nuovi parametri (`$targetWidthPx`,
+    `$targetHeightPx`) e **ricampiona sempre** il ritaglio geometrico alla
+    dimensione finale richiesta (`imagecopyresampled`): la ripresa salvata
+    ha sempre esattamente le dimensioni promesse, qualunque sorpresa
+    accada a monte (arrotondamenti, clamp, ulteriori correzioni d'aspetto
+    del provider) — rete di sicurezza in più oltre al fix del punto sopra.
+
+- **[webapp/src/CaptureFetcher.php](webapp/src/CaptureFetcher.php)**
+  Passa le dimensioni richieste dall'utente a `rotateAndCrop()` come
+  target garantito.
+
+Verificato con test pixel dedicati (geometria di ritaglio, aspect ratio
+richiesto vs bbox, dimensione finale garantita anche simulando la
+correzione Esri) e con test numerico indipendente per la formula di
+misurazione, su più angoli e casi limite (incluso il caso reale
+segnalato). Nessuna modifica al python-service.
+
 ## 2026-09-01 (4) — Scaricamento automatico pianificato, con rilevamento duplicati e alert
 
 Nuovo meccanismo, pensato per il monitoraggio nel tempo di un'area senza

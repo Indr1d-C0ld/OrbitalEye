@@ -253,6 +253,11 @@ window.ORBITALEYE_ANALYZE = {
   captureId: <?= (int)$capture['id'] ?>,
   imageUrl: <?= json_encode(storage_url($capture['relative_path'])) ?>,
   bbox: <?= $measureBbox ? json_encode(array_map('floatval', $measureBbox)) : 'null' ?>,
+  // Angolo (gradi) applicato in fase di scaricamento se l'area era stata
+  // ruotata (vedi ImageRotateCrop.php): gli assi pixel di questa immagine
+  // non sono allineati a lon/lat come al solito, serve per calcolare
+  // correttamente le distanze reali — vedi pixelDistance() in analyze.js.
+  rotation: <?= json_encode(is_array($captureMeta) ? (float)($captureMeta['rotation'] ?? 0) : 0.0) ?>,
 };
 </script>
 <script src="assets/js/analyze.js?v=<?= @filemtime(__DIR__ . '/assets/js/analyze.js') ?: time() ?>"></script>

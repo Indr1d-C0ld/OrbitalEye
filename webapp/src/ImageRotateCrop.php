@@ -57,13 +57,30 @@ final class ImageRotateCrop
     /**
      * Dato il bbox effettivamente da scaricare (più ampio) e quello
      * originale del rettangolo di base, calcola la larghezza/altezza in
-     * pixel da richiedere al servizio di fetch per ottenere sull'area
-     * allargata la STESSA risoluzione (metri/pixel) che si sarebbe avuta
-     * scaricando solo il rettangolo originale a $baseWidthPx x $baseHeightPx.
+     * pixel da richiedere al servizio di fetch: abbastanza dense da coprire
+     * la risoluzione voluta ($baseWidthPx x $baseHeightPx sul rettangolo
+     * originale) su ENTRAMBI gli assi, nello stesso rapporto d'aspetto in
+     * gradi di $fetchBbox.
+     *
+     * Il rapporto d'aspetto deve combaciare con quello di $fetchBbox — non
+     * con quello (spesso diverso, specie dopo l'espansione per la
+     * rotazione) di $rect — altrimenti Esri applica una SUA correzione
+     * indipendente (vedi _adjust_bbox_to_aspect in esri_client.py, pensata
+     * per il caso normale non ruotato) che espande ulteriormente il bbox in
+     * modo non prevedibile da qui: prima di questo fix è capitato che
+     * un'area molto allungata (rapporto 2.5:1) ruotata anche di pochi gradi
+     * desse in uscita un ritaglio 1024×409 invece di 1024×1024 — non
+     * distorto, ma con una risoluzione reale su un asse molto più bassa del
+     * previsto. (`rotateAndCrop()` inoltre ora RICAMPIONA sempre al
+     * risultato esattamente $baseWidthPx x $baseHeightPx, quindi anche in
+     * caso di ulteriori sorprese a monte la ripresa salvata mantiene le
+     * dimensioni promesse.)
+     *
      * Il risultato è limitato a $maxPx per lato: oltre certi angoli/rapporti
-     * d'aspetto molto estremi la risoluzione finale può quindi risultare
-     * leggermente inferiore a quella nominale richiesta — limite noto,
-     * accettato per evitare richieste enormi ai provider.
+     * d'aspetto molto estremi la risoluzione effettiva della sorgente può
+     * risultare inferiore al nominale (poi ricampionata comunque alla
+     * dimensione richiesta) — limite noto, accettato per evitare richieste
+     * enormi ai provider.
      */
     public static function scaledFetchSize(array $rect, array $fetchBbox, int $baseWidthPx, int $baseHeightPx, int $maxPx = 2048): array
     {
@@ -72,10 +89,27 @@ final class ImageRotateCrop
         $fetchWidthDeg = $fetchBbox[2] - $fetchBbox[0];
         $fetchHeightDeg = $fetchBbox[3] - $fetchBbox[1];
 
-        $w = (int) round($baseWidthPx * ($fetchWidthDeg / $rectWidthDeg));
-        $h = (int) round($baseHeightPx * ($fetchHeightDeg / $rectHeightDeg));
+        // Densità (pixel/grado) voluta su ciascun asse per il rettangolo
+        // originale; si usa la maggiore delle due per non sotto-risolvere
+        // nessuno dei due assi, applicata a ENTRAMBE le dimensioni di
+        // $fetchBbox — così facendo l'aspect ratio richiesto combacia
+        // sempre esattamente con quello di $fetchBbox.
+        $pxPerDegLon = $baseWidthPx / $rectWidthDeg;
+        $pxPerDegLat = $baseHeightPx / $rectHeightDeg;
+        $pxPerDeg = max($pxPerDegLon, $pxPerDegLat);
 
-        return [max(64, min($maxPx, $w)), max(64, min($maxPx, $h))];
+        $w = $pxPerDeg * $fetchWidthDeg;
+        $h = $pxPerDeg * $fetchHeightDeg;
+
+        // Se il limite scatta, riscala ENTRAMBE le dimensioni dello stesso
+        // fattore invece di limitarle indipendentemente: preserva l'aspect
+        // ratio di $fetchBbox anche sotto clamp (altrimenti si ricrea lo
+        // stesso disallineamento che questa funzione esiste per evitare).
+        $scaleDown = min(1.0, $maxPx / max($w, $h));
+        $w = max(64, (int) round($w * $scaleDown));
+        $h = max(64, (int) round($h * $scaleDown));
+
+        return [$w, $h];
     }
 
     /**
@@ -89,9 +123,11 @@ final class ImageRotateCrop
      * @param array  $fetchedBbox Bbox effettivamente coperta dall'immagine [minLon,minLat,maxLon,maxLat]
      * @param array  $rect        Rettangolo di base originale (non ruotato) [minLon,minLat,maxLon,maxLat]
      * @param float  $rotationDeg Rotazione richiesta dall'utente (gradi, positivo = orario)
+     * @param int    $targetWidthPx  Larghezza finale garantita del file salvato
+     * @param int    $targetHeightPx Altezza finale garantita del file salvato
      * @return string Bytes dell'immagine ritagliata, stesso formato in ingresso
      */
-    public static function rotateAndCrop(string $imageBytes, string $format, array $fetchedBbox, array $rect, float $rotationDeg): string
+    public static function rotateAndCrop(string $imageBytes, string $format, array $fetchedBbox, array $rect, float $rotationDeg, int $targetWidthPx, int $targetHeightPx): string
     {
         $src = @imagecreatefromstring($imageBytes);
         if ($src === false) {
@@ -153,12 +189,29 @@ final class ImageRotateCrop
         $srcX = (int) round($newCx - $halfWpx);
         $srcY = (int) round($newCy - $halfHpx);
 
-        $out = imagecreatetruecolor($cropW, $cropH);
+        $cropped = imagecreatetruecolor($cropW, $cropH);
+        if ($isPng) {
+            imagealphablending($cropped, false);
+            imagesavealpha($cropped, true);
+        }
+        imagecopy($cropped, $rotated, 0, 0, $srcX, $srcY, $cropW, $cropH);
+
+        // Ricampiona sempre alla dimensione finale RICHIESTA: la geometria
+        // sopra ($cropW/$cropH) riflette la vera risoluzione ottenuta
+        // dall'immagine scaricata, che può differire leggermente da quella
+        // nominale (arrotondamenti, clamp di scaledFetchSize() su angoli
+        // estremi, eventuali ulteriori correzioni d'aspetto del provider) —
+        // così facendo la ripresa salvata ha SEMPRE esattamente le
+        // dimensioni promesse, come per ogni altra ripresa della
+        // piattaforma (non ruotata inclusa), e il calcolo della scala
+        // (meta_json.bbox=rect ÷ dimensioni immagine) resta coerente.
+        $out = imagecreatetruecolor($targetWidthPx, $targetHeightPx);
         if ($isPng) {
             imagealphablending($out, false);
             imagesavealpha($out, true);
         }
-        imagecopy($out, $rotated, 0, 0, $srcX, $srcY, $cropW, $cropH);
+        imagecopyresampled($out, $cropped, 0, 0, 0, 0, $targetWidthPx, $targetHeightPx, $cropW, $cropH);
+        imagedestroy($cropped);
 
         ob_start();
         if ($isPng) {

@@ -835,7 +835,25 @@
     const dxPx = ((x2 - x1) / canvas.width) * natW;
     const dyPx = ((y2 - y1) / canvas.height) * natH;
     if (mppX && mppY) {
-      const dxM = dxPx * mppX, dyM = dyPx * mppY;
+      // Se la ripresa è stata scaricata ruotata (vedi ImageRotateCrop.php),
+      // gli assi pixel dell'immagine non sono più allineati a lon/lat: "un
+      // passo a destra" nell'immagine corrisponde sul terreno a una
+      // direzione ruotata di CFG.rotation rispetto a est, non più pura
+      // longitudine. mppX/mppY restano validi solo nel sistema LOCALE
+      // (allineato a lon/lat, quello di prima della rotazione): riportiamo
+      // lo spostamento lì (ruotandolo indietro di CFG.rotation, inversa
+      // esatta della trasformazione applicata in fase di ritaglio) prima di
+      // applicare le due scale per asse — altrimenti la distanza calcolata
+      // è sistematicamente sbagliata, tanto più quanto più l'angolo si
+      // avvicina a 45°/135° (verificato: senza questa correzione l'errore
+      // può arrivare a un fattore ~mppX/mppY, non un semplice offset).
+      let localDxPx = dxPx, localDyPx = dyPx;
+      if (CFG.rotation) {
+        const rad = (CFG.rotation * Math.PI) / 180;
+        localDxPx = dxPx * Math.cos(rad) - dyPx * Math.sin(rad);
+        localDyPx = dxPx * Math.sin(rad) + dyPx * Math.cos(rad);
+      }
+      const dxM = localDxPx * mppX, dyM = localDyPx * mppY;
       return { distanceM: Math.sqrt(dxM * dxM + dyM * dyM), dxPx, dyPx };
     }
     return { distanceM: null, dxPx, dyPx };
@@ -1012,9 +1030,19 @@
       overlay.loaded = true;
       // Dimensione di partenza comoda: il lato maggiore occupa ~40% del
       // riquadro, rapporto d'aspetto reale dell'immagine caricata preservato.
+      // baseWFrac/baseHFrac sono frazioni di canvas.width/canvas.height
+      // RISPETTIVAMENTE (non dello stesso lato): su un canvas non quadrato
+      // (es. un ritaglio rettangolare, ancora più comune da quando esiste
+      // la rotazione dell'area — vedi ImageRotateCrop.php) moltiplicarle
+      // ciascuna per la propria dimensione del canvas altera il rapporto
+      // d'aspetto voluto di un fattore canvas.width/canvas.height se non lo
+      // si compensa qui: da cui la sovrapposizione risultava distorta su
+      // ogni ripresa non quadrata, non solo su quelle ruotate.
       const aspect = img.naturalWidth / img.naturalHeight;
-      if (aspect >= 1) { overlay.baseWFrac = 0.4; overlay.baseHFrac = 0.4 / aspect; }
-      else { overlay.baseHFrac = 0.4; overlay.baseWFrac = 0.4 * aspect; }
+      const canvasAspect = canvas.width / canvas.height;
+      const relativeAspect = aspect / canvasAspect;
+      if (relativeAspect >= 1) { overlay.baseWFrac = 0.4; overlay.baseHFrac = 0.4 / relativeAspect; }
+      else { overlay.baseHFrac = 0.4; overlay.baseWFrac = 0.4 * relativeAspect; }
       overlay.cx = 0.5; overlay.cy = 0.5;
       overlayImgEl.src = url;
       renderOverlay();
