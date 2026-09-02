@@ -4,6 +4,30 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-09-02 (5) — Fix: un errore di rete nello scaricamento pianificato faceva perdere il riferimento all'ultima ripresa
+
+Trovato durante un controllo end-to-end completo del meccanismo di
+scaricamento pianificato (richiesto esplicitamente per verificarne lo
+stato): riprodotto fermando deliberatamente il servizio a metà test.
+
+- **[webapp/src/ScheduledDownload.php](webapp/src/ScheduledDownload.php)**
+  `recordRun()` scriveva sempre `last_capture_id` con il valore ricevuto,
+  incluso `null` per un esito `'error'` (fetch fallito, nessuna ripresa
+  nuova) — cancellando così il riferimento all'ultima ripresa nota. Al
+  tentativo successivo, riuscito, la pianificazione veniva trattata come
+  "prima ripresa mai scaricata": nessun confronto con quella davvero
+  precedente, alert generato anche se la nuova ripresa era in realtà
+  identica. Ora usa `COALESCE(:cap, last_capture_id)`: un esito di errore
+  non tocca più il riferimento, che resta intatto fino alla prossima
+  esecuzione con esito `'new'`/`'duplicate'`.
+
+Verificato riproducendo la sequenza reale (base scaricata → servizio
+fermato a metà → errore registrato correttamente senza perdere il
+riferimento → servizio ripristinato → esecuzione successiva confrontata
+correttamente contro la ripresa precedente, sia per lo scarto duplicato
+sia per il rilevamento di una ripresa diversa con alert). Nessuna modifica
+al python-service.
+
 ## 2026-09-02 (4) — Ricerca inversa per immagini: solo Google Lens
 
 Dopo uso reale: il pulsante "Apri tutti i motori" in pratica apriva solo la

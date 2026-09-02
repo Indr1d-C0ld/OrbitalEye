@@ -70,12 +70,22 @@ final class ScheduledDownload
         $stmt->execute([':id' => $id]);
     }
 
-    /** Registra l'esito di un'esecuzione (chiamato dal cron dopo ogni tentativo). */
+    /**
+     * Registra l'esito di un'esecuzione (chiamato dal cron dopo ogni
+     * tentativo). $captureId nullo (tipico di un esito 'error': fetch
+     * fallito, nessuna ripresa nuova) NON cancella il riferimento
+     * all'ultima ripresa nota (COALESCE) — altrimenti un singolo errore di
+     * rete transitorio farebbe perdere la base di confronto, e la
+     * successiva esecuzione riuscita verrebbe trattata come "prima
+     * ripresa" (nessun confronto, alert automatico anche se identica alla
+     * precedente davvero nota).
+     */
     public static function recordRun(int $id, string $result, ?int $captureId, ?string $error = null): void
     {
         $stmt = Database::get()->prepare(
             'UPDATE scheduled_downloads
-             SET last_run_at = datetime(\'now\'), last_result = :result, last_capture_id = :cap, last_error = :err
+             SET last_run_at = datetime(\'now\'), last_result = :result,
+                 last_capture_id = COALESCE(:cap, last_capture_id), last_error = :err
              WHERE id = :id'
         );
         $stmt->execute([
