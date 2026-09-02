@@ -4,6 +4,25 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-09-02 (4) — Ricerca inversa per immagini: solo Google Lens
+
+Dopo uso reale: il pulsante "Apri tutti i motori" in pratica apriva solo la
+prima scheda (i browser bloccano come popup le `window.open()` successive
+alla prima nello stesso gesto utente) — invece di risolverlo, scelta
+diretta di tenere un solo motore. Google Lens si è dimostrato il più
+efficace per il riconoscimento e supporta davvero l'incolla da appunti
+(confermato con l'uso, a differenza di Yandex Images la cui compatibilità
+restava incerta).
+
+- **[webapp/public/analyze_capture.php](webapp/public/analyze_capture.php)**
+  Pannello "Ricerca inversa per immagini" semplificato: rimossi i pulsanti
+  "Apri tutti i motori"/Yandex/Bing/TinEye e la nota sull'incolla
+  motore-per-motore, resta solo "🔍 Apri Google Lens".
+
+- **[webapp/public/assets/js/analyze.js](webapp/public/assets/js/analyze.js)**
+  Rimossi `CROP_SEARCH_ENGINES` e i listener dei motori non più presenti;
+  il pulsante Google Lens resta l'unico, con l'URL diretto invariato.
+
 ## 2026-09-02 (3) — Fix: ritaglio ruotato ancora distorto + scaricamento Esri che falliva su aree molto ampie
 
 Un secondo giro sul fix di ieri (voce (5) del 2026-09-01): il ricampionamento

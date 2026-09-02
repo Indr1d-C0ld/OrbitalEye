@@ -900,12 +900,12 @@
     a.remove();
   });
 
-  // Copia il frammento negli appunti, così su TinEye/Bing (confermato) basta
-  // Ctrl+V nella pagina del motore invece di cercare il file appena
-  // scaricato — su Google Lens/Yandex non è garantito, vedi hint in pagina:
-  // se non funziona lì resta comunque disponibile "Scarica frammento" come
-  // sempre, nessuna funzionalità viene tolta. Richiede un contesto sicuro
-  // (HTTPS o localhost): su HTTP semplice l'API non esiste proprio.
+  // Copia il frammento negli appunti, così su Google Lens (confermato
+  // dall'uso reale) basta Ctrl+V nella pagina invece di cercare il file
+  // appena scaricato — se per qualche motivo non funzionasse resta
+  // comunque disponibile "Scarica frammento" come sempre. Richiede un
+  // contesto sicuro (HTTPS o localhost): su HTTP semplice l'API non esiste
+  // proprio.
   $('#an-crop-copy-btn').addEventListener('click', async () => {
     const status = $('#an-crop-copy-status');
     if (!lastCropBlob) return;
@@ -915,32 +915,20 @@
     }
     try {
       await navigator.clipboard.write([new ClipboardItem({ 'image/png': lastCropBlob })]);
-      status.textContent = 'Copiato. Ora vai sulla pagina del motore e premi Ctrl+V.';
+      status.textContent = 'Copiato. Ora vai su Google Lens e premi Ctrl+V.';
     } catch (err) {
       status.textContent = 'Copia non riuscita (' + err.message + '): usa "Scarica frammento".';
     }
   });
 
-  // Apre solo la pagina del motore: l'invio del file resta sempre un gesto
-  // manuale ed esplicito dell'analista (incolla/trascina il frammento),
-  // mai automatico — importante quando si maneggiano riprese
-  // potenzialmente sensibili.
-  const CROP_SEARCH_ENGINES = {
-    lens: 'https://lens.google.com/',
-    yandex: 'https://yandex.com/images/',
-    bing: 'https://www.bing.com/visualsearch',
-    tineye: 'https://tineye.com/',
-  };
-  $('#an-crop-open-lens').addEventListener('click', () => window.open(CROP_SEARCH_ENGINES.lens, '_blank'));
-  $('#an-crop-open-yandex').addEventListener('click', () => window.open(CROP_SEARCH_ENGINES.yandex, '_blank'));
-  $('#an-crop-open-bing').addEventListener('click', () => window.open(CROP_SEARCH_ENGINES.bing, '_blank'));
-  $('#an-crop-open-tineye').addEventListener('click', () => window.open(CROP_SEARCH_ENGINES.tineye, '_blank'));
-  // Tutte le window.open() devono restare sincrone dentro lo stesso gestore
-  // del click (stesso "user gesture"): se anche una sola finisse dietro un
-  // await, il browser bloccherebbe come popup indesiderato le successive.
-  $('#an-crop-open-all').addEventListener('click', () => {
-    Object.values(CROP_SEARCH_ENGINES).forEach((url) => window.open(url, '_blank'));
-  });
+  // Apre solo la pagina di Google Lens: l'invio del file resta sempre un
+  // gesto manuale ed esplicito dell'analista (incolla/trascina il
+  // frammento), mai automatico — importante quando si maneggiano riprese
+  // potenzialmente sensibili. Unico motore supportato per scelta
+  // dell'analista dopo uso reale: il più efficace per il riconoscimento,
+  // con incolla da appunti confermato funzionante (gli altri motori
+  // provati in precedenza sono stati rimossi).
+  $('#an-crop-open-lens').addEventListener('click', () => window.open('https://lens.google.com/', '_blank'));
 
   // ---------- Sovrapposizione di un'immagine propria ----------
   // Resta interamente lato browser (nessun upload al servizio, nessuna
