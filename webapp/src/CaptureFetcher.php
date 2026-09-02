@@ -116,12 +116,12 @@ final class CaptureFetcher
                     // Sentinel Hub non applica correzioni di aspect ratio (a
                     // differenza di Esri sotto): la bbox effettivamente coperta
                     // è sempre esattamente quella richiesta, $fetchBbox.
-                    $cropped = self::applyRotationToStoredImage($result['relative_path'], $fetchBbox, $rect, $rotation, $width, $height);
+                    $cropped = self::applyRotationToStoredImage($result['relative_path'], $fetchBbox, $rect, $rotation);
                     $result['relative_path'] = $cropped['relative_path'];
                     $result['width'] = $cropped['width'];
                     $result['height'] = $cropped['height'];
                     if (!empty($result['nir_relative_path'])) {
-                        $croppedNir = self::applyRotationToStoredImage($result['nir_relative_path'], $fetchBbox, $rect, $rotation, $width, $height);
+                        $croppedNir = self::applyRotationToStoredImage($result['nir_relative_path'], $fetchBbox, $rect, $rotation);
                         $result['nir_relative_path'] = $croppedNir['relative_path'];
                     }
                 } catch (Throwable $e) {
@@ -164,7 +164,7 @@ final class CaptureFetcher
             $actualFetchedBbox = $result['bbox'] ?? $fetchBbox;
             if (abs($rotation) >= 0.01) {
                 try {
-                    $cropped = self::applyRotationToStoredImage($result['relative_path'], $actualFetchedBbox, $rect, $rotation, $width, $height);
+                    $cropped = self::applyRotationToStoredImage($result['relative_path'], $actualFetchedBbox, $rect, $rotation);
                     $result['relative_path'] = $cropped['relative_path'];
                     $result['width'] = $cropped['width'];
                     $result['height'] = $cropped['height'];
@@ -207,7 +207,7 @@ final class CaptureFetcher
      * raccolta scaricata per racchiudere il rettangolo ruotato) non serve a
      * nessuno degli usi successivi della ripresa, quindi viene eliminato.
      */
-    private static function applyRotationToStoredImage(string $relativePath, array $fetchedBboxActual, array $rect, float $rotation, int $targetWidthPx, int $targetHeightPx): array
+    private static function applyRotationToStoredImage(string $relativePath, array $fetchedBboxActual, array $rect, float $rotation): array
     {
         $storageRoot = Config::storageRoot();
         $absPath = $storageRoot . '/' . $relativePath;
@@ -217,7 +217,10 @@ final class CaptureFetcher
         }
         $ext = strtolower(pathinfo($relativePath, PATHINFO_EXTENSION)) ?: 'png';
         $format = $ext === 'png' ? 'png' : 'jpg';
-        $croppedBytes = ImageRotateCrop::rotateAndCrop($bytes, $format, $fetchedBboxActual, $rect, $rotation, $targetWidthPx, $targetHeightPx);
+        // Nessuna dimensione forzata: il ritaglio finale mantiene sempre il
+        // vero rapporto d'aspetto di $rect (vedi ImageRotateCrop::rotateAndCrop),
+        // altrimenti risulterebbe visibilmente distorto su aree non quadrate.
+        $croppedBytes = ImageRotateCrop::rotateAndCrop($bytes, $format, $fetchedBboxActual, $rect, $rotation);
         $newRelative = 'raw/' . bin2hex(random_bytes(8)) . '.' . $ext;
         file_put_contents($storageRoot . '/' . $newRelative, $croppedBytes);
         $size = getimagesizefromstring($croppedBytes);

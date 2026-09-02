@@ -218,7 +218,7 @@ require __DIR__ . '/partials/nav.php';
 </div>
 
 <div class="panel">
-  <h2>Ricerca inversa per immagini <span class="info-tip" tabindex="0" data-tip="Nessun grande motore offre un modo pulito e diretto per automatizzare l'invio a un servizio esterno: dopo il ritaglio, scarica il frammento e trascinalo tu manualmente nella pagina del motore che apri — così l'invio a terzi resta sempre una tua scelta esplicita, mai automatica, importante quando si maneggiano riprese potenzialmente sensibili.">?</span></h2>
+  <h2>Ricerca inversa per immagini <span class="info-tip" tabindex="0" data-tip="Copia o scarica il frammento, poi apri il motore e incollalo/trascinalo tu: l'invio a un servizio esterno resta sempre un gesto esplicito e manuale, mai automatico — importante quando si maneggiano riprese potenzialmente sensibili.">?</span></h2>
   <div class="hint" style="margin-bottom:10px;">Passa a modalità Ritaglia e trascina sulla copia di lavoro per selezionare un frammento.</div>
   <div id="an-crop-result" style="display:none;">
     <div class="grid grid-2">
@@ -229,12 +229,17 @@ require __DIR__ . '/partials/nav.php';
       <div>
         <h3>Passi</h3>
         <ol style="color:var(--text-secondary); font-size:13px; padding-left:18px; line-height:1.7;">
-          <li>Scarica il frammento.</li>
-          <li>Apri il motore che preferisci (nuova scheda).</li>
-          <li>Trascina lì il file appena scaricato.</li>
+          <li>Copia il frammento negli appunti (o scaricalo, se preferisci).</li>
+          <li>Apri il motore che preferisci (nuova scheda) — o tutti insieme.</li>
+          <li>Incolla con Ctrl+V nella pagina del motore (o trascina il file scaricato).</li>
         </ol>
         <div class="tag-row">
-          <button type="button" class="btn btn-primary btn-sm" id="an-crop-download-btn">⬇ Scarica frammento</button>
+          <button type="button" class="btn btn-primary btn-sm" id="an-crop-copy-btn">📋 Copia negli appunti</button>
+          <button type="button" class="btn btn-sm" id="an-crop-download-btn">⬇ Scarica frammento</button>
+        </div>
+        <span class="hint" id="an-crop-copy-status"></span>
+        <div class="tag-row" style="margin-top:8px;">
+          <button type="button" class="btn btn-sm btn-primary" id="an-crop-open-all">🔗 Apri tutti i motori</button>
         </div>
         <div class="tag-row" style="margin-top:8px;">
           <button type="button" class="btn btn-sm" id="an-crop-open-lens">Google Lens ↗</button>
@@ -242,6 +247,7 @@ require __DIR__ . '/partials/nav.php';
           <button type="button" class="btn btn-sm" id="an-crop-open-bing">Bing Visual Search ↗</button>
           <button type="button" class="btn btn-sm" id="an-crop-open-tineye">TinEye ↗</button>
         </div>
+        <div class="hint" style="margin-top:8px;">L'incolla con Ctrl+V funziona in modo confermato su TinEye e Bing; su Google Lens e Yandex Images non è garantito (dipende dalla pagina) — se non funziona, usa "Scarica frammento" e trascina il file come sempre.</div>
       </div>
     </div>
   </div>

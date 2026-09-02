@@ -861,6 +861,7 @@
 
   // ---------- Ritaglio per ricerca inversa per immagini ----------
   let lastCropBlobUrl = null;
+  let lastCropBlob = null; // per Clipboard API: window.ClipboardItem vuole il Blob, non l'URL
 
   function renderCropFromSelection(x, y, w, h) {
     const natW = imgRight.naturalWidth, natH = imgRight.naturalHeight;
@@ -883,6 +884,7 @@
       if (!blob) return;
       if (lastCropBlobUrl) URL.revokeObjectURL(lastCropBlobUrl);
       lastCropBlobUrl = URL.createObjectURL(blob);
+      lastCropBlob = blob;
       $('#an-crop-preview').src = lastCropBlobUrl;
       $('#an-crop-result').style.display = '';
     }, 'image/png');
@@ -897,14 +899,48 @@
     a.click();
     a.remove();
   });
+
+  // Copia il frammento negli appunti, così su TinEye/Bing (confermato) basta
+  // Ctrl+V nella pagina del motore invece di cercare il file appena
+  // scaricato — su Google Lens/Yandex non è garantito, vedi hint in pagina:
+  // se non funziona lì resta comunque disponibile "Scarica frammento" come
+  // sempre, nessuna funzionalità viene tolta. Richiede un contesto sicuro
+  // (HTTPS o localhost): su HTTP semplice l'API non esiste proprio.
+  $('#an-crop-copy-btn').addEventListener('click', async () => {
+    const status = $('#an-crop-copy-status');
+    if (!lastCropBlob) return;
+    if (!window.isSecureContext || !navigator.clipboard || !navigator.clipboard.write || typeof ClipboardItem === 'undefined') {
+      status.textContent = 'Copia negli appunti non disponibile in questo browser/connessione (serve HTTPS): usa "Scarica frammento".';
+      return;
+    }
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': lastCropBlob })]);
+      status.textContent = 'Copiato. Ora vai sulla pagina del motore e premi Ctrl+V.';
+    } catch (err) {
+      status.textContent = 'Copia non riuscita (' + err.message + '): usa "Scarica frammento".';
+    }
+  });
+
   // Apre solo la pagina del motore: l'invio del file resta sempre un gesto
-  // manuale ed esplicito dell'analista (trascina il frammento appena
-  // scaricato), mai automatico — importante quando si maneggiano riprese
+  // manuale ed esplicito dell'analista (incolla/trascina il frammento),
+  // mai automatico — importante quando si maneggiano riprese
   // potenzialmente sensibili.
-  $('#an-crop-open-lens').addEventListener('click', () => window.open('https://lens.google.com/', '_blank'));
-  $('#an-crop-open-yandex').addEventListener('click', () => window.open('https://yandex.com/images/', '_blank'));
-  $('#an-crop-open-bing').addEventListener('click', () => window.open('https://www.bing.com/visualsearch', '_blank'));
-  $('#an-crop-open-tineye').addEventListener('click', () => window.open('https://tineye.com/', '_blank'));
+  const CROP_SEARCH_ENGINES = {
+    lens: 'https://lens.google.com/',
+    yandex: 'https://yandex.com/images/',
+    bing: 'https://www.bing.com/visualsearch',
+    tineye: 'https://tineye.com/',
+  };
+  $('#an-crop-open-lens').addEventListener('click', () => window.open(CROP_SEARCH_ENGINES.lens, '_blank'));
+  $('#an-crop-open-yandex').addEventListener('click', () => window.open(CROP_SEARCH_ENGINES.yandex, '_blank'));
+  $('#an-crop-open-bing').addEventListener('click', () => window.open(CROP_SEARCH_ENGINES.bing, '_blank'));
+  $('#an-crop-open-tineye').addEventListener('click', () => window.open(CROP_SEARCH_ENGINES.tineye, '_blank'));
+  // Tutte le window.open() devono restare sincrone dentro lo stesso gestore
+  // del click (stesso "user gesture"): se anche una sola finisse dietro un
+  // await, il browser bloccherebbe come popup indesiderato le successive.
+  $('#an-crop-open-all').addEventListener('click', () => {
+    Object.values(CROP_SEARCH_ENGINES).forEach((url) => window.open(url, '_blank'));
+  });
 
   // ---------- Sovrapposizione di un'immagine propria ----------
   // Resta interamente lato browser (nessun upload al servizio, nessuna

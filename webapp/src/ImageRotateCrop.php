@@ -69,18 +69,20 @@ final class ImageRotateCrop
      * per il caso normale non ruotato) che espande ulteriormente il bbox in
      * modo non prevedibile da qui: prima di questo fix è capitato che
      * un'area molto allungata (rapporto 2.5:1) ruotata anche di pochi gradi
-     * desse in uscita un ritaglio 1024×409 invece di 1024×1024 — non
-     * distorto, ma con una risoluzione reale su un asse molto più bassa del
-     * previsto. (`rotateAndCrop()` inoltre ora RICAMPIONA sempre al
-     * risultato esattamente $baseWidthPx x $baseHeightPx, quindi anche in
-     * caso di ulteriori sorprese a monte la ripresa salvata mantiene le
-     * dimensioni promesse.)
+     * desse in uscita un ritaglio 1024×409 invece delle dimensioni
+     * proporzionate al vero rapporto d'aspetto di $rect — non distorto, ma
+     * con una risoluzione reale su un asse molto più bassa del previsto.
      *
-     * Il risultato è limitato a $maxPx per lato: oltre certi angoli/rapporti
-     * d'aspetto molto estremi la risoluzione effettiva della sorgente può
-     * risultare inferiore al nominale (poi ricampionata comunque alla
-     * dimensione richiesta) — limite noto, accettato per evitare richieste
-     * enormi ai provider.
+     * Il risultato è limitato a $maxPx per lato (entrambe le dimensioni
+     * riscalate insieme se serve, mai indipendentemente — vedi sotto):
+     * oltre certi angoli/rapporti d'aspetto molto estremi la risoluzione
+     * finale può quindi risultare inferiore al nominale — limite noto,
+     * accettato per evitare richieste enormi ai provider. La dimensione
+     * FINALE della ripresa salvata resta comunque sempre proporzionata al
+     * vero rapporto d'aspetto di $rect, mai forzata a un valore fisso (vedi
+     * `rotateAndCrop()`: niente ricampionamento a una forma arbitraria, solo
+     * un'eventuale riduzione proporzionale se il ritaglio naturale eccede
+     * `$maxOutputPx`).
      */
     public static function scaledFetchSize(array $rect, array $fetchBbox, int $baseWidthPx, int $baseHeightPx, int $maxPx = 2048): array
     {
@@ -123,11 +125,10 @@ final class ImageRotateCrop
      * @param array  $fetchedBbox Bbox effettivamente coperta dall'immagine [minLon,minLat,maxLon,maxLat]
      * @param array  $rect        Rettangolo di base originale (non ruotato) [minLon,minLat,maxLon,maxLat]
      * @param float  $rotationDeg Rotazione richiesta dall'utente (gradi, positivo = orario)
-     * @param int    $targetWidthPx  Larghezza finale garantita del file salvato
-     * @param int    $targetHeightPx Altezza finale garantita del file salvato
+     * @param int    $maxOutputPx Lato massimo del file salvato (vedi sotto)
      * @return string Bytes dell'immagine ritagliata, stesso formato in ingresso
      */
-    public static function rotateAndCrop(string $imageBytes, string $format, array $fetchedBbox, array $rect, float $rotationDeg, int $targetWidthPx, int $targetHeightPx): string
+    public static function rotateAndCrop(string $imageBytes, string $format, array $fetchedBbox, array $rect, float $rotationDeg, int $maxOutputPx = 2048): string
     {
         $src = @imagecreatefromstring($imageBytes);
         if ($src === false) {
@@ -196,22 +197,30 @@ final class ImageRotateCrop
         }
         imagecopy($cropped, $rotated, 0, 0, $srcX, $srcY, $cropW, $cropH);
 
-        // Ricampiona sempre alla dimensione finale RICHIESTA: la geometria
-        // sopra ($cropW/$cropH) riflette la vera risoluzione ottenuta
-        // dall'immagine scaricata, che può differire leggermente da quella
-        // nominale (arrotondamenti, clamp di scaledFetchSize() su angoli
-        // estremi, eventuali ulteriori correzioni d'aspetto del provider) —
-        // così facendo la ripresa salvata ha SEMPRE esattamente le
-        // dimensioni promesse, come per ogni altra ripresa della
-        // piattaforma (non ruotata inclusa), e il calcolo della scala
-        // (meta_json.bbox=rect ÷ dimensioni immagine) resta coerente.
-        $out = imagecreatetruecolor($targetWidthPx, $targetHeightPx);
-        if ($isPng) {
-            imagealphablending($out, false);
-            imagesavealpha($out, true);
+        // NON ricampionare mai a una dimensione fissa indipendente dalla
+        // vera forma di $rect: un rettangolo non quadrato (frequentissimo,
+        // ancora di più con la rotazione, che spesso richiede un fetch più
+        // ampio su un solo asse) ha $cropW/$cropH proporzionati al proprio
+        // vero rapporto d'aspetto — forzarli a una dimensione fissa (es.
+        // 1024×1024 di default) schiaccerebbe/stirerebbe visibilmente il
+        // contenuto (bug reale, corretto qui: la ripresa finale appariva
+        // "completamente distorta" su aree ruotate non quadrate). Se il
+        // ritaglio naturale eccede $maxOutputPx, lo si riduce mantenendo
+        // ESATTAMENTE lo stesso rapporto d'aspetto.
+        $scaleDown = min(1.0, $maxOutputPx / max($cropW, $cropH));
+        if ($scaleDown < 1.0) {
+            $outW = max(1, (int) round($cropW * $scaleDown));
+            $outH = max(1, (int) round($cropH * $scaleDown));
+            $out = imagecreatetruecolor($outW, $outH);
+            if ($isPng) {
+                imagealphablending($out, false);
+                imagesavealpha($out, true);
+            }
+            imagecopyresampled($out, $cropped, 0, 0, 0, 0, $outW, $outH, $cropW, $cropH);
+            imagedestroy($cropped);
+        } else {
+            $out = $cropped; // già entro il limite: nessun ricampionamento, massima fedeltà
         }
-        imagecopyresampled($out, $cropped, 0, 0, 0, 0, $targetWidthPx, $targetHeightPx, $cropW, $cropH);
-        imagedestroy($cropped);
 
         ob_start();
         if ($isPng) {

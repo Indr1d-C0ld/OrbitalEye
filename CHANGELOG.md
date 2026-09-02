@@ -4,6 +4,63 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-09-02 (3) — Fix: ritaglio ruotato ancora distorto + scaricamento Esri che falliva su aree molto ampie
+
+Un secondo giro sul fix di ieri (voce (5) del 2026-09-01): il ricampionamento
+forzato introdotto allora ("garantisce sempre le dimensioni richieste")
+schiacciava/stirava ancora il contenuto — solo in modo meno vistoso —
+perché forzava comunque il ritaglio finale a un rapporto d'aspetto fisso
+(quello di larghezza/altezza richieste, tipicamente 1:1) invece di lasciarlo
+proporzionato alla vera forma dell'area scelta. Individuato riproducendo
+esattamente (stesso rettangolo, stessa rotazione) il caso reale segnalato e
+confrontando visivamente il risultato con un'immagine di riferimento non
+ruotata — vedi anche la verifica indipendente della scala di misura su un
+riferimento reale noto (apertura alare di un velivolo riconoscibile
+nell'immagine).
+
+- **[webapp/src/ImageRotateCrop.php](webapp/src/ImageRotateCrop.php)**
+  `rotateAndCrop()`: rimosso il ricampionamento forzato a una dimensione
+  fissa. Il ritaglio finale mantiene ora **sempre** il vero rapporto
+  d'aspetto del rettangolo scelto; se supera `$maxOutputPx` (default 2048)
+  per lato viene solo ridotto proporzionalmente, mai stirato in modo
+  diverso sui due assi. Firma semplificata: da
+  `(..., int $targetWidthPx, int $targetHeightPx)` a `(..., int $maxOutputPx = 2048)`.
+
+- **[webapp/src/CaptureFetcher.php](webapp/src/CaptureFetcher.php)**
+  Aggiornati i punti di chiamata a `rotateAndCrop()`/`applyRotationToStoredImage()`
+  per la nuova firma (nessuna dimensione forzata).
+
+- **[python-service/app/core/esri_client.py](python-service/app/core/esri_client.py)**
+  Scoperto durante l'indagine sul punto sopra: il servizio pubblico Esri
+  World Imagery rifiuta silenziosamente (HTTP 500, corpo "Error: bytes") le
+  richieste di export oltre una soglia di complessità non documentata —
+  verificato empiricamente non essere un semplice limite per lato o per
+  pixel totali, dipende anche da quanta risoluzione sorgente è realmente
+  disponibile in quel punto. Diventa frequente con la rotazione dell'area
+  su rettangoli molto allungati. `fetch_world_imagery()` ora ritenta
+  automaticamente a risoluzione ridotta (stesso rapporto d'aspetto, ×0.7
+  per tentativo, fino a 4 tentativi) invece di fallire subito: verificato
+  contro il servizio reale su due casi che prima fallivano, entrambi
+  risolti (uno al primo ritentativo, un altro rientrato nella soglia già al
+  tentativo iniziale su un'area diversa — conferma che il limite dipende
+  dalla zona, non da una formula fissa).
+
+## 2026-09-02 (2) — Ricerca inversa per immagini: copia negli appunti + apertura di tutti i motori in un click
+
+- **[webapp/public/assets/js/analyze.js](webapp/public/assets/js/analyze.js)**
+  Nuovo pulsante "📋 Copia negli appunti" (Clipboard API, richiede contesto
+  sicuro HTTPS/localhost — messaggio chiaro con fallback a "Scarica
+  frammento" se non disponibile) e "🔗 Apri tutti i motori" (apre le 4 tab
+  in un solo click, tutte sincrone nello stesso gestore per non farle
+  bloccare come popup). L'invio effettivo del file resta comunque sempre un
+  gesto manuale ed esplicito dell'analista (incolla/trascina) — nessuna
+  automazione dell'upload verso servizi terzi, per scelta deliberata.
+
+- **[webapp/public/analyze_capture.php](webapp/public/analyze_capture.php)**
+  Pannello "Ricerca inversa per immagini" aggiornato con i nuovi controlli
+  e una nota su quali motori supportano l'incolla (confermato: TinEye,
+  Bing; non garantito: Google Lens, Yandex Images).
+
 ## 2026-09-01 (5) — Fix: misurazione imprecisa e overlay distorto sulle riprese ruotate/non quadrate
 
 Due difetti di onestà dei dati segnalati da un uso reale della funzione di

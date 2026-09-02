@@ -107,21 +107,38 @@ def fetch_world_imagery(bbox: list, width: int = 1024, height: int = 1024) -> tu
     """
     adjusted_bbox = _adjust_bbox_to_aspect(bbox, width, height)
 
-    params = {
+    params_base = {
         "bbox": ",".join(str(v) for v in adjusted_bbox),
         "bboxSR": 4326,
         "imageSR": 4326,
-        "size": f"{width},{height}",
         "format": "jpg",
         "transparent": "false",
         "f": "image",
     }
     api_key = _get_api_key()
     if api_key:
-        params["token"] = api_key
+        params_base["token"] = api_key
 
-    resp = requests.get(EXPORT_URL, params=params, timeout=60)
-    if resp.status_code != 200 or not resp.headers.get("content-type", "").startswith("image"):
-        raise EsriError(f"Richiesta a Esri World Imagery fallita: {resp.status_code} {resp.text[:300]}")
+    # Il servizio pubblico Esri World Imagery rifiuta silenziosamente
+    # (HTTP 500, corpo "Error: bytes") le richieste "size" oltre una soglia
+    # di complessità NON documentata — verificato empiricamente: non è un
+    # semplice limite per lato né per pixel totali (dipende anche da
+    # quanta risoluzione sorgente è realmente disponibile in quel punto),
+    # quindi non prevedibile a monte con una formula. Diventa frequente con
+    # la rotazione dell'area (vedi ImageRotateCrop.php), che su rettangoli
+    # molto allungati può richiedere risoluzioni elevate. Anziché fallire
+    # subito, si ritenta a risoluzione ridotta (stesso rapporto d'aspetto,
+    # quindi la stessa bbox già adattata resta valida) finché non va a buon
+    # fine o si rinuncia: il chiamante riceve comunque una ripresa, a una
+    # risoluzione magari inferiore al nominale invece di un errore secco.
+    cur_w, cur_h = width, height
+    last_status, last_body = None, None
+    for _attempt in range(4):
+        resp = requests.get(EXPORT_URL, params={**params_base, "size": f"{cur_w},{cur_h}"}, timeout=60)
+        if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image"):
+            return resp.content, adjusted_bbox
+        last_status, last_body = resp.status_code, resp.text[:300]
+        cur_w = max(128, int(cur_w * 0.7))
+        cur_h = max(128, int(cur_h * 0.7))
 
-    return resp.content, adjusted_bbox
+    raise EsriError(f"Richiesta a Esri World Imagery fallita anche a risoluzione ridotta: {last_status} {last_body}")
