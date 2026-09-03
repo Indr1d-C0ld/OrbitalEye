@@ -930,6 +930,82 @@
   // provati in precedenza sono stati rimossi).
   $('#an-crop-open-lens').addEventListener('click', () => window.open('https://lens.google.com/', '_blank'));
 
+  // ---------- Condividi (Telegram / X) ----------
+  // Condivide la copia di lavoro CON le regolazioni correnti applicate
+  // (stesso renderAdjustedCanvas() di "Salva come nuova ripresa", mai
+  // l'immagine "nuda"). Anteprima/didascalia sono sempre modificabili
+  // prima dell'invio — mai una pubblicazione automatica, coerente con lo
+  // stesso principio già seguito per la ricerca inversa per immagini.
+  const shareCaptionEl = $('#an-share-caption');
+  const shareStatusEl = $('#an-share-status');
+
+  function shareCanvasBlob() {
+    return new Promise((resolve) => renderAdjustedCanvas().toBlob(resolve, 'image/jpeg', 0.92));
+  }
+
+  const shareTelegramBtn = $('#an-share-telegram-btn');
+  const shareCopyBtn = $('#an-share-copy-btn');
+
+  shareTelegramBtn.addEventListener('click', async () => {
+    if (shareTelegramBtn.disabled) return; // evita invii duplicati su doppio click/tap
+    shareTelegramBtn.disabled = true;
+    shareStatusEl.textContent = 'Preparazione immagine e invio in corso...';
+    try {
+      const blob = await shareCanvasBlob();
+      if (!blob) { shareStatusEl.textContent = 'Errore: impossibile generare l\'immagine.'; return; }
+      const form = new FormData();
+      form.append('platform', 'telegram');
+      form.append('kind', 'capture');
+      form.append('ref_id', CFG.captureId);
+      form.append('study_id', CFG.studyId);
+      form.append('caption', shareCaptionEl.value);
+      form.append('image', blob, 'ripresa_' + CFG.captureId + '.jpg');
+      const res = await fetch('api/share.php', { method: 'POST', body: form });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Errore');
+      shareStatusEl.textContent = 'Inviato su Telegram.';
+    } catch (err) {
+      shareStatusEl.textContent = 'Errore: ' + err.message;
+    } finally {
+      shareTelegramBtn.disabled = false;
+    }
+  });
+
+  shareCopyBtn.addEventListener('click', async () => {
+    if (!window.isSecureContext || !navigator.clipboard || !navigator.clipboard.write || typeof ClipboardItem === 'undefined') {
+      shareStatusEl.textContent = 'Copia negli appunti non disponibile in questo browser/connessione (serve HTTPS).';
+      return;
+    }
+    if (shareCopyBtn.disabled) return;
+    shareCopyBtn.disabled = true;
+    try {
+      const blob = await shareCanvasBlob();
+      if (!blob) { shareStatusEl.textContent = 'Errore: impossibile generare l\'immagine.'; return; }
+      await navigator.clipboard.write([new ClipboardItem({ 'image/jpeg': blob })]);
+      shareStatusEl.textContent = 'Copiato. Ora vai su X e incolla con Ctrl+V.';
+    } catch (err) {
+      shareStatusEl.textContent = 'Copia non riuscita: ' + err.message;
+    } finally {
+      shareCopyBtn.disabled = false;
+    }
+  });
+
+  $('#an-share-twitter-btn').addEventListener('click', () => {
+    // L'intent di composizione X non supporta l'allegato di un'immagine via
+    // URL, solo testo: l'analista incolla/trascina lui l'immagine (vedi
+    // pulsante "Copia negli appunti" qui sopra) — l'invio a un servizio
+    // esterno resta un gesto manuale ed esplicito, mai automatico.
+    const text = encodeURIComponent(shareCaptionEl.value);
+    window.open('https://twitter.com/intent/tweet?text=' + text, '_blank');
+    const form = new FormData();
+    form.append('platform', 'twitter');
+    form.append('kind', 'capture');
+    form.append('ref_id', CFG.captureId);
+    form.append('study_id', CFG.studyId);
+    form.append('caption', shareCaptionEl.value);
+    fetch('api/share.php', { method: 'POST', body: form }).catch(() => {}); // solo registro, un fallimento qui non blocca l'analista
+  });
+
   // ---------- Sovrapposizione di un'immagine propria ----------
   // Resta interamente lato browser (nessun upload al servizio, nessuna
   // persistenza) finché non si preme "Salva come nuova ripresa": a quel

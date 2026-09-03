@@ -4,6 +4,66 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-09-03 — Nuova funzione: condivisione su Telegram/X di riprese, confronti e riepiloghi di studio
+
+Su richiesta esplicita, dopo una fase di progettazione condivisa: possibilità
+per l'analista di condividere manualmente (mai in automatico, mai dal motore
+di scaricamento pianificato) una singola ripresa, la vista corrente di un
+confronto, o il riepilogo dell'ultimo confronto di uno studio, verso un canale
+Telegram configurato una tantum o verso X (compose-window, nessuna API a
+pagamento).
+
+- **[webapp/src/TelegramClient.php](webapp/src/TelegramClient.php)** (nuovo)
+  — client minimale per l'API bot Telegram (`sendPhoto`/`sendMessage`),
+  nessuna dipendenza dal python-service: token e chat id letti da
+  `AppSettings`, mai scritti su un file sincronizzabile.
+- **[webapp/src/Share.php](webapp/src/Share.php)** (nuovo) — log di controllo
+  (`Share::create`/`Share::recent`) di ogni condivisione effettuata, per
+  sapere sempre cosa è stato reso pubblico e quando (stesso principio già
+  applicato al log della ricerca inversa per immagini).
+- **[webapp/public/api/share.php](webapp/public/api/share.php)** (nuovo) —
+  endpoint unico per i tre tipi di contenuto (`capture`/`comparison`/`study`)
+  e le due piattaforme (`telegram`/`twitter`); risolve l'immagine da inviare
+  dal file già salvato sul server per confronti/studi, o dai bytes caricati
+  dal client per la singola ripresa (già "cotta" con le regolazioni correnti
+  lato client).
+- **[webapp/public/assets/js/analyze.js](webapp/public/assets/js/analyze.js)**
+  — pannello "Condividi" per la ripresa singola: invio a Telegram, copia
+  dell'immagine negli appunti (per incollarla su X), apertura della finestra
+  di composizione X. I pulsanti "Invia su Telegram" e "Copia negli appunti"
+  ora si disabilitano durante la richiesta e si riabilitano solo a
+  completamento (`finally`), per evitare invii duplicati su doppio
+  click/tap; il controllo "immagine non generata" (`blob` nullo) è ora
+  applicato anche al pulsante di copia, non solo a quello Telegram.
+- **[webapp/public/assets/js/study.js](webapp/public/assets/js/study.js)** —
+  nuova `setupShareBlock()`, riusata sia per la vista corrente di un
+  confronto sia per il riepilogo di studio (qui l'immagine è già un file
+  salvato sul server, nessun "bake-in" lato client necessario per Telegram).
+  Stessa protezione anti-doppio-invio aggiunta ai pulsanti Telegram e copia.
+- **[webapp/public/analyze_capture.php](webapp/public/analyze_capture.php)**,
+  **[webapp/public/study.php](webapp/public/study.php)** — markup dei nuovi
+  pannelli "Condividi"/"Riepilogo di studio" e didascalia predefinita
+  (semplificata dopo un primo tentativo ridondante: `{titolo} — OrbitalEye`).
+- **[webapp/public/settings.php](webapp/public/settings.php)** — nuovo
+  pannello "Condivisione — Telegram" (token bot, chat id, pulsante di test
+  di connessione) con promemoria che il bot va aggiunto come amministratore
+  del canale (altrimenti Telegram risponde "chat not found").
+- **[webapp/schema.sql](webapp/schema.sql)** — nuova tabella `shares`
+  (log delle condivisioni, `ref_id` polimorfico senza FK dato che punta a
+  tabelle diverse secondo `kind`).
+- **[webapp/src/AppSettings.php](webapp/src/AppSettings.php)** — nuove
+  chiavi di default `telegram_bot_token`/`telegram_chat_id`.
+
+Verificato con un invio reale al canale Telegram configurato dall'utente
+(credenziali fornite e usate solo in produzione, mai scritte in un file
+sincronizzato). Dopo l'implementazione, eseguita una revisione di codice
+completa dell'intera funzionalità: trovati e corretti 4 problemi (nessuno
+grave) — assenza di una protezione anti-doppio-click sui tre pulsanti "Invia
+su Telegram" (rischio concreto: invio duplicato della stessa immagine sul
+canale reale), lo stesso controllo mancante sul pulsante "Copia negli
+appunti", e un riferimento a un nome di file ormai errato nel commento di
+`TelegramClient.php`.
+
 ## 2026-09-02 (5) — Fix: un errore di rete nello scaricamento pianificato faceva perdere il riferimento all'ultima ripresa
 
 Trovato durante un controllo end-to-end completo del meccanismo di

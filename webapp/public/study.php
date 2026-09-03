@@ -13,6 +13,25 @@ $captures = Capture::forStudy($studyId);
 $comparisons = Comparison::forStudy($studyId);
 $defaults = AppSettings::all();
 
+// Didascalia di default per il riepilogo di studio (condivisione Telegram/X):
+// dati generici non sensibili, MAI coordinate esatte — l'analista le
+// aggiunge lui a mano se vuole includerle, editando il campo prima
+// dell'invio. Il riepilogo condivide sempre l'ULTIMO confronto salvato
+// (vedi api/share.php), quindi ha senso solo se ne esiste almeno uno.
+$latestComparison = $comparisons[0] ?? null;
+$studySummaryCaption = null;
+if ($latestComparison) {
+    $latestStats = json_decode($latestComparison['stats_json'] ?? '', true) ?: [];
+    $changedPct = isset($latestStats['changed_ratio']) ? round($latestStats['changed_ratio'] * 100, 2) : null;
+    $studySummaryCaption = trim(
+        'Studio: ' . $study['title']
+        . ($study['area_name'] ? ' — ' . $study['area_name'] : '')
+        . ' — ' . count($captures) . ' riprese, ' . count($comparisons) . ' confronti'
+        . ($changedPct !== null ? " — ultima variazione rilevata: {$changedPct}%" : '')
+        . ' — OrbitalEye'
+    );
+}
+
 $pageTitle = $study['title'];
 $activeNav = 'dashboard';
 require __DIR__ . '/partials/head.php';
@@ -33,6 +52,19 @@ require __DIR__ . '/partials/nav.php';
     </div>
     <button class="btn btn-danger btn-sm" onclick="deleteEntity('study', <?= (int)$study['id'] ?>, 'index.php')">Elimina studio</button>
   </div>
+
+  <?php if ($latestComparison): ?>
+    <div style="margin-top:14px; padding-top:14px; border-top:1px solid var(--line);">
+      <label style="display:flex; align-items:center; gap:6px;">Riepilogo di studio <span class="info-tip" tabindex="0" data-tip="Condivide l'ultimo confronto salvato di questo studio (immagine overlay) con una didascalia che riassume conteggi e ultima variazione rilevata. Anteprima e didascalia sono sempre modificabili prima dell'invio.">?</span></label>
+      <textarea id="study-share-caption" rows="2" style="width:100%; margin-top:6px;"><?= e($studySummaryCaption) ?></textarea>
+      <div class="tag-row" style="margin-top:8px;">
+        <button type="button" class="btn btn-primary btn-sm" id="study-share-telegram-btn">📤 Invia su Telegram</button>
+        <button type="button" class="btn btn-sm" id="study-share-copy-btn">📋 Copia immagine negli appunti</button>
+        <button type="button" class="btn btn-sm" id="study-share-twitter-btn">🐦 Apri su X</button>
+      </div>
+      <span class="hint" id="study-share-status"></span>
+    </div>
+  <?php endif; ?>
 </div>
 
 <div class="grid grid-2">
@@ -535,6 +567,17 @@ require __DIR__ . '/partials/nav.php';
     <button type="button" class="view-tab-btn" data-view="edges">Contorni <span class="info-tip" tabindex="0" data-tip="Rilevamento dei bordi (Canny) sulla ripresa 'dopo': evidenzia il profilo netto di strutture ed elementi. Utile per distinguere il contorno di una nuova costruzione dal rumore diffuso di un cambiamento non strutturale (es. variazione di colore/umidità del terreno), che nell'overlay potrebbe sembrare simile.">?</span></button>
     <button type="button" class="view-tab-btn" data-view="original-a">📷 Originale A <span class="info-tip" tabindex="0" data-tip="La ripresa 'prima' così come effettivamente usata nel calcolo: con gli stessi filtri di enhancement pre-analisi eventualmente selezionati (identici a quelli applicati a B), ma senza overlay/heatmap/altre viste elaborate. Se non hai selezionato alcun filtro, coincide con la foto originale.">?</span></button>
     <button type="button" class="view-tab-btn" data-view="original-b">📷 Originale B <span class="info-tip" tabindex="0" data-tip="La ripresa 'dopo' così come effettivamente usata nel calcolo: riallineata geometricamente su A e con gli stessi filtri di enhancement pre-analisi eventualmente selezionati, ma senza overlay/heatmap/altre viste elaborate.">?</span></button>
+  </div>
+
+  <div style="margin:12px 0; padding:12px; border:1px solid var(--line); border-radius:4px;">
+    <label style="display:flex; align-items:center; gap:6px;">Condividi la vista corrente <span class="info-tip" tabindex="0" data-tip="Condivide l'immagine attualmente selezionata sopra (overlay/heatmap/maschera/contorni/originali — non disponibile per 'Prima/Dopo (swipe)', che non è un'immagine salvata). Anteprima e didascalia sono sempre modificabili prima dell'invio, mai una pubblicazione automatica.">?</span></label>
+    <textarea id="cmp-share-caption" rows="2" style="width:100%; margin-top:6px;"></textarea>
+    <div class="tag-row" style="margin-top:8px;">
+      <button type="button" class="btn btn-primary btn-sm" id="cmp-share-telegram-btn">📤 Invia su Telegram</button>
+      <button type="button" class="btn btn-sm" id="cmp-share-copy-btn">📋 Copia immagine negli appunti</button>
+      <button type="button" class="btn btn-sm" id="cmp-share-twitter-btn">🐦 Apri su X</button>
+    </div>
+    <span class="hint" id="cmp-share-status"></span>
   </div>
 
   <div class="grid grid-2">

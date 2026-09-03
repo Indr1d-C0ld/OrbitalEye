@@ -36,6 +36,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $message = 'Impostazioni Esri World Imagery salvate e sincronizzate con il servizio di analisi.';
     }
 
+    if ($action === 'save_telegram') {
+        AppSettings::setMany([
+            'telegram_bot_token' => trim($_POST['telegram_bot_token'] ?? ''),
+            'telegram_chat_id' => trim($_POST['telegram_chat_id'] ?? ''),
+        ]);
+        $message = 'Impostazioni Telegram salvate.';
+    }
+
+    if ($action === 'test_telegram') {
+        try {
+            $client = new TelegramClient();
+            $client->sendMessage('OrbitalEye: test di connessione riuscito. Il canale è configurato correttamente.');
+            $message = 'Messaggio di test inviato: controlla il canale/chat configurato.';
+        } catch (Throwable $e) {
+            $error = 'Test fallito: ' . $e->getMessage();
+        }
+    }
+
     if ($action === 'change_password') {
         $current = $_POST['current_password'] ?? '';
         $new = $_POST['new_password'] ?? '';
@@ -94,6 +112,30 @@ require __DIR__ . '/partials/nav.php';
         <input type="password" name="esri_api_key" value="<?= e($settings['esri_api_key']) ?>">
       </div>
       <button class="btn btn-primary" type="submit">Salva</button>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h2>Condivisione — Telegram</h2>
+    <p class="hint">Per la funzione "Condividi" su riprese, confronti e riepiloghi di studio. Crea un bot gratuito parlando con
+      <a href="https://t.me/BotFather" target="_blank" rel="noopener">@BotFather</a> su Telegram, poi aggiungilo come
+      <strong>amministratore</strong> (permesso "Pubblica messaggi") del canale/gruppo di destinazione — senza
+      questo passaggio l'invio fallisce con "chat not found" anche con token e ID corretti.</p>
+    <form method="post">
+      <input type="hidden" name="action" value="save_telegram">
+      <div class="field">
+        <label>Token del bot</label>
+        <input type="password" name="telegram_bot_token" value="<?= e($settings['telegram_bot_token']) ?>">
+      </div>
+      <div class="field">
+        <label>ID canale/chat <span class="info-tip" tabindex="0" data-tip="Per un canale è un numero negativo che inizia con -100 (es. -1001234567890). Si trova inoltrando un messaggio del canale a @userinfobot, o dai log della prima chiamata API se il bot è già stato aggiunto.">?</span></label>
+        <input type="text" name="telegram_chat_id" value="<?= e($settings['telegram_chat_id']) ?>" placeholder="-1001234567890">
+      </div>
+      <button class="btn btn-primary" type="submit">Salva</button>
+    </form>
+    <form method="post" style="margin-top:10px;">
+      <input type="hidden" name="action" value="test_telegram">
+      <button class="btn btn-sm" type="submit">✉ Invia messaggio di test</button>
     </form>
   </div>
 

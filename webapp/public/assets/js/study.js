@@ -407,6 +407,15 @@
 
     renderRegionList(result.regions);
     setView('overlay');
+
+    // Didascalia di default per la condivisione (vedi blocco "Condividi
+    // confronto" più sotto): dati generici non sensibili (percentuale/
+    // conteggio già mostrati nell'interfaccia), MAI coordinate — modificabile
+    // dall'analista prima dell'invio.
+    const cmpCaptionEl = $('#cmp-share-caption');
+    if (cmpCaptionEl) {
+      cmpCaptionEl.value = `Confronto satellitare — variazione rilevata: ${(s.changed_ratio * 100).toFixed(2)}% (${s.num_regions} regioni) — OrbitalEye`;
+    }
   }
 
   function renderRegionList(regions) {
@@ -891,6 +900,111 @@
       window.location.href = 'study.php?id=' + window.ORBITALEYE.studyId + '&comparison=' + comparisonId;
     });
   }
+
+  // ---------- Condividi (Telegram / X) ----------
+  // Due contesti indipendenti: il confronto attualmente visualizzato (vista
+  // corrente: overlay/heatmap/maschera/contorni/originali) e il riepilogo di
+  // studio (sempre l'ultimo confronto salvato, pannello in cima alla pagina).
+  // In entrambi i casi l'immagine esiste già come file salvato sul server
+  // (a differenza della singola ripresa in analyze.js, qui non ci sono
+  // regolazioni "live" da cuocere client-side): il server la risolve da
+  // comparison_id/vista, nessun upload di bytes necessario per Telegram —
+  // solo per il "copia negli appunti" serve scaricare i bytes nel browser.
+  function setupShareBlock({ prefix, getComparisonId, getViewUrl, getView, getStudyId }) {
+    const captionEl = $('#' + prefix + '-share-caption');
+    const statusEl = $('#' + prefix + '-share-status');
+    const telegramBtn = $('#' + prefix + '-share-telegram-btn');
+    const copyBtn = $('#' + prefix + '-share-copy-btn');
+    const twitterBtn = $('#' + prefix + '-share-twitter-btn');
+    if (!captionEl || !telegramBtn) return;
+
+    async function fetchViewBlob() {
+      const url = getViewUrl();
+      if (!url) throw new Error('Nessuna immagine disponibile per questa vista (es. "Prima/Dopo (swipe)" non è un file salvato: scegli un\'altra vista).');
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('Immagine non raggiungibile');
+      return res.blob();
+    }
+
+    telegramBtn.addEventListener('click', async () => {
+      if (telegramBtn.disabled) return; // evita invii duplicati su doppio click/tap
+      const comparisonId = getComparisonId();
+      if (!comparisonId) { statusEl.textContent = 'Nessun confronto disponibile.'; return; }
+      telegramBtn.disabled = true;
+      statusEl.textContent = 'Invio in corso...';
+      try {
+        const form = new FormData();
+        form.append('platform', 'telegram');
+        form.append('kind', prefix === 'study' ? 'study' : 'comparison');
+        form.append('ref_id', prefix === 'study' ? getStudyId() : comparisonId);
+        form.append('study_id', getStudyId());
+        form.append('view', getView());
+        form.append('caption', captionEl.value);
+        const res = await fetch('api/share.php', { method: 'POST', body: form });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Errore');
+        statusEl.textContent = 'Inviato su Telegram.';
+      } catch (err) {
+        statusEl.textContent = 'Errore: ' + err.message;
+      } finally {
+        telegramBtn.disabled = false;
+      }
+    });
+
+    if (copyBtn) {
+      copyBtn.addEventListener('click', async () => {
+        if (!window.isSecureContext || !navigator.clipboard || !navigator.clipboard.write || typeof ClipboardItem === 'undefined') {
+          statusEl.textContent = 'Copia negli appunti non disponibile in questo browser/connessione (serve HTTPS).';
+          return;
+        }
+        if (copyBtn.disabled) return;
+        copyBtn.disabled = true;
+        try {
+          const blob = await fetchViewBlob();
+          await navigator.clipboard.write([new ClipboardItem({ [blob.type || 'image/jpeg']: blob })]);
+          statusEl.textContent = 'Copiato. Ora vai su X e incolla con Ctrl+V.';
+        } catch (err) {
+          statusEl.textContent = 'Copia non riuscita: ' + err.message;
+        } finally {
+          copyBtn.disabled = false;
+        }
+      });
+    }
+
+    if (twitterBtn) {
+      twitterBtn.addEventListener('click', () => {
+        const comparisonId = getComparisonId();
+        const text = encodeURIComponent(captionEl.value);
+        window.open('https://twitter.com/intent/tweet?text=' + text, '_blank');
+        const form = new FormData();
+        form.append('platform', 'twitter');
+        form.append('kind', prefix === 'study' ? 'study' : 'comparison');
+        form.append('ref_id', prefix === 'study' ? getStudyId() : (comparisonId || ''));
+        form.append('study_id', getStudyId());
+        form.append('caption', captionEl.value);
+        fetch('api/share.php', { method: 'POST', body: form }).catch(() => {});
+      });
+    }
+  }
+
+  setupShareBlock({
+    prefix: 'cmp',
+    getComparisonId: () => state.currentComparison && state.currentComparison.comparisonId,
+    getView: () => state.currentView,
+    getViewUrl: () => state.currentComparison && state.currentComparison.urls[state.currentView],
+    getStudyId: () => window.ORBITALEYE.studyId,
+  });
+
+  setupShareBlock({
+    prefix: 'study',
+    getComparisonId: () => (window.ORBITALEYE.comparisons[0] || {}).id,
+    getView: () => 'overlay',
+    getViewUrl: () => {
+      const latest = window.ORBITALEYE.comparisons[0];
+      return latest ? window.ORBITALEYE.mediaBase + encodeURIComponent(latest.result_paths.overlay) : null;
+    },
+    getStudyId: () => window.ORBITALEYE.studyId,
+  });
 
   // ---------- Annotation canvas ----------
   let annotations = [];

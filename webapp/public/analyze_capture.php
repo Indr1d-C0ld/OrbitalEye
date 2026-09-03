@@ -26,6 +26,16 @@ if (!$measureBbox && !empty($study['bbox_json'])) {
     $measureBbox = json_decode($study['bbox_json'], true);
 }
 
+// Didascalia di default per la condivisione (Telegram/X): dati generici
+// non sensibili, MAI coordinate esatte — se l'analista le vuole includere
+// le aggiunge lui a mano, editando il campo prima dell'invio.
+// L'etichetta della ripresa è già descrittiva di suo (es. "Sentinel-2
+// 2026-06-01 → 2026-08-30" o "Esri World Imagery — scaricata il..."):
+// aggiungere anche fonte/data qui la rendeva ridondante o, per Esri (data
+// di acquisizione reale non nota), esplicitamente vuota ("data non
+// disponibile") in coda a una frase che la data la conteneva già.
+$shareDefaultCaption = ($capture['label'] ?: ('Ripresa #' . $capture['id'])) . ' — OrbitalEye';
+
 $pageTitle = 'Analisi — ' . ($capture['label'] ?: ('Ripresa #' . $capture['id']));
 $activeNav = 'dashboard';
 require __DIR__ . '/partials/head.php';
@@ -244,6 +254,20 @@ require __DIR__ . '/partials/nav.php';
       </div>
     </div>
   </div>
+</div>
+
+<div class="panel">
+  <h2>Condividi <span class="info-tip" tabindex="0" data-tip="Invia la copia di lavoro (con le regolazioni correnti già applicate) su Telegram, oppure apri la finestra di composizione X e incolla/trascina l'immagine a mano. Anteprima e didascalia sono sempre modificabili prima dell'invio: nessuna pubblicazione automatica.">?</span></h2>
+  <div class="field">
+    <label>Didascalia</label>
+    <textarea id="an-share-caption" rows="2" style="width:100%;"><?= e($shareDefaultCaption) ?></textarea>
+  </div>
+  <div class="tag-row">
+    <button type="button" class="btn btn-primary btn-sm" id="an-share-telegram-btn">📤 Invia su Telegram</button>
+    <button type="button" class="btn btn-sm" id="an-share-copy-btn">📋 Copia immagine negli appunti</button>
+    <button type="button" class="btn btn-sm" id="an-share-twitter-btn">🐦 Apri su X</button>
+  </div>
+  <span class="hint" id="an-share-status"></span>
 </div>
 
 <script>

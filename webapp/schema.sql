@@ -120,6 +120,25 @@ CREATE TABLE IF NOT EXISTS alerts (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Registro delle condivisioni esterne (vedi src/TelegramClient.php,
+-- public/api/share.php): un analista che pubblica materiale d'analisi
+-- verso l'esterno (Telegram, o l'apertura della finestra di composizione
+-- X/Twitter) deve poter sapere in seguito COSA ha reso pubblico e quando —
+-- coerente con l'attenzione OPSEC già seguita per la ricerca inversa per
+-- immagini. kind: 'capture' | 'comparison' | 'study'. platform: 'telegram'
+-- | 'twitter' (per Twitter, che non ha un invio server-side in questa
+-- piattaforma, registrato comunque al momento dell'apertura della finestra
+-- di composizione, per completezza del registro).
+CREATE TABLE IF NOT EXISTS shares (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    study_id INTEGER REFERENCES studies(id) ON DELETE SET NULL,
+    kind TEXT NOT NULL,
+    ref_id INTEGER,
+    platform TEXT NOT NULL,
+    caption TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_captures_study ON captures(study_id);
 CREATE INDEX IF NOT EXISTS idx_comparisons_study ON comparisons(study_id);
 CREATE INDEX IF NOT EXISTS idx_annotations_study ON annotations(study_id);
@@ -128,3 +147,4 @@ CREATE INDEX IF NOT EXISTS idx_scheduled_downloads_study ON scheduled_downloads(
 CREATE INDEX IF NOT EXISTS idx_scheduled_downloads_active ON scheduled_downloads(is_active);
 CREATE INDEX IF NOT EXISTS idx_alerts_study ON alerts(study_id);
 CREATE INDEX IF NOT EXISTS idx_alerts_unread ON alerts(is_read);
+CREATE INDEX IF NOT EXISTS idx_shares_study ON shares(study_id);

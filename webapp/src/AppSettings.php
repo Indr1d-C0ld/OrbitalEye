@@ -14,6 +14,8 @@ final class AppSettings
         'sentinelhub_client_id' => '',
         'sentinelhub_client_secret' => '',
         'esri_api_key' => '',
+        'telegram_bot_token' => '',
+        'telegram_chat_id' => '',
     ];
 
     public static function all(): array
