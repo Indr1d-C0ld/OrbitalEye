@@ -4,6 +4,31 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-09-03 (2) — Ricerca inversa: aggiunta Claude come seconda destinazione, accanto a Google Lens
+
+Su richiesta esplicita: dopo aver discusso e scartato un'integrazione via
+API (chiave dedicata, chiamate backend, log di audit — giudicata inutilmente
+complessa per l'obiettivo), l'analista ha chiesto di riusare esattamente lo
+stesso percorso manuale già in uso per Google Lens, con Claude come seconda
+destinazione indipendente.
+
+- **[webapp/public/analyze_capture.php](webapp/public/analyze_capture.php)**
+  — pannello "Ricerca inversa per immagini" rinominato "Ricerca inversa e
+  analisi per immagini"; aggiunto il pulsante "🤖 Apri Claude ↗" accanto a
+  quello di Google Lens; passi e tooltip aggiornati per riflettere le due
+  destinazioni indipendenti (una, l'altra, o entrambe sullo stesso
+  frammento) e un suggerimento di prompt testuale (non copiato negli
+  appunti, solo indicativo in pagina, per non interferire con l'incolla
+  dell'immagine).
+- **[webapp/public/assets/js/analyze.js](webapp/public/assets/js/analyze.js)**
+  — nuovo handler che apre `https://claude.ai/new` in una scheda: riusa
+  interamente il pulsante "Copia negli appunti" già esistente e testato per
+  Lens, nessuna nuova logica di clipboard, nessuna chiave API, nessun
+  endpoint backend, nessun log — l'invio resta un gesto manuale
+  dell'analista (incolla lui stesso), esattamente come per Lens.
+
+Verificato con uso reale dall'analista ("Ho provato, funziona bene").
+
 ## 2026-09-03 — Nuova funzione: condivisione su Telegram/X di riprese, confronti e riepiloghi di studio
 
 Su richiesta esplicita, dopo una fase di progettazione condivisa: possibilità

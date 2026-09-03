@@ -930,6 +930,14 @@
   // provati in precedenza sono stati rimossi).
   $('#an-crop-open-lens').addEventListener('click', () => window.open('https://lens.google.com/', '_blank'));
 
+  // Stesso identico percorso di Google Lens, seconda destinazione a scelta
+  // dell'analista: apre una chat Claude vuota, il frammento va incollato lì
+  // (stesso "Copia negli appunti" qui sopra, nessuna chiamata API/backend
+  // dedicata) e accompagnato da una domanda scritta a mano. Nessun invio
+  // automatico, nessuna chiave API coinvolta: è solo un'apertura di pagina,
+  // esattamente come per Lens.
+  $('#an-crop-open-claude').addEventListener('click', () => window.open('https://claude.ai/new', '_blank'));
+
   // ---------- Condividi (Telegram / X) ----------
   // Condivide la copia di lavoro CON le regolazioni correnti applicate
   // (stesso renderAdjustedCanvas() di "Salva come nuova ripresa", mai
