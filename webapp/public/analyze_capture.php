@@ -254,6 +254,32 @@ require __DIR__ . '/partials/nav.php';
         </div>
       </div>
     </div>
+    <hr style="margin:18px 0; border:none; border-top:1px solid var(--border-color, #333);">
+    <div class="grid grid-2">
+      <div>
+        <h3>Salva ritaglio <span class="info-tip" tabindex="0" data-tip="Salva il frammento (con le regolazioni correnti già applicate) come nuova ripresa permanente in archivio, associata a questo studio — riusabile in confronti futuri come qualunque altra ripresa.">?</span></h3>
+        <div class="field">
+          <label>Etichetta</label>
+          <input type="text" id="an-crop-save-label" style="width:100%;" value="<?= e('Ritaglio di ' . ($capture['label'] ?: ('ripresa #' . $capture['id']))) ?>">
+        </div>
+        <div class="tag-row">
+          <button type="button" class="btn btn-primary btn-sm" id="an-crop-save-btn">💾 Salva ritaglio come nuova ripresa</button>
+        </div>
+        <span class="hint" id="an-crop-save-status"></span>
+      </div>
+      <div>
+        <h3>Condividi ritaglio <span class="info-tip" tabindex="0" data-tip="Invia il frammento su Telegram, oppure apri la finestra di composizione X — per incollare l'immagine su X usa 'Copia negli appunti' qui sopra. Nessuna pubblicazione automatica, il ritaglio non deve essere salvato prima per poter essere condiviso.">?</span></h3>
+        <div class="field">
+          <label>Didascalia</label>
+          <textarea id="an-crop-share-caption" rows="2" style="width:100%;"><?= e('Ritaglio da ' . ($capture['label'] ?: ('ripresa #' . $capture['id'])) . ' — OrbitalEye') ?></textarea>
+        </div>
+        <div class="tag-row">
+          <button type="button" class="btn btn-primary btn-sm" id="an-crop-share-telegram-btn">📤 Invia su Telegram</button>
+          <button type="button" class="btn btn-sm" id="an-crop-share-twitter-btn">🐦 Apri su X</button>
+        </div>
+        <span class="hint" id="an-crop-share-status"></span>
+      </div>
+    </div>
   </div>
 </div>
 

@@ -4,6 +4,35 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-09-03 (3) — Salvataggio e condivisione diretta del ritaglio selezionato
+
+Su richiesta esplicita: la sottosezione del ritaglio (già usata per la
+ricerca inversa/analisi Lens+Claude) ora permette anche di salvare il
+frammento come nuova ripresa dello studio e di condividerlo direttamente
+su Telegram/X, senza dover prima "cuocere" o salvare l'intera copia di
+lavoro.
+
+- **[webapp/public/analyze_capture.php](webapp/public/analyze_capture.php)**
+  — nella sottosezione "Ricerca inversa e analisi per immagini", due nuovi
+  blocchi sotto ai pulsanti Lens/Claude: "Salva ritaglio" (etichetta +
+  pulsante "Salva ritaglio come nuova ripresa") e "Condividi ritaglio"
+  (didascalia + "Invia su Telegram"/"Apri su X").
+- **[webapp/public/assets/js/analyze.js](webapp/public/assets/js/analyze.js)**
+  — i nuovi pulsanti riusano interamente `api/upload_capture.php` (lo
+  stesso endpoint di "Salva come nuova ripresa" sulla ripresa intera) e
+  `api/share.php` (lo stesso del pannello "Condividi" esistente),
+  applicati a `lastCropBlob` (il blob del solo frammento, già usato per
+  Lens/Claude/copia) invece che al canvas intero: **zero modifiche al
+  backend**, solo riuso di endpoint già in produzione. Stessa protezione
+  anti-doppio-click già introdotta per gli altri pulsanti di invio. Il
+  salvataggio del ritaglio non forza la navigazione via dallo studio (a
+  differenza del pulsante equivalente sulla ripresa intera), per poter
+  salvare e condividere lo stesso frammento senza perdere il contesto; per
+  l'incolla su X non serve un pulsante "copia" duplicato, riusa quello già
+  presente per Lens/Claude.
+
+Verificato con uso reale dall'analista.
+
 ## 2026-09-03 (2) — Ricerca inversa: aggiunta Claude come seconda destinazione, accanto a Google Lens
 
 Su richiesta esplicita: dopo aver discusso e scartato un'integrazione via

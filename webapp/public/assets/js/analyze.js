@@ -887,6 +887,13 @@
       lastCropBlob = blob;
       $('#an-crop-preview').src = lastCropBlobUrl;
       $('#an-crop-result').style.display = '';
+      // Un nuovo ritaglio selezionato invalida gli stati di salvataggio/invio
+      // del ritaglio precedente: niente conferme "fantasma" per un frammento
+      // che non è più quello mostrato in anteprima.
+      const saveStatus = $('#an-crop-save-status');
+      const shareStatus = $('#an-crop-share-status');
+      if (saveStatus) saveStatus.textContent = '';
+      if (shareStatus) shareStatus.textContent = '';
     }, 'image/png');
   }
 
@@ -937,6 +944,80 @@
   // automatico, nessuna chiave API coinvolta: è solo un'apertura di pagina,
   // esattamente come per Lens.
   $('#an-crop-open-claude').addEventListener('click', () => window.open('https://claude.ai/new', '_blank'));
+
+  // ---------- Salva e condividi il ritaglio ----------
+  // Stessa infrastruttura già in uso per la ripresa intera: api/upload_capture.php
+  // (identico a "Salva come nuova ripresa") e api/share.php (identico al
+  // pannello "Condividi" più sotto), qui applicati al solo frammento
+  // ritagliato invece che alla copia di lavoro intera. Il ritaglio NON deve
+  // essere salvato prima di poter essere condiviso: sono due azioni indipendenti,
+  // esattamente come per la ricerca inversa qui sopra.
+  const cropSaveBtn = $('#an-crop-save-btn');
+  const cropShareTelegramBtn = $('#an-crop-share-telegram-btn');
+  const cropShareTwitterBtn = $('#an-crop-share-twitter-btn');
+
+  cropSaveBtn.addEventListener('click', async () => {
+    if (cropSaveBtn.disabled) return; // evita salvataggi duplicati su doppio click/tap
+    if (!lastCropBlob) return;
+    const status = $('#an-crop-save-status');
+    cropSaveBtn.disabled = true;
+    status.textContent = 'Salvataggio in corso...';
+    try {
+      const form = new FormData();
+      form.append('study_id', CFG.studyId);
+      form.append('image', lastCropBlob, 'ritaglio_ripresa' + CFG.captureId + '.png');
+      form.append('label', $('#an-crop-save-label').value || ('Ritaglio di ripresa #' + CFG.captureId));
+      const res = await fetch('api/upload_capture.php', { method: 'POST', body: form });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Errore');
+      status.innerHTML = 'Ritaglio salvato come nuova ripresa. <a href="study.php?id=' + CFG.studyId + '">Vai allo studio →</a>';
+    } catch (err) {
+      status.textContent = 'Errore: ' + err.message;
+    } finally {
+      cropSaveBtn.disabled = false;
+    }
+  });
+
+  cropShareTelegramBtn.addEventListener('click', async () => {
+    if (cropShareTelegramBtn.disabled) return; // evita invii duplicati su doppio click/tap
+    if (!lastCropBlob) return;
+    const status = $('#an-crop-share-status');
+    cropShareTelegramBtn.disabled = true;
+    status.textContent = 'Invio in corso...';
+    try {
+      const form = new FormData();
+      form.append('platform', 'telegram');
+      form.append('kind', 'capture');
+      form.append('ref_id', CFG.captureId);
+      form.append('study_id', CFG.studyId);
+      form.append('caption', $('#an-crop-share-caption').value);
+      form.append('image', lastCropBlob, 'ritaglio_ripresa' + CFG.captureId + '.png');
+      const res = await fetch('api/share.php', { method: 'POST', body: form });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Errore');
+      status.textContent = 'Ritaglio inviato su Telegram.';
+    } catch (err) {
+      status.textContent = 'Errore: ' + err.message;
+    } finally {
+      cropShareTelegramBtn.disabled = false;
+    }
+  });
+
+  cropShareTwitterBtn.addEventListener('click', () => {
+    // Stesso schema del pannello "Condividi" qui sotto: l'intent di X non
+    // supporta l'allegato di un'immagine via URL, solo testo — l'analista
+    // incolla/trascina lui il ritaglio (pulsante "Copia negli appunti" qui
+    // sopra, già usato per Lens/Claude). L'invio resta un gesto manuale.
+    const text = encodeURIComponent($('#an-crop-share-caption').value);
+    window.open('https://twitter.com/intent/tweet?text=' + text, '_blank');
+    const form = new FormData();
+    form.append('platform', 'twitter');
+    form.append('kind', 'capture');
+    form.append('ref_id', CFG.captureId);
+    form.append('study_id', CFG.studyId);
+    form.append('caption', $('#an-crop-share-caption').value);
+    fetch('api/share.php', { method: 'POST', body: form }).catch(() => {});
+  });
 
   // ---------- Condividi (Telegram / X) ----------
   // Condivide la copia di lavoro CON le regolazioni correnti applicate
