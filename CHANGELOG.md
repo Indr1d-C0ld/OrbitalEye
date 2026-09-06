@@ -4,6 +4,24 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-09-03 (4) — Ricerca inversa: aggiunti ChatGPT e DeepSeek come ulteriori destinazioni
+
+Su richiesta esplicita: stesso identico percorso già in uso per Google
+Lens e Claude, riusato per due ulteriori destinazioni a scelta
+dell'analista.
+
+- **[webapp/public/analyze_capture.php](webapp/public/analyze_capture.php)**
+  — aggiunti i pulsanti "Apri ChatGPT ↗" e "Apri DeepSeek ↗" accanto a
+  quelli di Lens/Claude; passi e tooltip aggiornati per le quattro
+  destinazioni indipendenti (una, alcune, o tutte sullo stesso
+  frammento), con nota che "Scarica frammento" resta il fallback se
+  l'incolla non fosse supportato dal sito aperto.
+- **[webapp/public/assets/js/analyze.js](webapp/public/assets/js/analyze.js)**
+  — due nuovi handler che aprono rispettivamente `https://chatgpt.com/` e
+  `https://chat.deepseek.com/` in una scheda: riusano interamente il
+  pulsante "Copia negli appunti" già esistente, nessuna nuova logica,
+  nessuna chiave API, nessun endpoint backend.
+
 ## 2026-09-03 (3) — Salvataggio e condivisione diretta del ritaglio selezionato
 
 Su richiesta esplicita: la sottosezione del ritaglio (già usata per la

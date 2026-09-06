@@ -945,6 +945,12 @@
   // esattamente come per Lens.
   $('#an-crop-open-claude').addEventListener('click', () => window.open('https://claude.ai/new', '_blank'));
 
+  // Stesso identico percorso di Lens/Claude, ulteriori destinazioni a scelta
+  // dell'analista: aprono solo la pagina, l'incolla resta un gesto manuale
+  // (nessuna chiamata API/backend dedicata per nessuna di queste due).
+  $('#an-crop-open-chatgpt').addEventListener('click', () => window.open('https://chatgpt.com/', '_blank'));
+  $('#an-crop-open-deepseek').addEventListener('click', () => window.open('https://chat.deepseek.com/', '_blank'));
+
   // ---------- Salva e condividi il ritaglio ----------
   // Stessa infrastruttura già in uso per la ripresa intera: api/upload_capture.php
   // (identico a "Salva come nuova ripresa") e api/share.php (identico al
