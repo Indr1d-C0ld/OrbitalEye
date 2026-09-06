@@ -4,6 +4,38 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-09-06 — Riepilogo globale delle pianificazioni di scaricamento automatico
+
+Su richiesta esplicita, dopo un controllo di salute del motore di
+scaricamento pianificato (studio Sigonella): prima si poteva sospendere/
+riattivare/eliminare una pianificazione solo entrando nella pagina dello
+studio corrispondente (sezione scaricamento) — nessun modo di vedere lo
+stato di tutte le pianificazioni di tutti gli studi in un colpo solo.
+
+- **[webapp/src/ScheduledDownload.php](webapp/src/ScheduledDownload.php)**
+  — nuovi metodi `allWithStudy()` (tutte le pianificazioni con titolo
+  studio già risolto via join, attive prima) e `errorCount()` (conteggio
+  pianificazioni attive il cui ultimo controllo è fallito).
+- **[webapp/public/schedules.php](webapp/public/schedules.php)** (nuova
+  pagina) — tabella con studio, fonte, cadenza, soglia duplicati, ultimo
+  controllo, esito (messaggio d'errore in tooltip se presente), stato
+  attiva/sospesa; stessi pulsanti "Sospendi"/"Riattiva"/"Elimina" già
+  presenti nella pagina di studio, stesso endpoint
+  `api/schedule_download.php` esistente, **nessuna modifica al backend
+  dell'endpoint**.
+- **[webapp/public/partials/nav.php](webapp/public/partials/nav.php)** —
+  nuova voce di menu "Pianificazioni", con un badge d'avviso (rosso) che
+  compare solo se almeno una pianificazione attiva ha l'ultimo controllo
+  in errore, per non lasciar passare inosservato un fallimento silenzioso
+  (es. rete Esri irraggiungibile) senza dover controllare studio per
+  studio.
+
+Verificato in un ambiente completamente isolato (copia separata di
+webapp/DB, server PHP dedicato, login di test): caricamento della pagina,
+sospendi/riattiva/elimina end-to-end, stato vuoto, nessun errore/warning
+PHP su nessuna delle pagine che includono il nuovo blocco di navigazione
+(index, alerts, schedules).
+
 ## 2026-09-03 (4) — Ricerca inversa: aggiunti ChatGPT e DeepSeek come ulteriori destinazioni
 
 Su richiesta esplicita: stesso identico percorso già in uso per Google

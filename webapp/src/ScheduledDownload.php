@@ -25,6 +25,36 @@ final class ScheduledDownload
         return $row ?: null;
     }
 
+    /**
+     * Tutte le pianificazioni di tutti gli studi, col titolo dello studio già
+     * risolto (join) — usata dal riepilogo globale schedules.php, per non
+     * dover più aprire studio per studio (sezione scaricamento) per vedere
+     * lo stato di ognuna. Attive prima, poi le più recentemente eseguite:
+     * le pianificazioni sospese/in errore da controllare finiscono in cima.
+     */
+    public static function allWithStudy(): array
+    {
+        $stmt = Database::get()->query(
+            'SELECT sd.*, s.title AS study_title
+             FROM scheduled_downloads sd
+             JOIN studies s ON s.id = sd.study_id
+             ORDER BY sd.is_active DESC, sd.last_run_at DESC, sd.created_at DESC'
+        );
+        return $stmt->fetchAll();
+    }
+
+    /** Pianificazioni attive il cui ultimo esito registrato è un errore —
+     * usata per il badge di avviso nel menu, così un fallimento silenzioso
+     * (es. rete Esri irraggiungibile) non passa inosservato senza dover
+     * controllare studio per studio. */
+    public static function errorCount(): int
+    {
+        $stmt = Database::get()->query(
+            "SELECT COUNT(*) FROM scheduled_downloads WHERE is_active = 1 AND last_result = 'error'"
+        );
+        return (int) $stmt->fetchColumn();
+    }
+
     /** Tutte le pianificazioni attive la cui prossima esecuzione è dovuta
      * (mai eseguite, oppure last_run_at + interval_days <= adesso). Usata
      * dal cron: interroga una volta sola, invece di ricalcolare "è dovuta?"

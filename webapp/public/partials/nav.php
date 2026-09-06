@@ -4,6 +4,7 @@
 $appName = Config::get()['app_name'] ?? 'ORBITALEYE';
 $serviceOk = (new PythonServiceClient())->health();
 $unreadAlerts = Alert::unreadCount();
+$scheduleErrors = ScheduledDownload::errorCount();
 ?>
 <div class="mobile-topbar">
   <button type="button" class="hamburger-btn" id="hamburger-btn" aria-label="Apri il menu" aria-expanded="false">☰</button>
@@ -23,6 +24,10 @@ $unreadAlerts = Alert::unreadCount();
       <a href="alerts.php" class="<?= $activeNav === 'alerts' ? 'active' : '' ?>">
         <span class="icon">🔔</span> Alert
         <?php if ($unreadAlerts > 0): ?><span class="badge badge-amber" style="margin-left:6px;"><?= $unreadAlerts ?></span><?php endif; ?>
+      </a>
+      <a href="schedules.php" class="<?= $activeNav === 'schedules' ? 'active' : '' ?>">
+        <span class="icon">⏱</span> Pianificazioni
+        <?php if ($scheduleErrors > 0): ?><span class="badge" style="margin-left:6px; color:var(--danger);" title="Pianificazioni attive con l'ultimo controllo in errore"><?= $scheduleErrors ?></span><?php endif; ?>
       </a>
       <a href="settings.php" class="<?= $activeNav === 'settings' ? 'active' : '' ?>"><span class="icon">⚙</span> Impostazioni</a>
     </nav>
