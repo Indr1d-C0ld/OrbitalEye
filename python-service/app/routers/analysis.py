@@ -53,6 +53,11 @@ class ControlPoint(BaseModel):
 class CompareRequest(BaseModel):
     capture_a_path: str
     capture_b_path: str
+    # Scala reale (metri/pixel per asse) della ripresa A: se presente, le
+    # aree delle regioni cambiate vengono espresse anche in m², non solo in
+    # pixel/percentuale.
+    mpp_x: float | None = None
+    mpp_y: float | None = None
     align: bool = True
     diff_method: str = "ssim"  # 'ssim' | 'absdiff'
     threshold: int = 30
@@ -135,7 +140,7 @@ def compare(req: CompareRequest):
     # distinguere il profilo di strutture nuove da semplice rumore diffuso,
     # in modo complementare alla mappa di calore delle differenze.
     edges = enhancemod.edge_detect(img_b_aligned)
-    stats = diffmod.compute_stats(mask, regions, valid_mask=valid_mask)
+    stats = diffmod.compute_stats(mask, regions, valid_mask=valid_mask, mpp_x=req.mpp_x, mpp_y=req.mpp_y)
 
     result_id = new_id()
     result_dir = settings.results_dir / result_id
@@ -169,7 +174,13 @@ def compare(req: CompareRequest):
         "params": req.model_dump(exclude={"enhance_a", "enhance_b"}),
         "stats": stats,
         "regions": [
-            {"x": r.x, "y": r.y, "w": r.w, "h": r.h, "area": r.area, "cx": r.cx, "cy": r.cy}
+            {
+                "x": r.x, "y": r.y, "w": r.w, "h": r.h, "area": r.area, "cx": r.cx, "cy": r.cy,
+                **(
+                    {"area_m2": round(r.area * req.mpp_x * req.mpp_y, 2)}
+                    if req.mpp_x and req.mpp_y else {}
+                ),
+            }
             for r in regions[:200]
         ],
     }

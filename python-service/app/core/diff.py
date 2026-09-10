@@ -198,13 +198,28 @@ def build_heatmap(diff_map: np.ndarray) -> np.ndarray:
     return cv2.applyColorMap(diff_map, cv2.COLORMAP_INFERNO)
 
 
-def compute_stats(mask: np.ndarray, regions: list, valid_mask: np.ndarray | None = None) -> dict:
+def compute_stats(
+    mask: np.ndarray,
+    regions: list,
+    valid_mask: np.ndarray | None = None,
+    mpp_x: float | None = None,
+    mpp_y: float | None = None,
+) -> dict:
     total_px = int(np.count_nonzero(valid_mask)) if valid_mask is not None else mask.shape[0] * mask.shape[1]
     changed_px = int(np.count_nonzero(mask))
-    return {
+    largest_px = regions[0].area if regions else 0
+    stats = {
         "changed_pixels": changed_px,
         "total_pixels": total_px,
         "changed_ratio": round(changed_px / total_px, 6) if total_px else 0,
         "num_regions": len(regions),
-        "largest_region_area": regions[0].area if regions else 0,
+        "largest_region_area": largest_px,
     }
+    # Aree in metri quadri quando la scala reale della ripresa è nota
+    # (mpp_x/mpp_y = metri per pixel per asse): un pixel a terra vale
+    # mpp_x*mpp_y m².
+    if mpp_x and mpp_y:
+        px_m2 = mpp_x * mpp_y
+        stats["changed_area_m2"] = round(changed_px * px_m2, 2)
+        stats["largest_region_area_m2"] = round(largest_px * px_m2, 2)
+    return stats

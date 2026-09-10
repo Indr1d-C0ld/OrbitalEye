@@ -424,11 +424,20 @@
     if (exportBtn) exportBtn.href = 'export_comparison.php?id=' + result.comparisonId;
 
     const s = result.stats;
+    const fmtArea = (m2) => (m2 >= 1e6 ? (m2 / 1e6).toFixed(2) + ' km²' : Math.round(m2).toLocaleString('it-IT') + ' m²');
+    // Se la scala reale della ripresa è nota, mostra le aree in m²/km²
+    // (più leggibili di "px²"); altrimenti resta il conteggio in pixel.
+    const changedTile = (s.changed_area_m2 != null)
+      ? `<div class="stat-tile"><div class="value">${fmtArea(s.changed_area_m2)}</div><div class="label">Area variata reale</div></div>`
+      : `<div class="stat-tile"><div class="value">${s.changed_pixels}</div><div class="label">Pixel variati</div></div>`;
+    const largestTile = (s.largest_region_area_m2 != null)
+      ? `<div class="stat-tile"><div class="value">${fmtArea(s.largest_region_area_m2)}</div><div class="label">Regione più estesa</div></div>`
+      : `<div class="stat-tile"><div class="value">${s.largest_region_area}</div><div class="label">Area regione max (px²)</div></div>`;
     $('#result-stats').innerHTML = `
       <div class="stat-tile"><div class="value">${(s.changed_ratio * 100).toFixed(2)}%</div><div class="label">Superficie variata</div></div>
       <div class="stat-tile"><div class="value">${s.num_regions}</div><div class="label">Regioni rilevate</div></div>
-      <div class="stat-tile"><div class="value">${s.largest_region_area}</div><div class="label">Area regione max (px²)</div></div>
-      <div class="stat-tile"><div class="value">${s.changed_pixels}</div><div class="label">Pixel variati</div></div>
+      ${largestTile}
+      ${changedTile}
     `;
 
     renderRegionList(result.regions);
@@ -451,8 +460,11 @@
       const div = document.createElement('div');
       div.className = 'region-item';
       div.dataset.regionIndex = i;
+      const areaLabel = (r.area_m2 != null)
+        ? (r.area_m2 >= 1e6 ? (r.area_m2 / 1e6).toFixed(2) + ' km²' : Math.round(r.area_m2).toLocaleString('it-IT') + ' m²')
+        : r.area + 'px²';
       div.innerHTML = `
-        <span>#${i + 1} — ${r.w}×${r.h}px <span style="color:var(--text-muted);">(${r.area}px²)</span></span>
+        <span>#${i + 1} — ${r.w}×${r.h}px <span style="color:var(--text-muted);">(${areaLabel})</span></span>
         <span style="display:flex; gap:4px; flex-wrap:wrap;">
           <button type="button" class="btn btn-sm" data-jump-original="a" data-region="${i}" title="Vai alla ripresa A originale (senza filtri/overlay), zoomata su questa regione">📷 A</button>
           <button type="button" class="btn btn-sm" data-jump-original="b" data-region="${i}" title="Vai alla ripresa B originale (senza filtri/overlay), zoomata su questa regione">📷 B</button>

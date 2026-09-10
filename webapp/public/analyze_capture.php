@@ -33,6 +33,13 @@ $measureBbox = null;
 if (!$measureMpp && !empty($study['bbox_json'])) {
     $measureBbox = json_decode($study['bbox_json'], true);
 }
+// Bbox geografica "grezza" (indipendente dalla risoluzione della scala):
+// serve lato client alla stima altezza da ombra (centro area -> lat/lon).
+// Preferisce quella propria della ripresa, poi quella dello studio.
+$geoBbox = (is_array($captureMeta) && !empty($captureMeta['bbox'])) ? array_map('floatval', $captureMeta['bbox']) : null;
+if (!$geoBbox && !empty($study['bbox_json'])) {
+    $geoBbox = array_map('floatval', json_decode($study['bbox_json'], true));
+}
 
 // Didascalia di default per la condivisione (Telegram/X): dati generici
 // non sensibili, MAI coordinate esatte — se l'analista le vuole includere
@@ -69,7 +76,7 @@ require __DIR__ . '/partials/nav.php';
       <button type="button" class="mode-btn" data-mode="annotate" title="Trascina sulla copia di lavoro per disegnare un'annotazione">✎ Annota</button>
       <button type="button" class="mode-btn" data-mode="measure" title="Trascina sulla copia di lavoro per misurare una distanza reale sul terreno">📏 Misura</button>
       <button type="button" class="mode-btn" data-mode="crop" title="Trascina sulla copia di lavoro per ritagliare un frammento da usare in una ricerca inversa per immagini">🔍 Ritaglia</button>
-      <button type="button" class="mode-btn" data-mode="overlay" title="Trascina il corpo per spostare l'immagine sovrapposta, gli angoli per ridimensionarla, la maniglia sopra per ruotarla">🖼 Sovrapponi</button>
+      <button type="button" class="mode-btn" data-mode="overlay" title="Trascina il corpo per spostarla, gli angoli (cerchi) per ridimensionarla, i quadratini a metà lato per inclinarla, il cerchietto in alto per ruotarla, il cerchietto lungo la guida in basso per l'opacità">🖼 Sovrapponi</button>
     </div>
     <div class="zoom-controls">
       <button type="button" class="btn btn-sm" id="an-undo-btn" disabled title="Annulla l'ultima azione (annotazione, misurazione o filtro avanzato). Scorciatoia: Ctrl+Z">↶ Annulla</button>
@@ -79,11 +86,20 @@ require __DIR__ . '/partials/nav.php';
       <button type="button" class="btn btn-sm" id="an-zoom-reset" title="Ripristina zoom e posizione">Reset</button>
     </div>
   </div>
-  <div class="hint" style="margin-bottom:10px;">Rotellina del mouse per zoomare (i due riquadri restano sincronizzati sulla stessa area, per confrontare a colpo d'occhio originale e copia di lavoro). Modalità <strong>Sposta</strong>: trascina per spostarti quando sei ingrandito. Modalità <strong>Annota</strong>: trascina per disegnarne una nuova, trascina un angolo o l'interno di una già esistente per ridimensionarla/spostarla. Modalità <strong>Misura</strong>: trascina per disegnarne una nuova, trascina un estremo di una già esistente per aggiustarla. Modalità <strong>Ritaglia</strong>: trascina per selezionare un frammento da usare in una ricerca inversa per immagini. Modalità <strong>Sovrapponi</strong>: agisci direttamente sull'immagine sovrapposta caricata — trascina il corpo per spostarla, i pallini agli angoli per ridimensionarla, il cerchietto in alto per ruotarla (o usa gli slider dedicati più sotto per il controllo fine, l'inclinazione e l'opacità). <strong>↶ Annulla</strong> (o Ctrl+Z) disfa l'ultima azione.</div>
+  <div class="hint" style="margin-bottom:10px;">Rotellina del mouse per zoomare (i due riquadri restano sincronizzati sulla stessa area, per confrontare a colpo d'occhio originale e copia di lavoro). Modalità <strong>Sposta</strong>: trascina per spostarti quando sei ingrandito. Modalità <strong>Annota</strong>: trascina per disegnarne una nuova, trascina un angolo o l'interno di una già esistente per ridimensionarla/spostarla. Modalità <strong>Misura</strong>: trascina per disegnarne una nuova, trascina un estremo di una già esistente per aggiustarla. Modalità <strong>Ritaglia</strong>: trascina per selezionare un frammento da usare in una ricerca inversa per immagini. Modalità <strong>Sovrapponi</strong>: agisci direttamente sull'immagine sovrapposta — trascina il corpo per spostarla, gli angoli (cerchi) per ridimensionarla, i quadratini a metà lato per inclinarla, il cerchietto in alto per ruotarla, il cerchietto sulla guida in basso per l'opacità (gli slider dedicati più sotto restano per il controllo fine, tutti sincronizzati con le maniglie). <strong>↶ Annulla</strong> (o Ctrl+Z) disfa l'ultima azione.</div>
   <div class="tag-row" style="margin-bottom:10px; align-items:center;">
     <label style="display:flex; align-items:center; gap:6px; margin:0; font-size:12px; color:var(--text-secondary);">
       Colore annotazioni <input type="color" id="an-annotate-color" value="#00fff2" title="Colore delle prossime annotazioni disegnate (quelle già esistenti si ricolorano dalla lista Annotazioni più sotto)">
     </label>
+    <label style="display:flex; align-items:center; gap:6px; margin:0; font-size:12px; color:var(--text-secondary);">
+      Forma
+      <select id="an-annotate-shape" title="Forma delle prossime annotazioni. Rettangolo: trascina. Polilinea/Poligono: clicca per aggiungere i vertici, poi 'Termina forma' (o Invio); Esc annulla.">
+        <option value="rect">Rettangolo</option>
+        <option value="polyline">Polilinea</option>
+        <option value="polygon">Poligono</option>
+      </select>
+    </label>
+    <button type="button" class="btn btn-sm" id="an-annotate-finish-shape" style="display:none;">✓ Termina forma</button>
     <label style="display:flex; align-items:center; gap:6px; margin:0; font-size:12px; color:var(--text-secondary);">
       Colore misurazioni <input type="color" id="an-measure-color" value="#ffb020" title="Colore delle prossime misurazioni disegnate (quelle già esistenti si ricolorano dalla lista Misurazioni più sotto)">
     </label>
@@ -131,7 +147,7 @@ require __DIR__ . '/partials/nav.php';
 
 <div class="panel">
   <h2>Sovrapposizione immagine <span class="info-tip" tabindex="0" data-tip="Carica una tua immagine (una mappa, un diagramma, un'altra foto) e sovrapponila alla copia di lavoro per confrontarla visivamente con la ripresa satellitare: resta solo nel browser finché non premi 'Salva come nuova ripresa', che la incorpora definitivamente nel file salvato.">?</span></h2>
-  <div class="hint" style="margin-bottom:10px;">Caricando un'immagine si passa automaticamente a modalità <strong>🖼 Sovrapponi</strong> (pulsante in alto, sopra l'anteprima): lì agisci <strong>direttamente sull'immagine</strong> — trascina il corpo per spostarla, i pallini agli angoli per ridimensionarla, il cerchietto in alto per ruotarla. Gli slider qui sotto servono per il controllo fine e per inclinazione/opacità (che sono solo da slider). Maniglie e slider restano sempre sincronizzati.</div>
+  <div class="hint" style="margin-bottom:10px;">Caricando un'immagine si passa automaticamente a modalità <strong>🖼 Sovrapponi</strong> (pulsante in alto, sopra l'anteprima): lì agisci <strong>direttamente sull'immagine</strong> — trascina il corpo per spostarla, gli angoli (cerchi) per ridimensionarla, i quadratini a metà lato per inclinarla (skew), il cerchietto in alto per ruotarla, il cerchietto sulla guida in basso per l'opacità. Gli slider qui sotto restano per il controllo fine, sempre sincronizzati con le maniglie.</div>
   <div class="tag-row" style="margin-bottom:10px; align-items:center;">
     <input type="file" id="an-overlay-file" accept="image/png,image/jpeg,image/webp" style="max-width:260px;">
     <button type="button" class="btn btn-sm" id="an-overlay-remove-btn">🗑 Rimuovi sovrapposizione</button>
@@ -277,6 +293,11 @@ require __DIR__ . '/partials/nav.php';
 <div class="panel">
   <h2>Annotazioni</h2>
   <div id="an-annotation-list"><div class="hint">Nessuna annotazione su questa ripresa.</div></div>
+  <div class="tag-row" style="margin-top:8px;">
+    <span class="hint" style="margin:0;">Esporta annotazioni + misurazioni georeferenziate:</span>
+    <a class="btn btn-sm" href="api/export_geo.php?capture_id=<?= (int)$capture['id'] ?>&format=kml" title="Layer KML per Google Earth (poligoni/linee con etichette e colori)">⬇ KML</a>
+    <a class="btn btn-sm" href="api/export_geo.php?capture_id=<?= (int)$capture['id'] ?>&format=geojson" title="GeoJSON per QGIS e altri strumenti GIS">⬇ GeoJSON</a>
+  </div>
 </div>
 
 <div class="panel">
@@ -289,6 +310,22 @@ require __DIR__ . '/partials/nav.php';
   <div id="an-measurement-list"><div class="hint">Nessuna misurazione. Passa a modalità Misura e trascina sulla copia di lavoro.</div></div>
   <div class="tag-row" style="margin-top:6px;">
     <button type="button" class="btn btn-sm" id="an-measure-clear-btn">🗑 Cancella tutte</button>
+  </div>
+
+  <div style="margin-top:14px; padding-top:12px; border-top:1px solid var(--line);">
+    <h3>Stima altezza da ombra <span class="info-tip" tabindex="0" data-tip="Tecnica IMINT: altezza ≈ lunghezza dell'ombra × tan(elevazione solare). Serve la data/ora di acquisizione (UTC) e la posizione (presa dal centro dell'area). Per Esri l'ora reale non è nota: inseriscila tu se puoi, altrimenti la stima è indicativa. Assume terreno pianeggiante e ombra proiettata su piano orizzontale.">?</span></h3>
+    <div class="grid grid-2" style="margin-bottom:8px;">
+      <div class="field">
+        <label>Data acquisizione (UTC)</label>
+        <input type="date" id="an-shadow-date">
+      </div>
+      <div class="field">
+        <label>Ora acquisizione (UTC) <span id="an-shadow-elev" class="val" style="margin-left:auto;"></span></label>
+        <input type="time" id="an-shadow-time" value="10:00">
+      </div>
+    </div>
+    <button type="button" class="btn btn-primary btn-sm" id="an-shadow-measure-btn">📐 Misura un'ombra</button>
+    <span class="hint" id="an-shadow-status"></span>
   </div>
 </div>
 
@@ -379,6 +416,11 @@ window.ORBITALEYE_ANALYZE = {
   // lato PHP e computeGeoScale() in analyze.js).
   mppX: <?= $measureMpp ? json_encode($measureMpp['mpp_x']) : 'null' ?>,
   mppY: <?= $measureMpp ? json_encode($measureMpp['mpp_y']) : 'null' ?>,
+  // Data di acquisizione (per la stima altezza da ombra: pre-compila il
+  // campo data; l'ora resta da inserire, non nota per Esri).
+  captureDate: <?= json_encode($capture['capture_date'] ?? null) ?>,
+  // Bbox geografica grezza (per centro area -> lat/lon nella stima ombra).
+  geoBbox: <?= $geoBbox ? json_encode(array_map('floatval', $geoBbox)) : 'null' ?>,
   // Angolo (gradi) applicato in fase di scaricamento se l'area era stata
   // ruotata (vedi ImageRotateCrop.php): gli assi pixel di questa immagine
   // non sono allineati a lon/lat come al solito, serve per calcolare

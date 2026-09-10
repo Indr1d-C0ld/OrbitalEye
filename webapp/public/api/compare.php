@@ -71,9 +71,17 @@ if (($body['align_mode'] ?? 'auto') === 'manual') {
     }
 }
 
+// Scala reale (metri/pixel) per esprimere le aree delle regioni cambiate in
+// m² e non solo in pixel/%. Si prende dalla ripresa A (il diff avviene alla
+// sua risoluzione, B viene allineata su A): mpp diretti nel meta o ricavati
+// dalla bbox propria — vedi Capture::resolveMpp.
+$mpp = Capture::resolveMpp($captureA) ?? Capture::resolveMpp($captureB);
+
 $payload = [
     'capture_a_path' => $captureA['relative_path'],
     'capture_b_path' => $captureB['relative_path'],
+    'mpp_x' => $mpp['mpp_x'] ?? null,
+    'mpp_y' => $mpp['mpp_y'] ?? null,
     'align' => !empty($body['align']),
     'diff_method' => $body['diff_method'] ?? 'ssim',
     'threshold' => (int) ($body['threshold'] ?? 30),

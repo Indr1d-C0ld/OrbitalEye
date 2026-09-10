@@ -86,6 +86,10 @@
       ty = startTy + (e.clientY - startY);
       clampPan(viewport);
       applyTransform();
+      // La barra di scala live è ancorata all'area visibile: durante il pan
+      // va ridisegnata per restare nell'angolo, il resto del canvas overlay
+      // si sposta già col transform CSS.
+      if (showScaleBar) redrawAnnotations();
     });
     window.addEventListener('mouseup', () => {
       if (!panning) return;
@@ -109,6 +113,7 @@
       ty = startTy + (t.clientY - startY);
       clampPan(viewport);
       applyTransform();
+      if (showScaleBar) redrawAnnotations();
     }, { passive: false });
     viewport.addEventListener('touchend', () => {
       if (!panning) return;
@@ -145,6 +150,7 @@
       // decidere se disegnarsi: al cambio modalità vanno ridisegnate subito,
       // altrimenti restano quelle (assenti o presenti) della modalità
       // precedente fino al prossimo evento che tocchi il canvas.
+      if (mode !== 'annotate' && typeof cancelPolyDraft === 'function') cancelPolyDraft();
       redrawAnnotations();
       renderOverlay();
     });
@@ -509,6 +515,54 @@
   if (annotateColorInput) annotateColorInput.addEventListener('input', () => { currentAnnotateColor = annotateColorInput.value; });
   if (measureColorInput) measureColorInput.addEventListener('input', () => { currentMeasureColor = measureColorInput.value; });
 
+  // Forma dell'annotazione in corso ('rect' = trascina; 'polyline'/'polygon'
+  // = clic per aggiungere vertici, poi "Termina forma"/Invio, Esc annulla).
+  const annotateShapeInput = $('#an-annotate-shape');
+  let annotateShape = annotateShapeInput ? annotateShapeInput.value : 'rect';
+  let polyDraft = null; // { shape, points: [[cx,cy],...] } in pixel canvas durante il disegno
+  if (annotateShapeInput) {
+    annotateShapeInput.addEventListener('change', () => {
+      annotateShape = annotateShapeInput.value;
+      cancelPolyDraft();
+    });
+  }
+  function cancelPolyDraft() {
+    polyDraft = null;
+    const btn = $('#an-annotate-finish-shape');
+    if (btn) btn.style.display = 'none';
+    redrawAnnotations();
+  }
+  async function finishPolyDraft() {
+    if (!polyDraft) return;
+    const min = polyDraft.shape === 'polygon' ? 3 : 2;
+    if (polyDraft.points.length < min) { cancelPolyDraft(); return; }
+    const coords = { points: polyDraft.points.map(([cx, cy]) => [cx / canvas.width, cy / canvas.height]) };
+    const shape = polyDraft.shape;
+    const color = currentAnnotateColor;
+    polyDraft = null;
+    const btn = $('#an-annotate-finish-shape');
+    if (btn) btn.style.display = 'none';
+    const id = await createAnnotationServer(coords, color, null, null, shape);
+    const a = { id, shape_type: shape, coords, color, label: null, notes: null };
+    annotations.push(a);
+    redrawAnnotations();
+    renderAnnotationList();
+    pushUndo(async () => {
+      await deleteAnnotationServer(a.id);
+      const idx = annotations.indexOf(a);
+      if (idx !== -1) annotations.splice(idx, 1);
+      redrawAnnotations();
+      renderAnnotationList();
+    });
+  }
+  const finishShapeBtn = $('#an-annotate-finish-shape');
+  if (finishShapeBtn) finishShapeBtn.addEventListener('click', finishPolyDraft);
+  document.addEventListener('keydown', (e) => {
+    if (!polyDraft) return;
+    if (e.key === 'Enter') { e.preventDefault(); finishPolyDraft(); }
+    else if (e.key === 'Escape') { e.preventDefault(); cancelPolyDraft(); }
+  });
+
   // Stato sovrapposizione immagine (vedi sezione dedicata più sotto per il
   // resto della logica): dichiarato qui, non più giù, per lo stesso motivo
   // di annotations/measurements sopra — resizeAnnotateCanvas() lo referenzia
@@ -626,12 +680,44 @@
   if (imgRight.complete) resizeAnnotateCanvas();
   if (imgLeft.complete) computeGeoScale();
 
+  // Misurazioni <-> righe annotations (shape_type 'measure'): internamente
+  // le misurazioni restano in pixel canvas assoluti (tutto il disegno/hit-
+  // test/drag li usa così), la conversione a/da frazioni avviene solo al
+  // confine con il server, per renderle indipendenti dalla risoluzione
+  // come le annotazioni.
+  function measureCoordsFrac(m) {
+    return {
+      x1: m.x1 / canvas.width, y1: m.y1 / canvas.height,
+      x2: m.x2 / canvas.width, y2: m.y2 / canvas.height,
+    };
+  }
+  function measureFromRow(row) {
+    const c = row.coords || {};
+    const m = {
+      id: row.id,
+      x1: (c.x1 || 0) * canvas.width, y1: (c.y1 || 0) * canvas.height,
+      x2: (c.x2 || 0) * canvas.width, y2: (c.y2 || 0) * canvas.height,
+      color: row.color || '#ffb020',
+      label: row.label || '',
+      distanceM: null,
+    };
+    const { distanceM } = pixelDistance(m.x1, m.y1, m.x2, m.y2);
+    m.distanceM = distanceM;
+    return m;
+  }
+
   async function loadAnnotations() {
     const res = await fetch(`api/annotations.php?study_id=${CFG.studyId}&target_image=${encodeURIComponent(TARGET_KEY)}`);
     const data = await res.json();
-    annotations = data.annotations || [];
+    const rows = data.annotations || [];
+    // Stessa tabella per annotazioni (rect/polyline/polygon) e misurazioni
+    // persistenti (shape_type 'measure'): si smistano al caricamento.
+    annotations = rows.filter((r) => r.shape_type !== 'measure');
+    measurements.length = 0;
+    rows.filter((r) => r.shape_type === 'measure').forEach((r) => measurements.push(measureFromRow(r)));
     redrawAnnotations();
     renderAnnotationList();
+    renderMeasurementList();
   }
 
   // Nonostante il nome (storico, condiviso con study.js), ridisegna sia le
@@ -664,16 +750,45 @@
   function drawOverlayLayer(ctx, targetW, targetH, includeHandles) {
     const k = targetW / canvas.width;
     annotations.forEach((a) => {
+      const col = a.color || '#00fff2';
+      // ----- Polilinea / poligono -----
+      if ((a.shape_type === 'polyline' || a.shape_type === 'polygon') && a.coords && Array.isArray(a.coords.points)) {
+        const pts = a.coords.points.map(([fx, fy]) => [fx * targetW, fy * targetH]);
+        if (pts.length < 2) return;
+        ctx.strokeStyle = col;
+        ctx.lineWidth = 2 * k;
+        ctx.shadowColor = col;
+        ctx.shadowBlur = 6 * k;
+        ctx.beginPath();
+        ctx.moveTo(pts[0][0], pts[0][1]);
+        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+        if (a.shape_type === 'polygon') ctx.closePath();
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        if (a.label) {
+          ctx.font = (11 * k) + 'px "Share Tech Mono", monospace';
+          ctx.fillStyle = col;
+          ctx.fillText(a.label, pts[0][0] + 3 * k, pts[0][1] - 4 * k);
+        }
+        if (includeHandles && mode === 'annotate') {
+          ctx.fillStyle = col;
+          pts.forEach(([hx, hy]) => {
+            ctx.beginPath(); ctx.arc(hx, hy, HANDLE_R * k, 0, Math.PI * 2); ctx.fill();
+          });
+        }
+        return;
+      }
+      // ----- Rettangolo -----
       const c = a.coords;
       const rx = c.x * targetW, ry = c.y * targetH, rw = c.w * targetW, rh = c.h * targetH;
-      ctx.strokeStyle = a.color || '#00fff2';
+      ctx.strokeStyle = col;
       ctx.lineWidth = 2 * k;
-      ctx.shadowColor = a.color || '#00fff2';
+      ctx.shadowColor = col;
       ctx.shadowBlur = 6 * k;
       ctx.strokeRect(rx, ry, rw, rh);
       if (a.label) {
         ctx.font = (11 * k) + 'px "Share Tech Mono", monospace';
-        ctx.fillStyle = a.color || '#00fff2';
+        ctx.fillStyle = col;
         ctx.shadowBlur = 0;
         ctx.fillText(a.label, rx + 3 * k, ry - 4 * k);
       }
@@ -682,7 +797,7 @@
       // trascinando, non solo cancellare dalla lista sotto.
       if (includeHandles && mode === 'annotate') {
         ctx.shadowBlur = 0;
-        ctx.fillStyle = a.color || '#00fff2';
+        ctx.fillStyle = col;
         [[rx, ry], [rx + rw, ry], [rx, ry + rh], [rx + rw, ry + rh]].forEach(([hx, hy]) => {
           ctx.beginPath();
           ctx.arc(hx, hy, HANDLE_R * k, 0, Math.PI * 2);
@@ -690,6 +805,22 @@
         });
       }
     });
+    // Poligono/polilinea in fase di disegno (vertici cliccati finora).
+    if (includeHandles && polyDraft && polyDraft.points.length) {
+      ctx.strokeStyle = currentAnnotateColor;
+      ctx.fillStyle = currentAnnotateColor;
+      ctx.lineWidth = 2 * k;
+      ctx.setLineDash([4 * k, 3 * k]);
+      ctx.beginPath();
+      ctx.moveTo(polyDraft.points[0][0] * k, polyDraft.points[0][1] * k);
+      for (let i = 1; i < polyDraft.points.length; i++) ctx.lineTo(polyDraft.points[i][0] * k, polyDraft.points[i][1] * k);
+      if (polyDraft.shape === 'polygon' && polyDraft.points.length > 2) ctx.closePath();
+      ctx.stroke();
+      ctx.setLineDash([]);
+      polyDraft.points.forEach(([hx, hy]) => {
+        ctx.beginPath(); ctx.arc(hx * k, hy * k, HANDLE_R * k, 0, Math.PI * 2); ctx.fill();
+      });
+    }
     measurements.forEach((m) => {
       const x1 = m.x1 * k, y1 = m.y1 * k, x2 = m.x2 * k, y2 = m.y2 * k;
       const mColor = m.color || '#ffb020';
@@ -717,7 +848,11 @@
         });
       }
     });
-    drawScaleBar(ctx, targetW, targetH);
+    // includeHandles distingue perfettamente vista live (true) da
+    // incorporazione in un export (false): la barra di scala lo riusa come
+    // flag "live" per decidere se adattarsi allo zoom o restare a distanza
+    // fissa sull'immagine intera.
+    drawScaleBar(ctx, targetW, targetH, includeHandles);
   }
 
   function redrawAnnotations() {
@@ -742,32 +877,50 @@
   }
 
   // Disegnata nello stesso canvas di annotazioni/misurazioni (coordinate
-  // "CSS", cioè canvas.width/height = imgRight.clientWidth/Height): lo zoom
-  // è un transform applicato dopo su tutto il contenuto, canvas incluso, e
-  // la barra si ridimensiona già visivamente da sola insieme al resto —
-  // niente da ricalcolare qui in base allo zoom corrente. mppX invece è
-  // metri per pixel NATIVO dell'immagine, va riportato a metri per pixel di
-  // canvas con lo stesso fattore di riduzione con cui viene mostrata.
-  function drawScaleBar(ctx, targetW, targetH) {
+  // "CSS", cioè canvas.width/height = imgRight.clientWidth/Height).
+  //
+  // live=true (vista a schermo): adatta la distanza rappresentata allo zoom
+  // corrente — la barra rappresenta sempre ~20% dell'AREA VISIBILE (quindi
+  // "10 m" da vicino, "200 m" da lontano) e resta ancorata in basso a
+  // sinistra del riquadro visibile anche quando si è ingranditi e spostati.
+  // Spessori/font divisi per lo zoom, così a schermo restano costanti.
+  //
+  // live=false (incorporazione in un salvataggio/condivisione): nessuno
+  // zoom, distanza fissa ~20% della larghezza dell'immagine, ancorata in
+  // basso a sinistra dell'immagine intera; spessori scalati col fattore k
+  // verso la risoluzione nativa (WYSIWYG rispetto alla vista).
+  function drawScaleBar(ctx, targetW, targetH, live) {
     if (!showScaleBar || !mppX || !imgRight.naturalWidth || !targetW) return;
-    const k = targetW / canvas.width;
-    const metersPerTargetPx = mppX * (imgRight.naturalWidth / targetW);
-    const niceMeters = niceScaleDistance(metersPerTargetPx * targetW * 0.2);
-    const barPx = niceMeters / metersPerTargetPx;
-    if (!isFinite(barPx) || barPx <= 0) return;
 
-    const marginX = targetW * 0.03;
-    const marginY = targetH * 0.05;
-    const x0 = marginX, x1 = marginX + barPx, y0 = targetH - marginY;
-    const tickH = 6 * k;
+    let metersPerPx, niceMeters, x0, y0, sc;
+    if (live) {
+      sc = scale || 1;
+      metersPerPx = mppX * (imgRight.naturalWidth / canvas.width); // per pixel canvas
+      const visibleWidthM = (canvas.width / sc) * metersPerPx;
+      niceMeters = niceScaleDistance(visibleWidthM * 0.2);
+      const xVisMin = -tx / sc, yVisMax = (canvas.height - ty) / sc;
+      x0 = xVisMin + 14 / sc;
+      y0 = yVisMax - 30 / sc;
+    } else {
+      sc = canvas.width / targetW; // divisore comune: k = 1/sc
+      metersPerPx = mppX * (imgRight.naturalWidth / targetW);
+      niceMeters = niceScaleDistance(metersPerPx * targetW * 0.2);
+      x0 = targetW * 0.03;
+      y0 = targetH - targetH * 0.05;
+    }
+    const barPx = niceMeters / metersPerPx;
+    if (!isFinite(barPx) || barPx <= 0) return;
+    const x1 = x0 + barPx;
+    const u = 1 / sc; // unità "1 pixel a schermo/nativo" espressa in pixel canvas
+    const tickH = 6 * u;
     const label = niceMeters >= 1000 ? (niceMeters / 1000) + ' km' : niceMeters + ' m';
 
     ctx.save();
     ctx.strokeStyle = '#ffffff';
     ctx.fillStyle = '#ffffff';
-    ctx.lineWidth = 2 * k;
+    ctx.lineWidth = 2 * u;
     ctx.shadowColor = 'rgba(0,0,0,0.85)';
-    ctx.shadowBlur = 3 * k;
+    ctx.shadowBlur = 3 * u;
     ctx.beginPath();
     ctx.moveTo(x0, y0);
     ctx.lineTo(x1, y0);
@@ -778,18 +931,18 @@
       ctx.lineTo(x, y0 + tickH / 2);
       ctx.stroke();
     });
-    ctx.font = (12 * k) + 'px "Share Tech Mono", monospace';
+    ctx.font = (12 * u) + 'px "Share Tech Mono", monospace';
     ctx.textAlign = 'center';
-    ctx.fillText(label, (x0 + x1) / 2, y0 - tickH - 4 * k);
+    ctx.fillText(label, (x0 + x1) / 2, y0 - tickH - 4 * u);
     ctx.restore();
   }
 
   // ---------- Chiamate server per le annotazioni (create/update/delete) ----------
-  async function createAnnotationServer(coords, color, label, notes) {
+  async function createAnnotationServer(coords, color, label, notes, shapeType) {
     const res = await fetch('api/annotations.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ study_id: CFG.studyId, capture_id: CFG.captureId, target_image: TARGET_KEY, shape_type: 'rect', coords, color, label, notes }),
+      body: JSON.stringify({ study_id: CFG.studyId, capture_id: CFG.captureId, target_image: TARGET_KEY, shape_type: shapeType || 'rect', coords, color, label, notes }),
     });
     const data = await res.json();
     return data.id;
@@ -997,10 +1150,12 @@
         const prevLabel = labelInput.dataset.prevValue || '';
         m.label = labelInput.value;
         redrawAnnotations();
+        if (m.id) updateAnnotationServer(m.id, measureCoordsFrac(m), m.label || null, null);
         pushUndo(() => {
           m.label = prevLabel;
           labelInput.value = prevLabel;
           redrawAnnotations();
+          if (m.id) updateAnnotationServer(m.id, measureCoordsFrac(m), prevLabel || null, null);
         });
       });
       const right = document.createElement('span');
@@ -1020,10 +1175,12 @@
         const prevColor = m.color;
         m.color = swatch.value;
         redrawAnnotations();
+        if (m.id) updateAnnotationServer(m.id, measureCoordsFrac(m), m.label || null, null, m.color);
         pushUndo(() => {
           m.color = prevColor;
           redrawAnnotations();
           renderMeasurementList();
+          if (m.id) updateAnnotationServer(m.id, measureCoordsFrac(m), m.label || null, null, prevColor);
         });
       });
       const del = document.createElement('button');
@@ -1031,12 +1188,14 @@
       del.className = 'btn btn-sm btn-danger';
       del.textContent = '✕';
       del.title = 'Rimuovi misurazione';
-      del.addEventListener('click', () => {
+      del.addEventListener('click', async () => {
         measurements.splice(i, 1);
         redrawAnnotations();
         renderMeasurementList();
-        pushUndo(() => {
+        if (m.id) await deleteAnnotationServer(m.id);
+        pushUndo(async () => {
           measurements.push(m);
+          if (m.id) m.id = await createAnnotationServer(measureCoordsFrac(m), m.color, m.label || null, null, 'measure');
           redrawAnnotations();
           renderMeasurementList();
         });
@@ -1050,16 +1209,77 @@
     });
   }
 
-  $('#an-measure-clear-btn').addEventListener('click', () => {
+  $('#an-measure-clear-btn').addEventListener('click', async () => {
+    if (measurements.length && !confirm('Cancellare tutte le misurazioni? Vengono rimosse anche dall\'archivio.')) return;
+    const ids = measurements.filter((m) => m.id).map((m) => m.id);
     measurements.length = 0;
     redrawAnnotations();
     renderMeasurementList();
+    for (const id of ids) await deleteAnnotationServer(id);
   });
 
   $('#an-show-scale-bar').addEventListener('change', (e) => {
     showScaleBar = e.target.checked;
     redrawAnnotations();
   });
+
+  // ---------- Stima altezza da ombra ----------
+  // Elevazione solare (gradi sull'orizzonte) per lat/lon e istante UTC.
+  // Algoritmo solare semplificato (NOAA), precisione ~0.5° — più che
+  // sufficiente vista l'incertezza intrinseca nel tracciare un'ombra.
+  function solarElevationDeg(lat, lon, date) {
+    const rad = Math.PI / 180;
+    const n = date.getTime() / 86400000 + 2440587.5 - 2451545.0; // giorni da J2000
+    const L = (280.460 + 0.9856474 * n) % 360;
+    const g = ((357.528 + 0.9856003 * n) % 360) * rad;
+    const lambda = (L + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) * rad;
+    const eps = (23.439 - 0.0000004 * n) * rad;
+    const decl = Math.asin(Math.sin(eps) * Math.sin(lambda));
+    const ra = Math.atan2(Math.cos(eps) * Math.sin(lambda), Math.cos(lambda));
+    const gmst = ((18.697374558 + 24.06570982441908 * n) % 24 + 24) % 24;
+    const ha = (gmst * 15 + lon) * rad - ra;
+    const latR = lat * rad;
+    const sinAlt = Math.sin(latR) * Math.sin(decl) + Math.cos(latR) * Math.cos(decl) * Math.cos(ha);
+    return Math.asin(Math.max(-1, Math.min(1, sinAlt))) / rad;
+  }
+
+  let shadowMeasureArmed = false;
+  const shadowDateEl = $('#an-shadow-date');
+  const shadowTimeEl = $('#an-shadow-time');
+  const shadowElevEl = $('#an-shadow-elev');
+  const shadowStatusEl = $('#an-shadow-status');
+
+  function captureCenterLatLon() {
+    const bb = CFG.geoBbox || CFG.bbox;
+    if (!bb) return null;
+    const [minLon, minLat, maxLon, maxLat] = bb;
+    return [(minLat + maxLat) / 2, (minLon + maxLon) / 2];
+  }
+  function currentShadowElevation() {
+    const ll = captureCenterLatLon();
+    if (!ll || !shadowDateEl.value) return null;
+    const dt = new Date(shadowDateEl.value + 'T' + (shadowTimeEl.value || '00:00') + ':00Z');
+    if (isNaN(dt.getTime())) return null;
+    return solarElevationDeg(ll[0], ll[1], dt);
+  }
+  function refreshShadowElevLabel() {
+    const el = currentShadowElevation();
+    shadowElevEl.textContent = el === null ? '' : ('sole ' + el.toFixed(1) + '°');
+  }
+  if (shadowDateEl) {
+    if (CFG.captureDate && /^\d{4}-\d{2}-\d{2}/.test(CFG.captureDate)) shadowDateEl.value = CFG.captureDate.slice(0, 10);
+    [shadowDateEl, shadowTimeEl].forEach((el) => el.addEventListener('input', refreshShadowElevLabel));
+    refreshShadowElevLabel();
+    $('#an-shadow-measure-btn').addEventListener('click', () => {
+      if (!captureCenterLatLon()) { shadowStatusEl.textContent = 'Nessuna posizione geografica nota per questa ripresa.'; return; }
+      const el = currentShadowElevation();
+      if (el === null || el < 3) { shadowStatusEl.textContent = 'Sole troppo basso o data/ora non valide: l\'ombra non dà una stima affidabile.'; return; }
+      shadowMeasureArmed = true;
+      const measBtn = $('#an-mode-toggle .mode-btn[data-mode="measure"]');
+      if (measBtn && mode !== 'measure') measBtn.click();
+      shadowStatusEl.textContent = 'Traccia la lunghezza dell\'ombra sulla copia di lavoro (dalla base dell\'oggetto alla punta dell\'ombra).';
+    });
+  }
 
   function pixelDistance(x1, y1, x2, y2) {
     // Converte lo spostamento in pixel canvas in pixel dell'immagine
@@ -1429,6 +1649,18 @@
   }
 
   const OVERLAY_ROTATE_HANDLE_OFFSET = 28; // px canvas, oltre l'angolo in alto
+  const OVERLAY_OPACITY_HANDLE_OFFSET = 28; // px canvas, oltre il lato in basso
+
+  // Riporta un punto canvas nel sistema "pre-rotazione" relativo al centro
+  // dell'overlay (inverte solo la rotazione, non lo skew): usato dalle
+  // maniglie di skew/opacità per ricavare quanto ha "shearato"/scorso il
+  // trascinamento lungo gli assi propri dell'immagine.
+  function canvasToOverlayUnrotated(px, py) {
+    const dx = px - overlay.cx * canvas.width;
+    const dy = py - overlay.cy * canvas.height;
+    const r = (-overlay.rotation * Math.PI) / 180;
+    return [dx * Math.cos(r) - dy * Math.sin(r), dx * Math.sin(r) + dy * Math.cos(r)];
+  }
 
   // Trasforma un punto "locale" (relativo al centro dell'overlay, in pixel
   // canvas, PRIMA di scala/skew/rotazione) nelle coordinate canvas correnti
@@ -1463,14 +1695,27 @@
       sw: overlayLocalToCanvas(-hw, hh),
       se: overlayLocalToCanvas(hw, hh),
     };
+    // Metà dei lati: trascinandole si inclina (skew) l'immagine lungo il
+    // proprio asse — lati alto/basso = inclinazione orizzontale (skewX),
+    // lati sinistro/destro = inclinazione verticale (skewY).
+    const edges = {
+      n: overlayLocalToCanvas(0, -hh),
+      s: overlayLocalToCanvas(0, hh),
+      w: overlayLocalToCanvas(-hw, 0),
+      e: overlayLocalToCanvas(hw, 0),
+    };
     const rotate = overlayLocalToCanvas(0, -hh - OVERLAY_ROTATE_HANDLE_OFFSET);
-    return { corners, rotate };
+    // Maniglia opacità: piccola guida sotto il lato inferiore, la posizione
+    // lungo la guida (da sinistra a destra) È il valore di opacità 0→1.
+    const opacityTrackL = overlayLocalToCanvas(-hw, hh + OVERLAY_OPACITY_HANDLE_OFFSET);
+    const opacityTrackR = overlayLocalToCanvas(hw, hh + OVERLAY_OPACITY_HANDLE_OFFSET);
+    const opacity = overlayLocalToCanvas(-hw + overlay.opacity * 2 * hw, hh + OVERLAY_OPACITY_HANDLE_OFFSET);
+    return { corners, edges, rotate, opacityTrackL, opacityTrackR, opacity };
   }
 
   function drawOverlayHandles() {
     const ctx = canvas.getContext('2d');
-    const { corners, rotate } = overlayHandlePoints();
-    const center = [overlay.cx * canvas.width, overlay.cy * canvas.height];
+    const { corners, edges, rotate, opacityTrackL, opacityTrackR, opacity } = overlayHandlePoints();
     const topMid = overlayLocalToCanvas(0, -overlayHalfExtents()[1]);
 
     ctx.save();
@@ -1487,30 +1732,48 @@
     ctx.beginPath();
     ctx.moveTo(...topMid); ctx.lineTo(...rotate);
     ctx.stroke();
+    // Guida dell'opacità sotto il lato inferiore.
+    ctx.beginPath();
+    ctx.moveTo(...opacityTrackL); ctx.lineTo(...opacityTrackR);
+    ctx.stroke();
 
+    // Angoli: cerchi pieni (ridimensiona).
     ctx.fillStyle = '#00fff2';
     Object.values(corners).forEach(([hx, hy]) => {
       ctx.beginPath(); ctx.arc(hx, hy, HANDLE_R, 0, Math.PI * 2); ctx.fill();
     });
-    // Maniglia di rotazione: cerchio vuoto, per distinguerla a colpo
-    // d'occhio dalle maniglie d'angolo (piene, resize).
+    // Metà lati: quadratini (inclina/skew), per distinguerli dagli angoli.
+    Object.values(edges).forEach(([hx, hy]) => {
+      ctx.fillRect(hx - HANDLE_R, hy - HANDLE_R, HANDLE_R * 2, HANDLE_R * 2);
+    });
+    // Rotazione: cerchio vuoto sopra.
     ctx.beginPath();
     ctx.arc(rotate[0], rotate[1], HANDLE_R, 0, Math.PI * 2);
     ctx.fillStyle = '#0a0a0a';
     ctx.fill();
     ctx.lineWidth = 2;
     ctx.stroke();
+    // Opacità: cerchio pieno che scorre lungo la guida in basso.
+    ctx.beginPath();
+    ctx.arc(opacity[0], opacity[1], HANDLE_R, 0, Math.PI * 2);
+    ctx.fillStyle = '#00fff2';
+    ctx.fill();
+    ctx.strokeStyle = '#0a0a0a';
+    ctx.lineWidth = 1;
+    ctx.stroke();
     ctx.restore();
-
-    void center; // riferimento già incluso in overlayLocalToCanvas, tenuto per chiarezza
   }
 
   function hitOverlayHandle(x, y) {
     if (!overlay.loaded || mode !== 'overlay') return null;
-    const { corners, rotate } = overlayHandlePoints();
+    const { corners, edges, rotate, opacity } = overlayHandlePoints();
     if (Math.hypot(x - rotate[0], y - rotate[1]) <= handleHitR()) return { type: 'rotate' };
+    if (Math.hypot(x - opacity[0], y - opacity[1]) <= handleHitR()) return { type: 'opacity' };
     for (const [name, [hx, hy]] of Object.entries(corners)) {
       if (Math.hypot(x - hx, y - hy) <= handleHitR()) return { type: 'resize-corner', corner: name };
+    }
+    for (const [name, [hx, hy]] of Object.entries(edges)) {
+      if (Math.hypot(x - hx, y - hy) <= handleHitR()) return { type: 'skew-edge', edge: name };
     }
     return null;
   }
@@ -1575,15 +1838,15 @@
   });
 
   // Aggiorna slider + etichetta a partire da overlay[key] già impostato
-  // direttamente da un trascinamento maniglia (resize/rotazione), così
-  // maniglie e slider restano sempre coerenti tra loro. Funziona per
-  // scale/rotation (le uniche chiavi pilotabili da maniglia) perché per
-  // entrambe la conversione raw->stored è invertibile in modo semplice.
+  // direttamente da un trascinamento maniglia (scala/rotazione/skew/
+  // opacità), così maniglie e slider restano sempre coerenti tra loro. La
+  // conversione stored->raw è l'inversa di toStored: identità per rotazione
+  // e skew (gradi), ×100 per scala e opacità (frazione -> percentuale).
   function syncOverlaySliderFromStored(key) {
     const entry = OVERLAY_SLIDER_MAP.find((e) => e[2] === key);
     if (!entry) return;
     const [inputId, outId, , , fmt] = entry;
-    const raw = key === 'scale' ? overlay.scale * 100 : overlay[key];
+    const raw = (key === 'scale' || key === 'opacity') ? overlay[key] * 100 : overlay[key];
     $('#' + inputId).value = raw;
     $('#' + outId).textContent = fmt(raw);
   }
@@ -1669,8 +1932,11 @@
     return [rx + rw, ry + rh];
   }
 
+  const isPoly = (a) => a.shape_type === 'polyline' || a.shape_type === 'polygon';
+
   function hitAnnotationHandle(x, y) {
     for (const a of annotations) {
+      if (isPoly(a)) continue;
       const c = a.coords;
       const rx = c.x * canvas.width, ry = c.y * canvas.height, rw = c.w * canvas.width, rh = c.h * canvas.height;
       for (const name of ['tl', 'tr', 'bl', 'br']) {
@@ -1686,9 +1952,23 @@
 
   function hitAnnotationBody(x, y) {
     for (const a of annotations) {
+      if (isPoly(a)) continue;
       const c = a.coords;
       const rx = c.x * canvas.width, ry = c.y * canvas.height, rw = c.w * canvas.width, rh = c.h * canvas.height;
       if (x >= rx && x <= rx + rw && y >= ry && y <= ry + rh) return a;
+    }
+    return null;
+  }
+
+  // Vertice di una polilinea/poligono esistente sotto il cursore (in
+  // modalità Annota), per poterlo trascinare.
+  function hitPolyVertex(x, y) {
+    for (const a of annotations) {
+      if (!isPoly(a) || !a.coords || !Array.isArray(a.coords.points)) continue;
+      for (let i = 0; i < a.coords.points.length; i++) {
+        const [fx, fy] = a.coords.points[i];
+        if (Math.hypot(x - fx * canvas.width, y - fy * canvas.height) <= handleHitR()) return { ann: a, idx: i };
+      }
     }
     return null;
   }
@@ -1774,13 +2054,29 @@
       }
 
       const { distanceM } = pixelDistance(startX, startY, x, y);
-      const m = { x1: startX, y1: startY, x2: x, y2: y, distanceM, color: currentMeasureColor };
+      let label = '';
+      // Modalità ombra→altezza: la linea appena tracciata è la lunghezza
+      // dell'ombra; altezza ≈ ombra × tan(elevazione solare).
+      if (shadowMeasureArmed) {
+        shadowMeasureArmed = false;
+        const el = currentShadowElevation();
+        if (el !== null && el >= 3 && distanceM) {
+          const heightM = distanceM * Math.tan(el * Math.PI / 180);
+          label = `altezza ≈ ${heightM.toFixed(1)} m (ombra ${formatDistance(distanceM)}, sole ${el.toFixed(1)}°)`;
+          if (shadowStatusEl) shadowStatusEl.textContent = `Altezza stimata ≈ ${heightM.toFixed(1)} m.`;
+        }
+      }
+      const m = { x1: startX, y1: startY, x2: x, y2: y, distanceM, color: currentMeasureColor, label };
       measurements.push(m);
       redrawAnnotations();
       renderMeasurementList();
-      pushUndo(() => {
+      // Persistite come le annotazioni (riga annotations shape_type
+      // 'measure'): sopravvivono al ricaricamento della pagina.
+      createAnnotationServer(measureCoordsFrac(m), m.color, m.label || null, null, 'measure').then((id) => { m.id = id; });
+      pushUndo(async () => {
         const idx = measurements.indexOf(m);
         if (idx !== -1) measurements.splice(idx, 1);
+        if (m.id) await deleteAnnotationServer(m.id);
         redrawAnnotations();
         renderMeasurementList();
       });
@@ -1796,6 +2092,22 @@
 
     function handleStart(x, y) {
       if (mode === 'annotate') {
+        // Trascinamento di un vertice di una polilinea/poligono già esistente.
+        const vHit = hitPolyVertex(x, y);
+        if (vHit) {
+          dragState = { type: 'drag-poly-vertex', ann: vHit.ann, idx: vHit.idx, prevCoords: { points: vHit.ann.coords.points.map((p) => p.slice()) } };
+          return;
+        }
+        // Disegno polilinea/poligono: ogni clic aggiunge un vertice.
+        if (annotateShape === 'polyline' || annotateShape === 'polygon') {
+          if (!polyDraft) polyDraft = { shape: annotateShape, points: [] };
+          polyDraft.points.push([x, y]);
+          const btn = $('#an-annotate-finish-shape');
+          if (btn) btn.style.display = '';
+          redrawAnnotations();
+          dragState = null;
+          return;
+        }
         const handleHit = hitAnnotationHandle(x, y);
         if (handleHit) {
           dragState = { type: 'resize', ann: handleHit.ann, fixedX: handleHit.fixedX, fixedY: handleHit.fixedY, prevCoords: { ...handleHit.ann.coords } };
@@ -1836,6 +2148,14 @@
           dragState = { type: 'resize-overlay', baseDiag: Math.hypot(hw0, hh0) };
           return;
         }
+        if (overlayHandleHit && overlayHandleHit.type === 'skew-edge') {
+          dragState = { type: 'skew-overlay', edge: overlayHandleHit.edge };
+          return;
+        }
+        if (overlayHandleHit && overlayHandleHit.type === 'opacity') {
+          dragState = { type: 'opacity-overlay' };
+          return;
+        }
         dragState = {
           type: 'move-overlay',
           grabDX: x - overlay.cx * canvas.width,
@@ -1861,6 +2181,9 @@
         const c = dragState.prevCoords;
         const newRx = x - dragState.grabDX, newRy = y - dragState.grabDY;
         dragState.ann.coords = { x: newRx / canvas.width, y: newRy / canvas.height, w: c.w, h: c.h };
+        redrawAnnotations();
+      } else if (dragState.type === 'drag-poly-vertex') {
+        dragState.ann.coords.points[dragState.idx] = [x / canvas.width, y / canvas.height];
         redrawAnnotations();
       } else if (dragState.type === 'drag-endpoint') {
         const m = dragState.m;
@@ -1894,6 +2217,34 @@
         overlay.rotation = deg;
         syncOverlaySliderFromStored('rotation');
         renderOverlay();
+      } else if (dragState.type === 'skew-overlay') {
+        // Punto trascinato nel sistema pre-rotazione, relativo al centro.
+        // CSS skew(ax,ay): x += y*tan(ax), y += x*tan(ay). Per il lato alto
+        // (y locale = -hh) lo scostamento orizzontale del punto vale
+        // -hh*tan(skewX); per il lato basso +hh*tan(skewX); simmetrico per
+        // i lati sinistro/destro con skewY. Angolo limitato a ±45° come gli
+        // slider.
+        const [lx, ly] = canvasToOverlayUnrotated(x, y);
+        const [hw, hh] = overlayHalfExtents();
+        const clampDeg = (d) => Math.max(-45, Math.min(45, d));
+        if (dragState.edge === 'n' || dragState.edge === 's') {
+          const s = dragState.edge === 'n' ? -1 : 1;
+          overlay.skewX = clampDeg((Math.atan2(s * lx, hh) * 180) / Math.PI);
+          syncOverlaySliderFromStored('skewX');
+        } else {
+          const s = dragState.edge === 'w' ? -1 : 1;
+          overlay.skewY = clampDeg((Math.atan2(s * ly, hw) * 180) / Math.PI);
+          syncOverlaySliderFromStored('skewY');
+        }
+        renderOverlay();
+      } else if (dragState.type === 'opacity-overlay') {
+        // Posizione lungo il lato inferiore (da sinistra = 0 a destra = 1),
+        // nel sistema pre-rotazione.
+        const [lx] = canvasToOverlayUnrotated(x, y);
+        const [hw] = overlayHalfExtents();
+        overlay.opacity = Math.max(0, Math.min(1, (lx + hw) / (2 * hw)));
+        syncOverlaySliderFromStored('opacity');
+        renderOverlay();
       }
     }
 
@@ -1906,9 +2257,11 @@
       if (state.type === 'draw-measure') { finishMeasure(x, y); return; }
       if (state.type === 'draw-crop') { finishCrop(x, y); return; }
 
-      if (state.type === 'resize' || state.type === 'move') {
+      if (state.type === 'resize' || state.type === 'move' || state.type === 'drag-poly-vertex') {
         const a = state.ann;
-        const newCoords = { ...a.coords };
+        const newCoords = state.type === 'drag-poly-vertex'
+          ? { points: a.coords.points.map((p) => p.slice()) }
+          : { ...a.coords };
         const prevCoords = state.prevCoords;
         await updateAnnotationServer(a.id, newCoords, a.label, a.notes);
         redrawAnnotations();
@@ -1921,14 +2274,14 @@
         });
       } else if (state.type === 'drag-endpoint') {
         const m = state.m;
-        const newState = { x1: m.x1, y1: m.y1, x2: m.x2, y2: m.y2, distanceM: m.distanceM };
         renderMeasurementList();
-        pushUndo(() => {
+        if (m.id) await updateAnnotationServer(m.id, measureCoordsFrac(m), m.label || null, null);
+        pushUndo(async () => {
           Object.assign(m, state.prev);
+          if (m.id) await updateAnnotationServer(m.id, measureCoordsFrac(m), m.label || null, null);
           redrawAnnotations();
           renderMeasurementList();
         });
-        void newState; // valore già scritto in m durante il trascinamento
       } else {
         redrawAnnotations();
         // redrawAnnotations() pulisce l'intero canvas overlay (stesso

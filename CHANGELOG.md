@@ -4,6 +4,93 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-09-10 (2) — GEOINT: maniglie skew/opacità, scala adattiva, misurazioni persistenti, poligoni, aree in m², export KML/GeoJSON, altezza da ombra
+
+Batch in 5 fasi su richiesta esplicita, tutte testate in isolamento.
+
+### Fase 1 — Immagine sovrapposta: skew/opacità come maniglie dirette; barra di scala adattiva allo zoom
+
+- **[webapp/public/assets/js/analyze.js](webapp/public/assets/js/analyze.js)**
+  — in modalità Sovrapponi: quadratini a metà di ogni lato per inclinare
+  (lati alto/basso = skewX, sinistro/destro = skewY), cerchietto lungo una
+  guida sotto il lato inferiore per l'opacità (0→1). Tutti sincronizzati
+  con gli slider come rotazione/scala. `canvasToOverlayUnrotated()`,
+  `overlayHandlePoints()` esteso, casi `skew-overlay`/`opacity-overlay` in
+  handleMove.
+- La barra di scala (`drawScaleBar()`) nella vista live ora rappresenta
+  sempre ~20% dell'area VISIBILE (adattiva: 200 m a 1×, 100 m a 2×, 50 m a
+  4×…) e resta ancorata in basso a sinistra del riquadro visibile anche da
+  ingranditi/spostati; spessori/testo costanti a schermo. Nell'export resta
+  a distanza fissa sull'immagine intera (flag `live` = `includeHandles`).
+  Ridisegno agganciato al pan.
+- **[webapp/public/analyze_capture.php](webapp/public/analyze_capture.php)**
+  — tooltip/testi aggiornati.
+
+### Fase 2 — Misurazioni persistenti + annotazioni poligono/polilinea
+
+- **analyze.js** — le misurazioni ora si salvano lato server come righe
+  `annotations` con `shape_type='measure'` (coords x1/y1/x2/y2 in frazioni):
+  `measureCoordsFrac()`/`measureFromRow()`, `loadAnnotations()` smista i
+  tipi. Create/sposta-estremo/etichetta/colore/elimina e "Cancella tutte"
+  (con conferma) sincronizzati con l'endpoint. `createAnnotationServer()`
+  accetta ora un parametro `shapeType`.
+- Nuove forme di annotazione **polilinea/poligono**: selettore "Forma"
+  nella toolbar, clic per aggiungere i vertici, "✓ Termina forma"/Invio
+  (Esc annulla); vertici trascinabili in modalità Annota. Persistite come
+  `shape_type='polyline'/'polygon'`, coords `{points:[[fx,fy],…]}`.
+  `drawOverlayLayer()` disegna i nuovi tipi (chiuso per il poligono),
+  `hitPolyVertex()`, casi `drag-poly-vertex`. Le hit-test dei rettangoli
+  saltano ora le forme poly.
+- **analyze_capture.php** — markup selettore forma + pulsante "Termina
+  forma".
+
+### Fase 3 — Regioni di cambiamento in m²
+
+- **[python-service/app/core/diff.py](python-service/app/core/diff.py)** —
+  `compute_stats()` accetta `mpp_x`/`mpp_y`: aggiunge `changed_area_m2` e
+  `largest_region_area_m2` quando la scala reale è nota.
+- **[python-service/app/routers/analysis.py](python-service/app/routers/analysis.py)**
+  — `CompareRequest` accetta `mpp_x`/`mpp_y`; ogni regione in output ha
+  `area_m2`.
+- **[webapp/public/api/compare.php](webapp/public/api/compare.php)** —
+  passa la scala della ripresa A (`Capture::resolveMpp`) al servizio.
+- **[webapp/public/assets/js/study.js](webapp/public/assets/js/study.js)**
+  — la vista risultato mostra "Area variata reale" e "Regione più estesa"
+  in m²/km² (fallback a pixel se la scala non è nota); la lista regioni
+  mostra `area_m2` per regione.
+- Richiede il riavvio di `orbitaleye-analysis` (già effettuato).
+
+### Fase 4 — Export KML / GeoJSON
+
+- **[webapp/public/api/export_geo.php](webapp/public/api/export_geo.php)**
+  (nuovo) — esporta annotazioni + misurazioni di una ripresa come layer
+  georeferenziato: rect→Polygon, polilinea→LineString, poligono→Polygon,
+  misura→LineString; coordinate frazionarie → lon/lat via la bbox della
+  ripresa (avviso se ruotata in fase di scaricamento — conversione
+  approssimata). Colori/etichette preservati (KML `aabbggrr`, GeoJSON
+  `stroke`/`name`).
+- **analyze_capture.php** — pulsanti "⬇ KML" / "⬇ GeoJSON" nel pannello
+  Annotazioni.
+
+### Fase 5 — Stima altezza dall'ombra
+
+- **analyze.js** — `solarElevationDeg(lat, lon, dateUTC)` (algoritmo solare
+  NOAA semplificato, ~0.5° di precisione). Nuovo blocco nel pannello
+  Misurazioni: data/ora UTC (data pre-compilata da `capture_date` quando
+  disponibile), elevazione solare mostrata dal vivo. "📐 Misura un'ombra"
+  arma la modalità misura; la linea tracciata diventa
+  `altezza ≈ shadow × tan(elevazione)` come etichetta della misurazione
+  (persistita). Rifiuta il calcolo con sole sotto 3°. L'ora esatta da
+  Sentinel non è ancora auto-popolata.
+- **analyze_capture.php** — markup del blocco; `CFG.captureDate` e
+  `CFG.geoBbox` (bbox grezza, indipendente dalla scala) aggiunti.
+
+Verificato in ambiente isolato: skew/opacità (drag → angolo corretto non
+saturato, slider sincronizzati), scala adattiva (200→100→50→20 m per zoom
+1×→8×), misurazioni e poligoni persistono al reload, aree m² (calcolo
+diretto), KML/GeoJSON (XML/JSON validi, coordinate corrette), elevazione
+solare (valori attesi ai solstizi) e altezza da ombra end-to-end.
+
 ## 2026-09-10 — Strumenti di analisi: scala, livello annotazioni incorporabile, calibrazione riprese derivate, mini-anteprima, filtri granulari, NDWI
 
 Batch ampio, frutto di più richieste in sequenza sulla vista di analisi
