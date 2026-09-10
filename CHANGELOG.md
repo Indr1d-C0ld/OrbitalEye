@@ -4,6 +4,21 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-09-10 (4) — README aggiornato all'insieme completo delle funzionalità
+
+- **[README.md](README.md)** — sezione "Caratteristiche" e "Guida all'uso"
+  riscritte per riflettere tutto quanto aggiunto negli ultimi cicli:
+  scaricamento pianificato + pagina Pianificazioni, allineamento manuale,
+  parametri di enhancement regolabili, aree di cambiamento in m²/km²,
+  indici spettrali NDVI/NDWI/falso colore IR, vista di analisi ripresa
+  singola (sovrapposizione con manipolazione diretta skew/opacità + chroma
+  key, misurazioni persistenti, stima altezza da ombra, annotazioni
+  polilinea/poligono, barra di scala adattiva, livello incorporabile,
+  mini-anteprima flottante, ereditarietà della scala nelle riprese
+  derivate), condivisione Telegram/X, export georeferenziato KML/GeoJSON.
+  Nota su bot Telegram in Impostazioni e sulla voce cron per lo
+  scaricamento pianificato. Nessuna modifica al codice.
+
 ## 2026-09-10 (3) — Fix: "ghosting" delle maniglie dell'immagine sovrapposta
 
 - **[webapp/public/assets/js/analyze.js](webapp/public/assets/js/analyze.js)**
