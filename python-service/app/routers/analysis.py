@@ -230,15 +230,16 @@ def register_manual(req: RegisterManualRequest):
 class SpectralViewRequest(BaseModel):
     true_color_path: str
     nir_red_path: str
-    mode: str = "ndvi"  # 'ndvi' | 'false_color_ir'
+    mode: str = "ndvi"  # 'ndvi' | 'ndwi' | 'false_color_ir'
 
 
 @router.post("/spectral_view")
 def spectral_view(req: SpectralViewRequest):
-    """Genera NDVI (colorizzato) o falso colore infrarosso per una ripresa
-    Sentinel Hub che dispone della banda NIR scaricata in coppia (vedi
-    fetch_red_nir in sentinelhub_client.py). Non disponibile per Esri World
-    Imagery o caricamenti manuali, che non hanno mai dati oltre l'RGB."""
+    """Genera NDVI/NDWI (colorizzati) o falso colore infrarosso per una
+    ripresa Sentinel Hub che dispone della banda NIR scaricata in coppia
+    (vedi fetch_red_nir in sentinelhub_client.py). Non disponibile per Esri
+    World Imagery o caricamenti manuali, che non hanno mai dati oltre
+    l'RGB."""
     try:
         tc_path = safe_storage_path(req.true_color_path)
         nir_path = safe_storage_path(req.nir_red_path)
@@ -246,7 +247,7 @@ def spectral_view(req: SpectralViewRequest):
         raise HTTPException(status_code=400, detail="Percorso non valido")
     if not tc_path.exists() or not nir_path.exists():
         raise HTTPException(status_code=404, detail="Immagine non trovata (banda NIR mancante per questa ripresa)")
-    if req.mode not in ("ndvi", "false_color_ir"):
+    if req.mode not in ("ndvi", "ndwi", "false_color_ir"):
         raise HTTPException(status_code=400, detail="Modalità non valida")
 
     import cv2
@@ -259,6 +260,8 @@ def spectral_view(req: SpectralViewRequest):
 
     if req.mode == "false_color_ir":
         out = spectralmod.false_color_ir(nir_red_img, true_color_img)
+    elif req.mode == "ndwi":
+        out = spectralmod.colorize_ndwi(spectralmod.compute_ndwi(nir_red_img, true_color_img))
     else:
         out = spectralmod.colorize_ndvi(spectralmod.compute_ndvi(nir_red_img))
 

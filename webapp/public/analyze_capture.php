@@ -14,15 +14,23 @@ if (!$study) {
     exit('Studio non trovato');
 }
 
-// Bbox geografica per il calcolo della scala (metri/pixel): preferisce
-// quella specifica della ripresa (Sentinel Hub/Esri la salvano in meta_json
-// al momento del download), altrimenti ricade su quella dello studio se
-// presente. Assente per caricamenti manuali o riprese scaricate prima che
-// il download salvasse la bbox: in quel caso lo strumento di misura chiede
-// una calibrazione manuale invece di calcolare la scala automaticamente.
+// Scala reale (metri/pixel) per il calcolo delle misurazioni: preferisce
+// mpp_x/mpp_y già risolti/ereditati (vedi Capture::resolveMpp — riprese
+// derivate: salvate/migliorate/ritagliate) o la bbox geografica propria
+// della ripresa (Sentinel Hub/Esri la salvano al momento del download).
+// Solo se nessuna delle due è disponibile ricade sulla bbox GENERICA dello
+// studio: approssimazione ragionevole solo per una ripresa scaricata
+// direttamente per quell'area, MAI usata per una derivata (non c'è
+// garanzia corrisponda ancora alle sue dimensioni pixel effettive — bug
+// reale corretto qui: prima ogni ripresa derivata ricadeva su questo
+// fallback, producendo misure sbagliate, spesso di molto per un ritaglio).
+// Assente del tutto solo per caricamenti manuali mai derivati o riprese
+// scaricate prima che il download salvasse la bbox: in quel caso lo
+// strumento di misura chiede una calibrazione manuale.
 $captureMeta = json_decode($capture['meta_json'] ?? '', true);
-$measureBbox = (is_array($captureMeta) && !empty($captureMeta['bbox'])) ? $captureMeta['bbox'] : null;
-if (!$measureBbox && !empty($study['bbox_json'])) {
+$measureMpp = Capture::resolveMpp($capture);
+$measureBbox = null;
+if (!$measureMpp && !empty($study['bbox_json'])) {
     $measureBbox = json_decode($study['bbox_json'], true);
 }
 
@@ -53,7 +61,8 @@ require __DIR__ . '/partials/nav.php';
   </div>
 </div>
 
-<div class="panel">
+<div class="panel" id="an-preview-panel">
+  <h2>👁 Anteprima</h2>
   <div class="stage-toolbar">
     <div class="mode-toggle" id="an-mode-toggle">
       <button type="button" class="mode-btn active" data-mode="pan" title="Trascina per spostare la vista (su entrambi i riquadri, sincronizzati)">✋ Sposta</button>
@@ -70,7 +79,7 @@ require __DIR__ . '/partials/nav.php';
       <button type="button" class="btn btn-sm" id="an-zoom-reset" title="Ripristina zoom e posizione">Reset</button>
     </div>
   </div>
-  <div class="hint" style="margin-bottom:10px;">Rotellina del mouse per zoomare (i due riquadri restano sincronizzati sulla stessa area, per confrontare a colpo d'occhio originale e copia di lavoro). Modalità <strong>Sposta</strong>: trascina per spostarti quando sei ingrandito. Modalità <strong>Annota</strong>: trascina per disegnarne una nuova, trascina un angolo o l'interno di una già esistente per ridimensionarla/spostarla. Modalità <strong>Misura</strong>: trascina per disegnarne una nuova, trascina un estremo di una già esistente per aggiustarla. Modalità <strong>Ritaglia</strong>: trascina per selezionare un frammento da usare in una ricerca inversa per immagini. Modalità <strong>Sovrapponi</strong>: trascina per spostare l'immagine sovrapposta caricata (regolala con gli slider dedicati più sotto). <strong>↶ Annulla</strong> (o Ctrl+Z) disfa l'ultima azione.</div>
+  <div class="hint" style="margin-bottom:10px;">Rotellina del mouse per zoomare (i due riquadri restano sincronizzati sulla stessa area, per confrontare a colpo d'occhio originale e copia di lavoro). Modalità <strong>Sposta</strong>: trascina per spostarti quando sei ingrandito. Modalità <strong>Annota</strong>: trascina per disegnarne una nuova, trascina un angolo o l'interno di una già esistente per ridimensionarla/spostarla. Modalità <strong>Misura</strong>: trascina per disegnarne una nuova, trascina un estremo di una già esistente per aggiustarla. Modalità <strong>Ritaglia</strong>: trascina per selezionare un frammento da usare in una ricerca inversa per immagini. Modalità <strong>Sovrapponi</strong>: agisci direttamente sull'immagine sovrapposta caricata — trascina il corpo per spostarla, i pallini agli angoli per ridimensionarla, il cerchietto in alto per ruotarla (o usa gli slider dedicati più sotto per il controllo fine, l'inclinazione e l'opacità). <strong>↶ Annulla</strong> (o Ctrl+Z) disfa l'ultima azione.</div>
   <div class="tag-row" style="margin-bottom:10px; align-items:center;">
     <label style="display:flex; align-items:center; gap:6px; margin:0; font-size:12px; color:var(--text-secondary);">
       Colore annotazioni <input type="color" id="an-annotate-color" value="#00fff2" title="Colore delle prossime annotazioni disegnate (quelle già esistenti si ricolorano dalla lista Annotazioni più sotto)">
@@ -110,9 +119,19 @@ require __DIR__ . '/partials/nav.php';
   </div>
 </div>
 
+<div class="floating-preview" id="an-floating-preview">
+  <button type="button" class="close-btn" id="an-floating-preview-close" title="Nascondi la mini-anteprima" aria-label="Nascondi">✕</button>
+  <div class="floating-preview-header" id="an-floating-preview-drag" title="Trascina per spostare — trascina l'angolo in basso a destra per ridimensionare">
+    <span class="grip">⠿</span> Anteprima
+  </div>
+  <div class="floating-preview-body">
+    <img id="an-floating-preview-img" alt="Copia di lavoro" title="Torna all'anteprima completa">
+  </div>
+</div>
+
 <div class="panel">
   <h2>Sovrapposizione immagine <span class="info-tip" tabindex="0" data-tip="Carica una tua immagine (una mappa, un diagramma, un'altra foto) e sovrapponila alla copia di lavoro per confrontarla visivamente con la ripresa satellitare: resta solo nel browser finché non premi 'Salva come nuova ripresa', che la incorpora definitivamente nel file salvato.">?</span></h2>
-  <div class="hint" style="margin-bottom:10px;">Passa a modalità Sovrapponi e trascina per riposizionarla; usa gli slider per ridimensionarla, ruotarla, inclinarla e regolarne la trasparenza.</div>
+  <div class="hint" style="margin-bottom:10px;">Caricando un'immagine si passa automaticamente a modalità <strong>🖼 Sovrapponi</strong> (pulsante in alto, sopra l'anteprima): lì agisci <strong>direttamente sull'immagine</strong> — trascina il corpo per spostarla, i pallini agli angoli per ridimensionarla, il cerchietto in alto per ruotarla. Gli slider qui sotto servono per il controllo fine e per inclinazione/opacità (che sono solo da slider). Maniglie e slider restano sempre sincronizzati.</div>
   <div class="tag-row" style="margin-bottom:10px; align-items:center;">
     <input type="file" id="an-overlay-file" accept="image/png,image/jpeg,image/webp" style="max-width:260px;">
     <button type="button" class="btn btn-sm" id="an-overlay-remove-btn">🗑 Rimuovi sovrapposizione</button>
@@ -142,6 +161,20 @@ require __DIR__ . '/partials/nav.php';
         <label>Opacità <span class="val" id="an-val-overlay-opacity" style="margin-left:auto;">70%</span></label>
         <input type="range" id="an-overlay-opacity" min="0" max="100" value="70">
       </div>
+    </div>
+  </div>
+  <div class="checkbox-row field" style="margin-top:10px;">
+    <input type="checkbox" id="an-overlay-chromakey-enabled">
+    <label style="margin:0;">Trasparenza per colore (chroma key) <span class="info-tip" tabindex="0" data-tip="Rende trasparente il colore scelto sull'immagine sovrapposta (es. lo sfondo bianco di una mappa/diagramma), per vedere solo i tratti utili sopra la ripresa satellitare. La tolleranza allarga la gamma di colori simili resi trasparenti, con una sfumatura ai bordi per evitare un contorno netto e frastagliato.">?</span></label>
+  </div>
+  <div class="grid grid-2" id="an-overlay-chromakey-fields" style="display:none;">
+    <div class="field">
+      <label>Colore da rendere trasparente</label>
+      <input type="color" id="an-overlay-chromakey-color" value="#ffffff">
+    </div>
+    <div class="field">
+      <label>Tolleranza <span class="val" id="an-val-overlay-chromakey-tolerance" style="margin-left:auto;">20</span></label>
+      <input type="range" id="an-overlay-chromakey-tolerance" min="0" max="100" value="20">
     </div>
   </div>
   <span class="hint" id="an-overlay-status"></span>
@@ -175,6 +208,10 @@ require __DIR__ . '/partials/nav.php';
       </div>
     </div>
   </div>
+  <div class="checkbox-row field" style="margin-top:6px;">
+    <input type="checkbox" id="an-include-overlay-layer">
+    <label style="margin:0;">Includi annotazioni/misurazioni/scala <span class="info-tip" tabindex="0" data-tip="Incorpora nei pixel il livello con annotazioni, misurazioni ed eventuale barra di scala (quello che vedi ora sulla copia di lavoro), così viaggia insieme all'immagine anche fuori dallo strumento (salvataggio, Telegram, X). Sempre disattivato di default: una scelta esplicita, mai automatica — non include mai le maniglie di modifica.">?</span></label>
+  </div>
   <div class="tag-row" style="margin-top:6px; align-items:center;">
     <button type="button" class="btn btn-sm" id="an-reset-btn">↺ Reset regolazioni</button>
     <input type="text" id="an-save-label" placeholder="Etichetta (opzionale)" style="flex:1; min-width:160px;">
@@ -199,15 +236,39 @@ require __DIR__ . '/partials/nav.php';
         <input type="range" id="an-denoise-strength" min="1" max="10" value="3">
       </div>
       <div class="hint" style="margin-bottom:12px;">Gaussiano: sfocatura morbida generica. Mediano: efficace contro il rumore isolato tipo "sale e pepe". Bilaterale: riduce il rumore preservando meglio i bordi netti. Non-local means: il più efficace, anche il più lento.</div>
+      <div class="checkbox-row field"><input type="checkbox" id="an-hist-eq"><label style="margin:0;">Equalizzazione istogramma <span class="info-tip" tabindex="0" data-tip="Ridistribuisce l'intera gamma tonale dell'immagine per massimizzare il contrasto globale. Alternativa più semplice e uniforme al CLAHE: usa questa se il CLAHE introduce aloni innaturali, il CLAHE se invece serve un miglioramento più localizzato.">?</span></label></div>
     </div>
     <div>
       <div class="checkbox-row field"><input type="checkbox" id="an-clahe"><label style="margin:0;">CLAHE (contrasto adattivo) <span class="info-tip" tabindex="0" data-tip="Migliora il contrasto locale dell'immagine in modo adattivo, utile su riprese con foschia o forte variazione di illuminazione tra zone diverse della stessa immagine.">?</span></label></div>
-      <div class="checkbox-row field"><input type="checkbox" id="an-hist-eq"><label style="margin:0;">Equalizzazione istogramma <span class="info-tip" tabindex="0" data-tip="Ridistribuisce l'intera gamma tonale dell'immagine per massimizzare il contrasto globale. Alternativa più semplice e uniforme al CLAHE: usa questa se il CLAHE introduce aloni innaturali, il CLAHE se invece serve un miglioramento più localizzato.">?</span></label></div>
+      <div class="field">
+        <label>Intensità (clip limit) <span class="val" id="an-val-clahe-clip" style="margin-left:auto;">2.0</span></label>
+        <input type="range" id="an-clahe-clip" min="1" max="8" step="0.5" value="2.0">
+      </div>
+      <div class="field" style="margin-bottom:12px;">
+        <label>Località (dimensione tile) <span class="val" id="an-val-clahe-grid" style="margin-left:auto;">8</span></label>
+        <input type="range" id="an-clahe-grid" min="2" max="16" step="1" value="8">
+      </div>
       <div class="checkbox-row field"><input type="checkbox" id="an-edge"><label style="margin:0;">Contorni <span class="info-tip" tabindex="0" data-tip="Sostituisce l'immagine con la mappa dei bordi netti (Canny): utile per isolare il profilo di strutture/edifici dal resto della scena.">?</span></label></div>
+      <div class="grid grid-2" style="margin-bottom:12px;">
+        <div class="field">
+          <label>Soglia bassa <span class="val" id="an-val-edge-low" style="margin-left:auto;">50</span></label>
+          <input type="range" id="an-edge-low" min="0" max="255" step="5" value="50">
+        </div>
+        <div class="field">
+          <label>Soglia alta <span class="val" id="an-val-edge-high" style="margin-left:auto;">150</span></label>
+          <input type="range" id="an-edge-high" min="0" max="255" step="5" value="150">
+        </div>
+      </div>
+      <div class="checkbox-row field"><input type="checkbox" id="an-desaturate"><label style="margin:0;">Desaturazione B/N <span class="info-tip" tabindex="0" data-tip="Riduce gradualmente la saturazione del colore verso il bianco e nero. Utile per concentrarsi su bordi/texture/ombre (i cambiamenti strutturali reali) invece che su variazioni di colore dovute a stagione, angolo solare o sensore diverso, che possono distrarre o confondere la lettura.">?</span></label></div>
+      <div class="field">
+        <label>Intensità desaturazione <span class="val" id="an-val-desaturate" style="margin-left:auto;">1.0</span></label>
+        <input type="range" id="an-desaturate-amount" min="0" max="1" step="0.05" value="1.0">
+      </div>
     </div>
   </div>
   <div class="tag-row" style="margin-top:6px;">
     <button type="button" class="btn btn-primary btn-sm" id="an-advanced-apply-btn">▶ Applica filtri avanzati</button>
+    <button type="button" class="btn btn-sm" id="an-advanced-values-reset-btn" title="Riporta gli slider (clip limit, tile, soglie, intensità) ai valori predefiniti, senza deselezionare i filtri né toccare l'immagine.">↺ Reset valori slider</button>
     <button type="button" class="btn btn-sm" id="an-advanced-reset-btn" title="Torna all'immagine originale (annulla anche i filtri avanzati già applicati) e azzera le regolazioni in tempo reale.">🗑 Ripristina originale</button>
   </div>
   <span class="hint" id="an-advanced-status"></span>
@@ -221,6 +282,10 @@ require __DIR__ . '/partials/nav.php';
 <div class="panel">
   <h2>Misurazioni <span class="info-tip" tabindex="0" data-tip="Stima calcolata dalle coordinate geografiche dell'area scaricata (o da una calibrazione manuale se non disponibili): assume una ripresa verticale (nadir) senza rilievo significativo — per oggetti alti o riprese oblique, la misura reale sul terreno può differire da quella apparente nell'immagine. Le misurazioni non vengono salvate: servono per la lettura immediata durante l'analisi.">?</span></h2>
   <div class="hint" id="an-scale-status" style="margin-bottom:8px;"></div>
+  <div class="checkbox-row field">
+    <input type="checkbox" id="an-show-scale-bar">
+    <label style="margin:0;">Mostra scala in un angolo <span class="info-tip" tabindex="0" data-tip="Sovrappone alla copia di lavoro una barra graduata (come su una cartina), tarata sulla scala reale di questa ripresa/ritaglio, per farsi subito un'idea delle proporzioni. Solo a video: non viene salvata né condivisa insieme all'immagine.">?</span></label>
+  </div>
   <div id="an-measurement-list"><div class="hint">Nessuna misurazione. Passa a modalità Misura e trascina sulla copia di lavoro.</div></div>
   <div class="tag-row" style="margin-top:6px;">
     <button type="button" class="btn btn-sm" id="an-measure-clear-btn">🗑 Cancella tutte</button>
@@ -231,6 +296,10 @@ require __DIR__ . '/partials/nav.php';
   <h2>Ricerca inversa e analisi per immagini <span class="info-tip" tabindex="0" data-tip="Copia o scarica il frammento, poi apri Google Lens (riconoscimento visivo) e/o un assistente AI (Claude, ChatGPT, DeepSeek) per un'analisi/interpretazione, e incollalo/trascinalo tu: l'invio a un servizio esterno resta sempre un gesto esplicito e manuale, mai automatico — importante quando si maneggiano riprese potenzialmente sensibili.">?</span></h2>
   <div class="hint" style="margin-bottom:10px;">Passa a modalità Ritaglia e trascina sulla copia di lavoro per selezionare un frammento.</div>
   <div id="an-crop-result" style="display:none;">
+    <div class="checkbox-row field" style="margin-bottom:10px;">
+      <input type="checkbox" id="an-crop-include-overlay-layer">
+      <label style="margin:0;">Includi annotazioni/misurazioni/scala nel frammento <span class="info-tip" tabindex="0" data-tip="Incorpora nei pixel del frammento il livello con annotazioni, misurazioni ed eventuale barra di scala, allineato all'area ritagliata. Vale per tutte le azioni qui sotto (copia, scarica, apri motori/assistenti, salva, condividi). Sempre disattivato di default: una scelta esplicita — non include mai le maniglie di modifica.">?</span></label>
+    </div>
     <div class="grid grid-2">
       <div>
         <h3>Frammento ritagliato</h3>
@@ -305,6 +374,11 @@ window.ORBITALEYE_ANALYZE = {
   captureId: <?= (int)$capture['id'] ?>,
   imageUrl: <?= json_encode(storage_url($capture['relative_path'])) ?>,
   bbox: <?= $measureBbox ? json_encode(array_map('floatval', $measureBbox)) : 'null' ?>,
+  // Scala reale già risolta (metri/pixel, per asse) se disponibile —
+  // preferita alla bbox qui sopra quando presente (vedi Capture::resolveMpp
+  // lato PHP e computeGeoScale() in analyze.js).
+  mppX: <?= $measureMpp ? json_encode($measureMpp['mpp_x']) : 'null' ?>,
+  mppY: <?= $measureMpp ? json_encode($measureMpp['mpp_y']) : 'null' ?>,
   // Angolo (gradi) applicato in fase di scaricamento se l'area era stata
   // ruotata (vedi ImageRotateCrop.php): gli assi pixel di questa immagine
   // non sono allineati a lon/lat come al solito, serve per calcolare

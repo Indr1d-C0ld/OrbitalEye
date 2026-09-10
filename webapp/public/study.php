@@ -293,6 +293,13 @@ require __DIR__ . '/partials/nav.php';
                   🌈 Falso colore IR
                 </button>
               </div>
+              <div style="display:flex; gap:4px; margin-top:4px;">
+                <button type="button" class="btn btn-sm" style="flex:1;"
+                  onclick="event.stopPropagation(); openSpectralPanel(<?= (int)$c['id'] ?>, 'ndwi', <?= e(json_encode($c['label'] ?: ('Ripresa #' . $c['id']))) ?>)"
+                  title="NDWI: evidenzia i corpi d'acqua (blu = acqua, bruno/grigio = terra/vegetazione) a partire dalla stessa banda infrarossa usata per l'NDVI.">
+                  💧 NDWI
+                </button>
+              </div>
             <?php endif; ?>
           </div>
         </div>
@@ -322,9 +329,28 @@ require __DIR__ . '/partials/nav.php';
       </div>
       <div class="hint" style="margin-bottom:12px;">Gaussiano: sfocatura morbida generica. Mediano: efficace contro il rumore isolato tipo "sale e pepe". Bilaterale: riduce il rumore preservando meglio i bordi netti. Non-local means: il più efficace, anche il più lento. Lo slider a destra ne regola l'intensità (valori alti = più filtro, rischio di perdere dettagli reali).</div>
       <div class="checkbox-row field"><input type="checkbox" id="eh-clahe"><label style="margin:0;">CLAHE (contrasto adattivo) <span class="info-tip" tabindex="0" data-tip="Migliora il contrasto locale dell'immagine in modo adattivo, utile su riprese con foschia o forte variazione di illuminazione tra zone diverse della stessa immagine.">?</span></label></div>
-      <div class="checkbox-row field"><input type="checkbox" id="eh-hist-eq"><label style="margin:0;">Equalizzazione istogramma <span class="info-tip" tabindex="0" data-tip="Ridistribuisce l'intera gamma tonale dell'immagine per massimizzare il contrasto globale. Alternativa più semplice e uniforme al CLAHE: usa questa se il CLAHE introduce aloni innaturali, il CLAHE se invece serve un miglioramento più localizzato. Di norma non servono entrambe insieme.">?</span></label></div>
+      <div class="field">
+        <label>Intensità (clip limit) <span class="val" id="eh-val-clahe-clip" style="margin-left:auto;">2.0</span></label>
+        <input type="range" id="eh-clahe-clip" min="1" max="8" step="0.5" value="2.0">
+      </div>
+      <div class="field" style="margin-bottom:12px;">
+        <label>Località (dimensione tile) <span class="val" id="eh-val-clahe-grid" style="margin-left:auto;">8</span></label>
+        <input type="range" id="eh-clahe-grid" min="2" max="16" step="1" value="8">
+      </div>
     </div>
     <div>
+      <div class="checkbox-row field"><input type="checkbox" id="eh-hist-eq"><label style="margin:0;">Equalizzazione istogramma <span class="info-tip" tabindex="0" data-tip="Ridistribuisce l'intera gamma tonale dell'immagine per massimizzare il contrasto globale. Alternativa più semplice e uniforme al CLAHE: usa questa se il CLAHE introduce aloni innaturali, il CLAHE se invece serve un miglioramento più localizzato. Di norma non servono entrambe insieme.">?</span></label></div>
+      <div class="checkbox-row field"><input type="checkbox" id="eh-edge"><label style="margin:0;">Contorni (Canny) <span class="info-tip" tabindex="0" data-tip="Sostituisce l'immagine con la mappa dei bordi netti: utile per isolare il profilo di strutture/edifici dal resto della scena.">?</span></label></div>
+      <div class="grid grid-2" style="margin-bottom:12px;">
+        <div class="field">
+          <label>Soglia bassa <span class="val" id="eh-val-edge-low" style="margin-left:auto;">50</span></label>
+          <input type="range" id="eh-edge-low" min="0" max="255" step="5" value="50">
+        </div>
+        <div class="field">
+          <label>Soglia alta <span class="val" id="eh-val-edge-high" style="margin-left:auto;">150</span></label>
+          <input type="range" id="eh-edge-high" min="0" max="255" step="5" value="150">
+        </div>
+      </div>
       <div class="checkbox-row field"><input type="checkbox" id="eh-gamma-enabled"><label style="margin:0;">Correzione gamma <span class="info-tip" tabindex="0" data-tip="Schiarisce o scurisce l'immagine in modo non lineare. Valori sopra 1 schiariscono le zone scure, valori sotto 1 le scuriscono ulteriormente. Utile su riprese sovra/sotto-esposte.">?</span></label></div>
       <div class="field">
         <label>Gamma <span class="val" id="eh-val-gamma" style="margin-left:auto;">1.0</span></label>
@@ -344,6 +370,7 @@ require __DIR__ . '/partials/nav.php';
     </div>
   </div>
   <button class="btn btn-primary" type="button" id="enhance-apply-btn" title="Applica i filtri selezionati e genera un'anteprima prima/dopo, senza salvare nulla in archivio.">▶ Applica e anteprima</button>
+  <button class="btn btn-sm" type="button" id="eh-values-reset-btn" title="Riporta gli slider (clip limit, tile, soglie, gamma, sharpen, desaturazione) ai valori predefiniti, senza deselezionare i filtri.">↺ Reset valori slider</button>
   <button class="btn btn-sm" type="button" id="enhance-close-btn" title="Chiude il pannello senza salvare l'anteprima generata.">✕ Chiudi</button>
   <span class="hint" id="enhance-status"></span>
 
@@ -524,6 +551,14 @@ require __DIR__ . '/partials/nav.php';
       </div>
       <div class="hint" style="margin-bottom:12px;">Gaussiano: sfocatura morbida generica. Mediano: efficace contro il rumore isolato tipo "sale e pepe". Bilaterale: riduce il rumore preservando meglio i bordi netti. Non-local means: il più efficace, anche il più lento. Lo slider a destra ne regola l'intensità (valori alti = più filtro, rischio di perdere dettagli reali).</div>
       <div class="checkbox-row field"><input type="checkbox" id="opt-clahe"><label style="margin:0;">CLAHE (contrasto adattivo) <span class="info-tip" tabindex="0" data-tip="Migliora il contrasto locale dell'immagine in modo adattivo, utile su riprese con foschia o forte variazione di illuminazione tra zone diverse della stessa immagine.">?</span></label></div>
+      <div class="field">
+        <label>Intensità (clip limit) <span class="info-tip" tabindex="0" data-tip="Quanto il contrasto locale può essere amplificato in ogni zona: valori alti = più contrasto ma rischio di aloni/rumore amplificato, valori bassi = effetto più delicato.">?</span><span class="val" id="val-clahe-clip" style="margin-left:auto;">2.0</span></label>
+        <input type="range" id="opt-clahe-clip" min="1" max="8" step="0.5" value="2.0">
+      </div>
+      <div class="field" style="margin-bottom:12px;">
+        <label>Località (dimensione tile) <span class="info-tip" tabindex="0" data-tip="Dimensione delle zone in cui l'immagine viene divisa per calcolare il contrasto locale: valori bassi (tile più piccole) = effetto più localizzato/dettagliato, valori alti = più simile a un'equalizzazione globale.">?</span><span class="val" id="val-clahe-grid" style="margin-left:auto;">8</span></label>
+        <input type="range" id="opt-clahe-grid" min="2" max="16" step="1" value="8">
+      </div>
       <div class="checkbox-row field"><input type="checkbox" id="opt-hist-eq"><label style="margin:0;">Equalizzazione istogramma <span class="info-tip" tabindex="0" data-tip="Ridistribuisce l'intera gamma tonale dell'immagine per massimizzare il contrasto globale. Alternativa più semplice e uniforme al CLAHE: usa questa se il CLAHE introduce aloni innaturali, il CLAHE se invece serve un miglioramento più localizzato. Di norma non servono entrambe insieme.">?</span></label></div>
       <div class="checkbox-row field"><input type="checkbox" id="opt-gamma-enabled"><label style="margin:0;">Correzione gamma <span class="info-tip" tabindex="0" data-tip="Schiarisce o scurisce l'immagine in modo non lineare. Valori sopra 1 schiariscono le zone scure, valori sotto 1 le scuriscono ulteriormente. Utile su riprese sovra/sotto-esposte.">?</span></label></div>
       <div class="field">
@@ -544,6 +579,7 @@ require __DIR__ . '/partials/nav.php';
     </div>
   </div>
   <button class="btn btn-primary" id="run-compare-btn" style="margin-top:10px;">▶ Esegui confronto</button>
+  <button type="button" class="btn btn-sm" id="opt-values-reset-btn" style="margin-top:10px;" title="Riporta gli slider di enhancement (clip limit, tile, gamma, sharpen, desaturazione) ai valori predefiniti, senza deselezionare i filtri.">↺ Reset valori slider</button>
   <span class="hint" id="compare-status"></span>
 </div>
 

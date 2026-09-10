@@ -53,6 +53,17 @@ if (!empty($body['preview'])) {
     ]);
 }
 
+// Eredita la scala reale (metri/pixel) dalla ripresa sorgente: nessuno dei
+// filtri di enhancement ridimensiona l'immagine, quindi resta identica.
+// Senza questo la ripresa "Enhanced: ..." non aveva alcuna informazione di
+// scala propria e la vista di analisi ricadeva sulla bbox generica dello
+// studio — vedi Capture::resolveMpp per i dettagli del bug corretto.
+$enhancedMeta = ['source_capture_id' => $capture['id'], 'steps' => $steps];
+$mpp = Capture::resolveMpp($capture);
+if ($mpp) {
+    $enhancedMeta += $mpp;
+}
+
 $newId = Capture::create(
     (int) $capture['study_id'],
     trim($body['label'] ?? '') ?: ('Enhanced: ' . ($capture['label'] ?? $capture['id'])),
@@ -61,7 +72,7 @@ $newId = Capture::create(
     $result['relative_path'],
     $capture['width'],
     $capture['height'],
-    ['source_capture_id' => $capture['id'], 'steps' => $steps]
+    $enhancedMeta
 );
 
 respond_json([

@@ -43,6 +43,26 @@ $height = $size[1] ?? null;
 $label = trim($_POST['label'] ?? '') ?: null;
 $captureDate = trim($_POST['capture_date'] ?? '') ?: null;
 
+// Eredita la scala reale (metri/pixel) dalla ripresa sorgente, se indicata:
+// "Salva come nuova ripresa" e "Salva ritaglio" caricano qui il risultato
+// (stessa densità di pixel della sorgente, nessun ridimensionamento), ma
+// senza questo la nuova ripresa non aveva alcuna informazione di scala e la
+// vista di analisi ricadeva sulla bbox generica dello studio — sbagliata,
+// specialmente per un ritaglio molto più piccolo dell'area intera (vedi
+// Capture::resolveMpp).
+$meta = ['original_filename' => $_FILES['image']['name']];
+$sourceCaptureId = (int) ($_POST['source_capture_id'] ?? 0);
+if ($sourceCaptureId) {
+    $sourceCapture = Capture::find($sourceCaptureId);
+    if ($sourceCapture) {
+        $mpp = Capture::resolveMpp($sourceCapture);
+        if ($mpp) {
+            $meta += $mpp;
+        }
+        $meta['source_capture_id'] = $sourceCaptureId;
+    }
+}
+
 $captureId = Capture::create(
     $studyId,
     $label,
@@ -51,7 +71,7 @@ $captureId = Capture::create(
     'raw/' . basename($destPath),
     $width,
     $height,
-    ['original_filename' => $_FILES['image']['name']]
+    $meta
 );
 
 Study::touch($studyId);

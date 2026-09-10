@@ -46,6 +46,61 @@ final class Capture
         return (int) Database::get()->lastInsertId();
     }
 
+    private static function haversineMeters(float $lat1, float $lon1, float $lat2, float $lon2): float
+    {
+        $earthR = 6371000.0;
+        $toRad = fn (float $d): float => $d * M_PI / 180;
+        $dLat = $toRad($lat2 - $lat1);
+        $dLon = $toRad($lon2 - $lon1);
+        $a = sin($dLat / 2) ** 2 + cos($toRad($lat1)) * cos($toRad($lat2)) * sin($dLon / 2) ** 2;
+        return 2 * $earthR * atan2(sqrt($a), sqrt(1 - $a));
+    }
+
+    /**
+     * Risolve la scala reale (metri/pixel, per asse) di una ripresa, per
+     * poterla ereditare in una ripresa DERIVATA (salvata/migliorata/
+     * ritagliata da questa) che mantiene la stessa densità di pixel — nessun
+     * ridimensionamento in nessuno di questi passaggi, quindi mpp_x/mpp_y
+     * restano validi identici. Bug corretto qui: prima le riprese derivate
+     * (upload_capture.php/enhance_capture.php) non ereditavano alcuna
+     * informazione di scala, e la vista di analisi ricadeva sulla bbox
+     * GENERICA dello studio — corretta solo per la ripresa scaricata
+     * originale, sbagliata (spesso di molto, soprattutto per un ritaglio
+     * molto più piccolo dell'area intera) per qualunque derivata.
+     *
+     * Ordine di risoluzione:
+     * 1) mpp_x/mpp_y già risolti nel meta (la ripresa è a sua volta una
+     *    derivata che li aveva già ereditati).
+     * 2) bbox propria nel meta (ripresa scaricata direttamente da Esri/
+     *    Sentinel Hub con area nota).
+     * Non ricade MAI sulla bbox generica dello studio qui: non c'è garanzia
+     * che corrisponda ancora all'area/alle dimensioni pixel effettive di
+     * una ripresa derivata (quella logica, quando ha senso, resta solo nel
+     * fallback finale usato dalla vista di analisi per riprese originali
+     * che non hanno mai avuto una propria bbox).
+     */
+    public static function resolveMpp(array $capture): ?array
+    {
+        $meta = json_decode($capture['meta_json'] ?? '', true);
+        if (!is_array($meta)) {
+            return null;
+        }
+        if (isset($meta['mpp_x'], $meta['mpp_y'])) {
+            return ['mpp_x' => (float) $meta['mpp_x'], 'mpp_y' => (float) $meta['mpp_y']];
+        }
+        if (!empty($meta['bbox']) && is_array($meta['bbox']) && count($meta['bbox']) === 4
+            && !empty($capture['width']) && !empty($capture['height'])
+        ) {
+            [$minLon, $minLat, $maxLon, $maxLat] = array_map('floatval', $meta['bbox']);
+            $centerLat = ($minLat + $maxLat) / 2;
+            $centerLon = ($minLon + $maxLon) / 2;
+            $widthM = self::haversineMeters($centerLat, $minLon, $centerLat, $maxLon);
+            $heightM = self::haversineMeters($minLat, $centerLon, $maxLat, $centerLon);
+            return ['mpp_x' => $widthM / (int) $capture['width'], 'mpp_y' => $heightM / (int) $capture['height']];
+        }
+        return null;
+    }
+
     /** Restituisce i confronti (id, result_paths_json) che verranno
      * eliminati in cascata insieme a questa ripresa (FK ON DELETE CASCADE su
      * capture_a_id/capture_b_id), inclusi quelli salvati in libreria. */

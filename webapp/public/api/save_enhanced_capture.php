@@ -22,6 +22,17 @@ if (!is_file($full)) {
     respond_json(['error' => 'File di anteprima non trovato (potrebbe essere scaduto: riapplica i filtri)'], 404);
 }
 
+// Eredita la scala reale (metri/pixel) dalla ripresa sorgente: né i filtri
+// di enhancing né gli indici spettrali (NDVI/NDWI/falso colore IR, unico
+// altro chiamante di questo endpoint) ridimensionano l'immagine. Senza
+// questo la ripresa derivata non aveva alcuna informazione di scala propria
+// — vedi Capture::resolveMpp per i dettagli del bug corretto.
+$savedMeta = ['source_capture_id' => $sourceCapture['id'], 'steps' => $body['steps'] ?? null];
+$mpp = Capture::resolveMpp($sourceCapture);
+if ($mpp) {
+    $savedMeta += $mpp;
+}
+
 $newId = Capture::create(
     (int) $sourceCapture['study_id'],
     trim($body['label'] ?? '') ?: ('Enhanced: ' . ($sourceCapture['label'] ?? $sourceCapture['id'])),
@@ -30,7 +41,7 @@ $newId = Capture::create(
     $relativePath,
     $sourceCapture['width'],
     $sourceCapture['height'],
-    ['source_capture_id' => $sourceCapture['id'], 'steps' => $body['steps'] ?? null]
+    $savedMeta
 );
 
 respond_json([

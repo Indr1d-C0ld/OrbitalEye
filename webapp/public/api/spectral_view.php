@@ -9,7 +9,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $body = json_body();
 $captureId = (int) ($body['capture_id'] ?? 0);
 $mode = $body['mode'] ?? 'ndvi';
-if (!in_array($mode, ['ndvi', 'false_color_ir'], true)) {
+if (!in_array($mode, ['ndvi', 'ndwi', 'false_color_ir'], true)) {
     respond_json(['error' => 'Modalità non valida'], 400);
 }
 
@@ -23,7 +23,7 @@ $nirPath = is_array($meta) ? ($meta['nir_relative_path'] ?? null) : null;
 if (!$nirPath) {
     respond_json([
         'error' => 'Questa ripresa non ha la banda NIR disponibile: solo le riprese Sentinel Hub scaricate '
-            . 'da ora in poi la includono automaticamente. Ri-scarica la stessa area/periodo per abilitare NDVI e falso colore infrarosso.',
+            . 'da ora in poi la includono automaticamente. Ri-scarica la stessa area/periodo per abilitare NDVI, NDWI e falso colore infrarosso.',
     ], 400);
 }
 

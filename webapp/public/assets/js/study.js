@@ -271,12 +271,36 @@
     ['opt-gamma', 'val-gamma'],
     ['opt-sharpen-amount', 'val-sharpen'],
     ['opt-desaturate-amount', 'val-desaturate'],
+    ['opt-clahe-clip', 'val-clahe-clip'],
+    ['opt-clahe-grid', 'val-clahe-grid'],
   ];
   rangeBindings.forEach(([inputId, outId]) => {
     const input = $('#' + inputId);
     const out = $('#' + outId);
     if (input && out) input.addEventListener('input', () => (out.textContent = input.value));
   });
+
+  // Solo gli slider di enhancement pre-analisi (non le soglie di
+  // sensibilità threshold/minarea/morph/alpha, che hanno già i loro preset
+  // dedicati poco sopra e non vanno toccate da questo pulsante).
+  const optEnhanceDefaults = [
+    ['opt-gamma', 'val-gamma', '1.0'],
+    ['opt-sharpen-amount', 'val-sharpen', '1.0'],
+    ['opt-desaturate-amount', 'val-desaturate', '1.0'],
+    ['opt-clahe-clip', 'val-clahe-clip', '2.0'],
+    ['opt-clahe-grid', 'val-clahe-grid', '8'],
+  ];
+  const optResetBtn = $('#opt-values-reset-btn');
+  if (optResetBtn) {
+    optResetBtn.addEventListener('click', () => {
+      optEnhanceDefaults.forEach(([inputId, outId, def]) => {
+        const input = $('#' + inputId);
+        const out = $('#' + outId);
+        if (input) input.value = def;
+        if (out) out.textContent = def;
+      });
+    });
+  }
 
   // ---------- Preset di sensibilità ----------
   $$('.sensitivity-preset').forEach((btn) => {
@@ -330,6 +354,8 @@
           denoise_method: $('#opt-denoise-method').value,
           denoise_strength: $('#opt-denoise-strength').value,
           clahe: $('#opt-clahe').checked,
+          clahe_clip: $('#opt-clahe-clip').value,
+          clahe_grid: $('#opt-clahe-grid').value,
           hist_eq: $('#opt-hist-eq').checked,
           gamma_enabled: $('#opt-gamma-enabled').checked,
           gamma: $('#opt-gamma').value,
@@ -1251,15 +1277,30 @@
     });
 
     const ehRangeBindings = [
-      ['eh-gamma', 'eh-val-gamma'],
-      ['eh-sharpen-amount', 'eh-val-sharpen'],
-      ['eh-desaturate-amount', 'eh-val-desaturate'],
+      ['eh-gamma', 'eh-val-gamma', '1.0'],
+      ['eh-sharpen-amount', 'eh-val-sharpen', '1.0'],
+      ['eh-desaturate-amount', 'eh-val-desaturate', '1.0'],
+      ['eh-clahe-clip', 'eh-val-clahe-clip', '2.0'],
+      ['eh-clahe-grid', 'eh-val-clahe-grid', '8'],
+      ['eh-edge-low', 'eh-val-edge-low', '50'],
+      ['eh-edge-high', 'eh-val-edge-high', '150'],
     ];
     ehRangeBindings.forEach(([inputId, outId]) => {
       const input = $('#' + inputId);
       const out = $('#' + outId);
       if (input && out) input.addEventListener('input', () => (out.textContent = input.value));
     });
+    const ehResetBtn = $('#eh-values-reset-btn');
+    if (ehResetBtn) {
+      ehResetBtn.addEventListener('click', () => {
+        ehRangeBindings.forEach(([inputId, outId, def]) => {
+          const input = $('#' + inputId);
+          const out = $('#' + outId);
+          if (input) input.value = def;
+          if (out) out.textContent = def;
+        });
+      });
+    }
 
     function buildEnhanceSteps() {
       return {
@@ -1268,7 +1309,12 @@
         denoise_method: $('#eh-denoise-method').value,
         denoise_strength: $('#eh-denoise-strength').value,
         clahe: $('#eh-clahe').checked,
+        clahe_clip: $('#eh-clahe-clip').value,
+        clahe_grid: $('#eh-clahe-grid').value,
         hist_eq: $('#eh-hist-eq').checked,
+        edge: $('#eh-edge').checked,
+        edge_low: $('#eh-edge-low').value,
+        edge_high: $('#eh-edge-high').value,
         gamma_enabled: $('#eh-gamma-enabled').checked,
         gamma: $('#eh-gamma').value,
         sharpen: $('#eh-sharpen').checked,
@@ -1280,13 +1326,16 @@
 
     // Stessa logica di build_enhance_steps lato server (api/compare.php),
     // riprodotta qui perché l'endpoint /analysis/enhance del servizio Python
-    // si aspetta la lista già pronta, non l'oggetto con le sole spunte.
+    // si aspetta la lista già pronta, non l'oggetto con le sole spunte. I
+    // parametri di clahe/edge_detect ora sono passati esplicitamente (prima
+    // arrivavano sempre {}, usando i default nascosti nel servizio Python).
     function stepsToPipeline(opts) {
       const steps = [];
       if (opts.white_balance) steps.push({ filter: 'white_balance', params: {} });
       if (opts.denoise) steps.push({ filter: 'denoise', params: { method: opts.denoise_method, strength: parseInt(opts.denoise_strength, 10) } });
-      if (opts.clahe) steps.push({ filter: 'clahe', params: {} });
+      if (opts.clahe) steps.push({ filter: 'clahe', params: { clip_limit: parseFloat(opts.clahe_clip), tile_grid_size: parseInt(opts.clahe_grid, 10) } });
       if (opts.hist_eq) steps.push({ filter: 'histogram_equalization', params: {} });
+      if (opts.edge) steps.push({ filter: 'edge_detect', params: { low: parseInt(opts.edge_low, 10), high: parseInt(opts.edge_high, 10) } });
       if (opts.gamma_enabled) steps.push({ filter: 'gamma', params: { gamma: parseFloat(opts.gamma) } });
       if (opts.sharpen) steps.push({ filter: 'sharpen', params: { amount: parseFloat(opts.sharpen_amount) } });
       if (opts.desaturate) steps.push({ filter: 'desaturate', params: { amount: parseFloat(opts.desaturate_amount) } });
@@ -1355,9 +1404,10 @@
     const panel = $('#spectral-panel');
     if (!panel) return;
 
-    const TITLES = { ndvi: 'NDVI (vigore vegetazione)', false_color_ir: 'Falso colore infrarosso' };
+    const TITLES = { ndvi: 'NDVI (vigore vegetazione)', ndwi: 'NDWI (corpi d\'acqua)', false_color_ir: 'Falso colore infrarosso' };
     const HINTS = {
       ndvi: 'Verde = vegetazione densa/in salute, giallo/bruno = vegetazione scarsa o assente (suolo nudo, superfici artificiali, acqua).',
+      ndwi: 'Blu = acqua, bruno/grigio = terra/vegetazione: utile per individuare corpi d\'acqua o allagamenti a colpo d\'occhio, invece di dedurli per esclusione dalla sola mappa NDVI.',
       false_color_ir: 'La vegetazione viva appare in rosso acceso (riflette molto il vicino infrarosso): utile per distinguere vegetazione reale da superfici solo apparentemente verdi, o viceversa.',
     };
 

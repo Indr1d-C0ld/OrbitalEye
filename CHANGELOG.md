@@ -4,6 +4,143 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-09-10 — Strumenti di analisi: scala, livello annotazioni incorporabile, calibrazione riprese derivate, mini-anteprima, filtri granulari, NDWI
+
+Batch ampio, frutto di più richieste in sequenza sulla vista di analisi
+ripresa singola e sui pannelli di enhancement.
+
+### Correzione bug: calibrazione misure irrealistica sulle riprese derivate
+
+Segnalato dopo uso reale: su ritagli e riprese salvate/migliorate la stima
+delle misure risultava del tutto sballata (spesso 4-5x troppo grande su un
+ritaglio).
+
+- **[webapp/src/Capture.php](webapp/src/Capture.php)** — nuovo
+  `Capture::resolveMpp()` (+ `haversineMeters()` privato): risolve la scala
+  reale metri/pixel di una ripresa da `mpp_x`/`mpp_y` già nel meta, oppure
+  dalla bbox propria. Serve a farla EREDITARE dalle riprese derivate, che
+  mantengono la stessa densità di pixel (nessun ridimensionamento in nessuno
+  dei passaggi di salvataggio/migliora/ritaglio). Non ricade mai sulla bbox
+  generica dello studio per una derivata.
+- **[webapp/public/api/upload_capture.php](webapp/public/api/upload_capture.php)**
+  — accetta un `source_capture_id` opzionale ("Salva come nuova ripresa" e
+  "Salva ritaglio" ora lo inviano) ed eredita `mpp_x`/`mpp_y` +
+  `source_capture_id` nel meta della nuova ripresa.
+- **[webapp/public/api/enhance_capture.php](webapp/public/api/enhance_capture.php)**,
+  **[webapp/public/api/save_enhanced_capture.php](webapp/public/api/save_enhanced_capture.php)**
+  — stessa ereditarietà della scala dalla ripresa sorgente (già nota via
+  `source_capture_id`), copre Migliora e gli indici spettrali NDVI/NDWI/
+  falso colore IR.
+- **[webapp/public/analyze_capture.php](webapp/public/analyze_capture.php)**
+  — la scala per lo strumento di misura ora si risolve con
+  `Capture::resolveMpp()` (mpp diretti o bbox propria); la bbox generica
+  dello studio resta solo come ultimo fallback per riprese originali senza
+  bbox propria, mai per le derivate. Passa `mppX`/`mppY` a `CFG`.
+- **[webapp/public/assets/js/analyze.js](webapp/public/assets/js/analyze.js)**
+  — `computeGeoScale()` preferisce `CFG.mppX`/`CFG.mppY` se presenti,
+  saltando il ricalcolo da bbox; "Salva come nuova ripresa" e "Salva
+  ritaglio" inviano `source_capture_id`.
+- Riparate retroattivamente le riprese di produzione già colpite (54, 55,
+  58 dello studio Sigonella) tramite uno script una tantum: la 54 dal suo
+  `source_capture_id` già registrato, i ritagli 55/58 dedotti dal nome
+  file originale (assegnato dal codice, affidabile). Non nel repo, agisce
+  solo sul DB live.
+
+### Barra di scala sovrapposta ("come su una cartina")
+
+- **analyze_capture.php** / **analyze.js** — checkbox "Mostra scala in un
+  angolo" nel pannello Misurazioni: disegna in basso a sinistra una barra
+  graduata con etichetta, distanza "tonda" scelta automaticamente
+  (`niceScaleDistance()`, convenzione 1/2/5 × potenza di 10) in base alla
+  scala reale e alla dimensione dell'immagine. Solo a video di default.
+
+### Livello annotazioni/misurazioni/scala incorporabile a scelta
+
+- **analyze.js** — `redrawAnnotations()` rifattorizzata in
+  `drawOverlayLayer(ctx, targetW, targetH, includeHandles)`: stessa funzione
+  per la vista live (risoluzione CSS) e per l'incorporazione (risoluzione
+  nativa), spessori/font scalati col fattore `k`, mai le maniglie di
+  modifica nell'export. `renderAdjustedCanvas()` lo incorpora se la checkbox
+  "Includi annotazioni/misurazioni/scala" è spuntata (copre Salva + Condividi
+  Telegram/X). Nuovo `buildCropBlob()`: per il ritaglio compone il livello a
+  piena risoluzione e ne ritaglia la stessa area, garantendo l'allineamento;
+  usato da copia/scarica/salva/invia del frammento. Anteprima del frammento
+  aggiornata al cambio checkbox.
+- **analyze_capture.php** — due checkbox (ripresa intera nel pannello
+  Regolazioni, frammento nel pannello ritaglio), sempre disattivate di
+  default (scelta esplicita, mai automatica).
+
+### Chroma key (trasparenza per colore) sull'immagine sovrapposta
+
+- **analyze_capture.php** / **analyze.js** — checkbox + selettore colore +
+  slider tolleranza: rende trasparente il colore scelto sull'immagine
+  sovrapposta (es. sfondo bianco di una mappa), con sfumatura ai bordi
+  (`applyChromaKey()`). Stessa elaborazione per anteprima live e disegno
+  finale (`overlay.displaySource`, `refreshOverlayDisplay()`).
+
+### Manipolazione diretta dell'immagine sovrapposta — scopribilità
+
+- **analyze_capture.php** / **analyze.js** — la manipolazione diretta
+  (trascina il corpo = sposta, angoli = ridimensiona, cerchietto = ruota,
+  con slider sincronizzati) esisteva già ma solo in modalità Sovrapponi e
+  poco evidente: ora caricando un'immagine si passa automaticamente a quella
+  modalità, e i testi di aiuto lo spiegano chiaramente.
+
+### Mini-anteprima flottante: spostabile e ridimensionabile
+
+- **[webapp/public/assets/css/style.css](webapp/public/assets/css/style.css)**
+  / **analyze_capture.php** / **analyze.js** — la mini-anteprima che compare
+  scorrendo la pagina ora ha un'intestazione trascinabile e un angolo di
+  ridimensionamento nativo (`resize: both`), con posizione/dimensione
+  ricordate per pagina in localStorage. Corretto anche il riempimento
+  dell'immagine interna (`width/height: 100%` + `object-fit: contain`): prima
+  con solo `max-width/height` non seguiva l'ingrandimento del bordo.
+
+### Pannelli collassabili
+
+- **[webapp/public/assets/js/common.js](webapp/public/assets/js/common.js)**
+  / **style.css** — ogni `.panel` con un `h2` come primo figlio diventa
+  collassabile cliccando l'intestazione (icona ▾/▸), stato ricordato per
+  pagina+pannello in localStorage, di default tutto aperto. Il click sul
+  tooltip informativo non richiude il pannello.
+
+### Granularità dei filtri di enhancement
+
+- **analyze_capture.php** / **study.php** / **analyze.js** / **study.js** —
+  esposti i parametri prima nascosti: CLAHE `clip_limit`/`tile_grid_size`,
+  Canny soglia bassa/alta; aggiunta la desaturazione al pannello "Filtri
+  avanzati" (c'era già in "Migliora"), aggiunto Canny a "Migliora". Nuovo
+  pulsante "↺ Reset valori slider" nei tre pannelli (Filtri avanzati,
+  Migliora, pre-confronto) che riporta solo i valori ai default senza
+  deselezionare i filtri. Backend già parametrico, nessuna modifica lì.
+- Ribilanciate le colonne del pannello "Filtri avanzati" (lo spazio vuoto a
+  sinistra era dovuto alle nuove righe tutte accumulate a destra).
+
+### NDWI (indice acqua)
+
+- **[python-service/app/core/spectral.py](python-service/app/core/spectral.py)**
+  — `compute_ndwi()` = (Verde − NIR)/(Verde + NIR) dai dati Rosso+NIR +
+  vero colore già scaricati (nessun nuovo fetch), con palette diverging
+  terra→blu dedicata (`colorize_ndwi()`).
+- **[python-service/app/routers/analysis.py](python-service/app/routers/analysis.py)**
+  — modalità `ndwi` accettata da `/analysis/spectral_view`.
+- **[webapp/public/api/spectral_view.php](webapp/public/api/spectral_view.php)**
+  / **study.php** / **study.js** — modalità `ndwi` validata, pulsante
+  "💧 NDWI" accanto a NDVI/falso colore IR (solo per riprese Sentinel Hub
+  con banda NIR), titoli/descrizioni.
+- Richiede il riavvio di `orbitaleye-analysis` (già effettuato sul
+  deployment).
+
+Verificato in ambiente isolato: ereditarietà della scala end-to-end su
+tutti e tre gli endpoint (mpp attesi 0,4996×0,6291 per Sigonella), livello
+annotazioni con test di allineamento (misurazione presente solo nel
+ritaglio che la include), NDWI via HTTP reale sul servizio riavviato
+(nessuna regressione su NDVI/falso colore IR), filtri granulari end-to-end,
+manipolazione diretta dell'immagine sovrapposta (sposta/ridimensiona/ruota
+con slider sincronizzati). Le parti che dipendono da IntersectionObserver/
+ResizeObserver (visibilità e salvataggio dimensione della mini-anteprima)
+non erano esercitabili nell'ambiente di test headless.
+
 ## 2026-09-06 — Riepilogo globale delle pianificazioni di scaricamento automatico
 
 Su richiesta esplicita, dopo un controllo di salute del motore di

@@ -171,6 +171,119 @@ h3 { font-size: 13px; color: var(--text-secondary); }
 .grid-3 { grid-template-columns: repeat(3, 1fr); }
 .grid-4 { grid-template-columns: repeat(4, 1fr); }
 
+/* ---------- Pannelli collassabili (vedi common.js) ---------- */
+/* Attivata su ogni .panel con un h2 come primo figlio, salvo quelli con
+   data-no-collapse: click sull'intestazione per apri/chiudi, stato
+   ricordato per pagina+pannello in localStorage. */
+.panel > h2:first-child.panel-toggle {
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+}
+.panel-toggle-icon {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-left: auto;
+    padding-left: 12px;
+    flex-shrink: 0;
+}
+.panel.collapsed { margin-bottom: 12px; }
+.panel.collapsed > h2:first-child { margin-bottom: 0; }
+.panel.collapsed > *:not(h2) { display: none !important; }
+
+/* ---------- Mini-anteprima flottante (vedi analyze_capture.php) ---------- */
+/* position:sticky sull'intero pannello anteprima restava "incollato" per
+   tutto lo scroll della pagina (il suo containing block è l'intera colonna
+   di pannelli), coprendo le sottosezioni sottostanti e rendendole
+   inutilizzabili - bug reale, corretto rimuovendo lo sticky. Al suo posto:
+   una piccola anteprima fissa in un angolo, che appare solo quando il
+   pannello anteprima vero e proprio è scomparso dalla vista (vedi
+   IntersectionObserver in analyze.js), senza mai occupare spazio utile né
+   bloccare i controlli sottostanti. Un clic sulla miniatura riporta
+   all'anteprima completa; la "x" la nasconde finché non si ritorna in cima.
+*/
+.floating-preview {
+    display: none;
+    position: fixed;
+    right: 20px;
+    bottom: 20px;
+    width: 190px;
+    height: 150px;
+    min-width: 110px;
+    min-height: 90px;
+    max-width: 70vw;
+    max-height: 70vh;
+    z-index: 500;
+    background: var(--bg-panel);
+    border: 1px solid var(--line-bright);
+    border-radius: var(--radius);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.55);
+    padding: 6px;
+    /* Ridimensionabile nativamente dall'angolo in basso a destra (nessun
+       handle custom da gestire): overflow:hidden necessario perché il resize
+       nativo del browser richiede un overflow diverso da "visible". */
+    resize: both;
+    overflow: hidden;
+    flex-direction: column;
+}
+.floating-preview.visible { display: flex; }
+.floating-preview-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding-bottom: 4px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--line);
+    color: var(--text-muted);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: move;
+    user-select: none;
+    flex-shrink: 0;
+}
+.floating-preview-header .grip { opacity: 0.6; }
+.floating-preview-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    min-width: 0;
+    overflow: hidden;
+}
+.floating-preview img {
+    /* width/height 100% + object-fit:contain: l'immagine RIEMPIE il corpo del
+       riquadro (scalando con il ridimensionamento) mantenendo le proporzioni,
+       con eventuale banda vuota se il riquadro ha un rapporto d'aspetto
+       diverso. Con solo max-width/max-height l'immagine si fermava alla
+       propria dimensione intrinseca e non seguiva l'ingrandimento del bordo. */
+    width: 100%;
+    height: 100%;
+    display: block;
+    border-radius: 2px;
+    cursor: pointer;
+    object-fit: contain;
+    object-position: center;
+}
+.floating-preview .close-btn {
+    position: absolute;
+    top: -10px;
+    right: -10px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--bg-elevated);
+    border: 1px solid var(--line-bright);
+    color: var(--text-secondary);
+    font-size: 11px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+    z-index: 1;
+}
+@media (max-width: 1000px) {
+    .floating-preview { width: 130px; height: 110px; right: 12px; bottom: 12px; }
+}
+
 /* ---------- Navigazione mobile (hamburger + drawer) ---------- */
 /* Nascosta su desktop; sostituisce la sidebar fissa sotto i 1000px. */
 .mobile-topbar {

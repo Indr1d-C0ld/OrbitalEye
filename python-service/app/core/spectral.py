@@ -58,6 +58,55 @@ def colorize_ndvi(ndvi_gray: np.ndarray) -> np.ndarray:
     return cv2.applyColorMap(ndvi_gray, _NDVI_LUT)
 
 
+def compute_ndwi(nir_red_img: np.ndarray, true_color_img: np.ndarray) -> np.ndarray:
+    """Calcola l'NDWI (McFeeters, 1996) = (Verde - NIR) / (Verde + NIR).
+    Il Verde non fa parte della coppia Rosso+NIR (per scaricare una sola
+    immagine aggiuntiva): si riusa il canale verde della ripresa vero-colore
+    già scaricata in coppia, stesso schema già seguito da false_color_ir().
+    Ritorna una mappa in scala di grigi 0-255 (0 = NDWI -1, 128 = NDWI 0,
+    255 = NDWI +1): valori alti indicano acqua, valori bassi vegetazione/
+    suolo nudo/superfici artificiali — un secondo indice complementare
+    all'NDVI, utile per individuare corpi d'acqua/allagamenti a colpo
+    d'occhio invece di dedurli per esclusione dalla sola vegetazione.
+    """
+    nir = nir_red_img[:, :, 1].astype(np.float32)
+    green = true_color_img[:, :, 1].astype(np.float32)
+    denom = green + nir
+    denom[denom < 1e-3] = 1e-3
+    ndwi = (green - nir) / denom  # range teorico -1..1
+    return np.clip((ndwi + 1.0) * 127.5, 0, 255).astype(np.uint8)
+
+
+def _build_ndwi_lut() -> np.ndarray:
+    """Palette diverging per NDWI: bruno/verde (terra/vegetazione) -> blu
+    (acqua), scelta apposta diversa da quella NDVI così i due indici non si
+    confondono a colpo d'occhio anche se derivati dagli stessi due canali."""
+    stops = [
+        (0, (30, 90, 110)),      # BGR: bruno — terra/vegetazione, NDWI molto negativo
+        (110, (60, 150, 90)),    # BGR: verde-bruno — vegetazione/suolo, NDWI negativo
+        (128, (180, 180, 160)),  # BGR: grigio chiaro — transizione (NDWI ~ 0)
+        (190, (200, 130, 40)),   # BGR: azzurro — acqua poco profonda/umida
+        (255, (160, 60, 10)),    # BGR: blu scuro — acqua profonda/netta
+    ]
+    lut = np.zeros((256, 3), dtype=np.uint8)
+    for (x0, c0), (x1, c1) in zip(stops, stops[1:]):
+        span = max(1, x1 - x0)
+        for x in range(x0, x1 + 1):
+            t = (x - x0) / span
+            lut[x] = [round(c0[k] + (c1[k] - c0[k]) * t) for k in range(3)]
+    return lut
+
+
+_NDWI_LUT = _build_ndwi_lut().reshape(256, 1, 3)
+
+
+def colorize_ndwi(ndwi_gray: np.ndarray) -> np.ndarray:
+    """Applica la palette diverging terra→blu alla mappa NDWI in scala di
+    grigi, per una lettura immediata senza dover interpretare i livelli di
+    grigio (stesso principio di colorize_ndvi())."""
+    return cv2.applyColorMap(ndwi_gray, _NDWI_LUT)
+
+
 def false_color_ir(nir_red_img: np.ndarray, true_color_img: np.ndarray) -> np.ndarray:
     """Composito falso colore infrarosso classico (R=NIR, G=Rosso, B=Verde):
     la vegetazione viva appare in rosso/rosa acceso (la clorofilla riflette
