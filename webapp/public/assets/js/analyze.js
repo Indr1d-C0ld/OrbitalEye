@@ -1645,7 +1645,16 @@
     overlayImgEl.style.top = top + 'px';
     overlayImgEl.style.transform = `rotate(${overlay.rotation}deg) skew(${overlay.skewX}deg, ${overlay.skewY}deg)`;
     overlayImgEl.style.opacity = overlay.opacity;
-    if (mode === 'overlay') drawOverlayHandles();
+    if (mode === 'overlay') {
+      // Le maniglie si disegnano sul canvas condiviso con annotazioni/
+      // misurazioni: senza ripulirlo prima, ogni chiamata a renderOverlay()
+      // (una per ogni mossa di trascinamento o scatto di slider) le
+      // accumulava sopra le precedenti — il "ghosting" segnalato.
+      // redrawAnnotations() fa il clear + ridisegna il resto del livello,
+      // poi le maniglie vanno sopra, pulite.
+      redrawAnnotations();
+      drawOverlayHandles();
+    }
   }
 
   const OVERLAY_ROTATE_HANDLE_OFFSET = 28; // px canvas, oltre l'angolo in alto

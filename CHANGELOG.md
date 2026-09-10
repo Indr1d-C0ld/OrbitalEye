@@ -4,6 +4,20 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-09-10 (3) — Fix: "ghosting" delle maniglie dell'immagine sovrapposta
+
+- **[webapp/public/assets/js/analyze.js](webapp/public/assets/js/analyze.js)**
+  — `renderOverlay()` disegnava le maniglie di manipolazione sul canvas
+  condiviso con annotazioni/misurazioni senza ripulirlo prima: ogni
+  chiamata (una per scatto di slider o per mossa di trascinamento) le
+  accumulava sopra le precedenti, e per le modifiche via slider non c'era
+  alcun ridisegno pulito successivo — da cui maniglie "fantasma" residue
+  (es. il riquadro a 0° rimasto sotto quello ruotato). Ora in modalità
+  Sovrapponi `renderOverlay()` fa `redrawAnnotations()` (clear + ridisegno
+  del resto del livello) prima di disegnare le maniglie. Verificato: il
+  numero di pixel delle maniglie resta costante attraverso decine di
+  chiamate consecutive (prima cresceva a ogni chiamata).
+
 ## 2026-09-10 (2) — GEOINT: maniglie skew/opacità, scala adattiva, misurazioni persistenti, poligoni, aree in m², export KML/GeoJSON, altezza da ombra
 
 Batch in 5 fasi su richiesta esplicita, tutte testate in isolamento.
