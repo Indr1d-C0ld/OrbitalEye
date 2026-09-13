@@ -4,6 +4,39 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-09-13 — Basemap Esri World Street Map + ricerca luogo sul selettore mappa
+
+- **[webapp/public/assets/js/map-picker.js](webapp/public/assets/js/map-picker.js)**
+  — basemap di navigazione (non satellitare) passato da tile OSM anonime a
+  **Esri World Street Map** (`server.arcgisonline.com/.../World_Street_Map`,
+  ordine URL `{z}/{y}/{x}`), stessa scelta già fatta in milair_ita/
+  flight_anom: i tile OSM anonimi vanno spesso in rate-limit/blocco
+  anti-abuso, quelli CARTO richiedono ormai una API key, Esri World Street
+  Map no per uso leggero. Vale automaticamente su tutti e 3 i selettori
+  mappa esistenti (Nuovo Studio, Sentinel Hub, Esri), nessuna modifica
+  aggiuntiva li serviva.
+  Aggiunto anche un **controllo di ricerca luogo** (Nominatim/OpenStreetMap,
+  gratuito, CORS aperto, licenza open): l'analista digita un nome di
+  luogo, preme Invio/lente, sceglie tra i risultati e la mappa si
+  centra/inquadra lì (`fitBounds` sulla bounding box del risultato, o
+  `setView` se assente). Ricerca solo su azione esplicita, mai "mentre
+  digiti" — Nominatim vieta l'uso automatizzato/live; disegnare l'area
+  resta un gesto separato come sempre. Implementato come `L.Control`
+  iniettato da `initMapPicker()`, quindi presente automaticamente su tutte
+  le mappe esistenti senza toccarne il markup.
+- **[webapp/public/assets/css/style.css](webapp/public/assets/css/style.css)**
+  — stile del nuovo controllo di ricerca (`.map-search-*`), in linea col
+  tema scuro esistente.
+- **[webapp/public/new_study.php](webapp/public/new_study.php)**,
+  **[webapp/public/study.php](webapp/public/study.php)** — tooltip del
+  pulsante "🗺 Mappa" aggiornato da "(OpenStreetMap)" a "(Esri World Street
+  Map)" per riflettere la fonte reale.
+
+Verificato dal vivo dall'analista, e in isolamento: tile Esri realmente
+caricati (non più OSM), ricerca "Sigonella" → 3 risultati reali da
+Nominatim, clic sul primo → mappa ricentrata esattamente sulle coordinate
+corrette (tile x/y verificati contro la longitudine attesa).
+
 ## 2026-09-10 (4) — README aggiornato all'insieme completo delle funzionalità
 
 - **[README.md](README.md)** — sezione "Caratteristiche" e "Guida all'uso"

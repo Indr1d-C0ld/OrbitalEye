@@ -116,7 +116,7 @@ require __DIR__ . '/partials/nav.php';
               <button type="button" class="btn btn-sm" id="sh-map-rotation-reset" title="Azzera la rotazione">↺</button>
             </div>
             <div class="mode-toggle">
-              <button type="button" class="mode-btn active" id="sh-map-osm" title="Mappa stradale (OpenStreetMap)">🗺 Mappa</button>
+              <button type="button" class="mode-btn active" id="sh-map-osm" title="Mappa stradale (Esri World Street Map)">🗺 Mappa</button>
               <button type="button" class="mode-btn" id="sh-map-sat" title="Vista satellitare (solo per riconoscimento visivo)">🛰 Satellite</button>
             </div>
           </div>
@@ -195,7 +195,7 @@ require __DIR__ . '/partials/nav.php';
               <button type="button" class="btn btn-sm" id="esri-map-rotation-reset" title="Azzera la rotazione">↺</button>
             </div>
             <div class="mode-toggle">
-              <button type="button" class="mode-btn active" id="esri-map-osm" title="Mappa stradale (OpenStreetMap)">🗺 Mappa</button>
+              <button type="button" class="mode-btn active" id="esri-map-osm" title="Mappa stradale (Esri World Street Map)">🗺 Mappa</button>
               <button type="button" class="mode-btn" id="esri-map-sat" title="Vista satellitare (solo per riconoscimento visivo)">🛰 Satellite</button>
             </div>
           </div>

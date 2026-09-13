@@ -52,7 +52,7 @@ require __DIR__ . '/partials/nav.php';
           <button type="button" class="mode-btn" id="ns-map-pan" title="Trascina per spostare la mappa">✋ Sposta mappa</button>
         </div>
         <div class="mode-toggle">
-          <button type="button" class="mode-btn active" id="ns-map-osm" title="Mappa stradale (OpenStreetMap)">🗺 Mappa</button>
+          <button type="button" class="mode-btn active" id="ns-map-osm" title="Mappa stradale (Esri World Street Map)">🗺 Mappa</button>
           <button type="button" class="mode-btn" id="ns-map-sat" title="Vista satellitare (solo per riconoscimento visivo)">🛰 Satellite</button>
         </div>
       </div>

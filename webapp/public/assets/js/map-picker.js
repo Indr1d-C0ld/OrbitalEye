@@ -1,12 +1,15 @@
 /**
  * Selettore visuale dell'area di interesse (bounding box) basato su
- * Leaflet. Il basemap di navigazione è OpenStreetMap (uso standard,
- * conforme alla policy di utilizzo delle tile OSM: solo visualizzazione
- * interattiva in-browser, nessun download/archiviazione bulk). È
- * disponibile anche un basemap satellitare (Esri World Imagery, live tile
- * "as-is" per il solo riconoscimento visivo dell'area — il download vero e
- * proprio della ripresa avviene poi via l'endpoint ufficiale /export sul
- * servizio Python, non dalle tile qui mostrate).
+ * Leaflet. Basemap di navigazione: Esri World Street Map — stessa scelta
+ * già fatta in milair_ita/flight_anom (i tile OSM anonimi vanno spesso in
+ * rate-limit/blocco anti-abuso su uso non banale, e i tile CARTO anonimi
+ * richiedono ormai una API key; Esri World Street Map non serve chiave per
+ * uso leggero come questo). Nota: l'URL Esri usa l'ordine {z}/{y}/{x}, non
+ * {z}/{x}/{y} come lo schema XYZ standard. È disponibile anche un basemap
+ * satellitare (Esri World Imagery, live tile "as-is" per il solo
+ * riconoscimento visivo dell'area — il download vero e proprio della
+ * ripresa avviene poi via l'endpoint ufficiale /export sul servizio
+ * Python, non dalle tile qui mostrate).
  *
  * initMapPicker(mapDivId, fields, toggles) ->
  *   fields:  { minLon, minLat, maxLon, maxLat }  id degli <input> da sincronizzare
@@ -31,8 +34,8 @@ function initMapPicker(mapDivId, fields, toggles) {
 
   const map = L.map(mapDivId, { attributionControl: true }).setView([41.9, 12.5], 5);
 
-  const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  const osmLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+    attribution: 'Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ',
     maxZoom: 19,
   });
   const satLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
@@ -41,6 +44,73 @@ function initMapPicker(mapDivId, fields, toggles) {
   });
   osmLayer.addTo(map);
   let currentBase = 'osm';
+
+  // ---------- Ricerca luogo (Nominatim/OpenStreetMap) ----------
+  // Solo su azione esplicita dell'analista (Invio o clic sulla lente), mai
+  // "mentre digiti": Nominatim è gratuito ma con policy d'uso rigida (max
+  // 1 richiesta/secondo, solo uso leggero) — un suggerimento live ad ogni
+  // carattere la violerebbe. Sposta/inquadra solo la mappa: disegnare
+  // l'area resta un gesto separato e volontario come sempre (modalità
+  // "Disegna area"), niente rettangolo indovinato automaticamente.
+  const SearchControl = L.Control.extend({
+    options: { position: 'topright' },
+    onAdd() {
+      const container = L.DomUtil.create('div', 'map-search-control');
+      container.innerHTML =
+        '<div class="map-search-row">' +
+        '<input type="text" class="map-search-input" placeholder="Cerca un luogo…">' +
+        '<button type="button" class="map-search-btn" title="Cerca">🔍</button>' +
+        '</div><div class="map-search-results" style="display:none;"></div>';
+      L.DomEvent.disableClickPropagation(container);
+      L.DomEvent.disableScrollPropagation(container);
+
+      const input = container.querySelector('.map-search-input');
+      const results = container.querySelector('.map-search-results');
+
+      function showMessage(text) {
+        results.innerHTML = '<div class="map-search-result hint">' + text + '</div>';
+        results.style.display = '';
+      }
+
+      async function runSearch() {
+        const q = input.value.trim();
+        if (!q) return;
+        showMessage('Ricerca in corso…');
+        try {
+          const res = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=6&q=' + encodeURIComponent(q));
+          const data = await res.json();
+          if (!Array.isArray(data) || !data.length) { showMessage('Nessun risultato.'); return; }
+          results.innerHTML = '';
+          data.forEach((r) => {
+            const item = L.DomUtil.create('div', 'map-search-result', results);
+            item.textContent = r.display_name;
+            item.title = r.display_name;
+            item.addEventListener('click', () => {
+              const bb = (r.boundingbox || []).map(Number);
+              if (bb.length === 4) {
+                map.fitBounds([[bb[0], bb[2]], [bb[1], bb[3]]], { maxZoom: 15 });
+              } else {
+                map.setView([parseFloat(r.lat), parseFloat(r.lon)], 13);
+              }
+              results.style.display = 'none';
+            });
+          });
+          const attrib = L.DomUtil.create('div', 'map-search-result hint', results);
+          attrib.textContent = 'Dati © contributori OpenStreetMap';
+          attrib.style.cursor = 'default';
+        } catch (e) {
+          showMessage('Ricerca non riuscita.');
+        }
+      }
+
+      container.querySelector('.map-search-btn').addEventListener('click', runSearch);
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); runSearch(); }
+      });
+      return container;
+    },
+  });
+  map.addControl(new SearchControl());
 
   let rectLayer = null;
   let drawing = false;
