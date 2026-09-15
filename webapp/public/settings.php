@@ -59,7 +59,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $new = $_POST['new_password'] ?? '';
         $new2 = $_POST['new_password2'] ?? '';
 
-        if (!Auth::attempt($_SESSION['username'], $current)) {
+        // verify() e non attempt(): serve solo ricontrollare la password,
+        // senza rigenerare l'id di sessione (che scollegherebbe le altre
+        // schede aperte) né incrementare il contatore anti-forza-bruta.
+        if (!Auth::verify($_SESSION['username'], $current)) {
             $error = 'Password attuale errata.';
         } elseif (strlen($new) < 8) {
             $error = 'La nuova password deve avere almeno 8 caratteri.';

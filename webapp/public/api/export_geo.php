@@ -98,6 +98,15 @@ if ($format === 'geojson') {
         ];
     }
     $doc = ['type' => 'FeatureCollection', 'features' => $geoFeatures];
+    // Stesso avviso già presente nel KML: senza, chi apre il file in QGIS
+    // otterrebbe coordinate approssimate senza saperlo (per un'area ruotata
+    // in fase di scaricamento gli assi pixel non sono allineati a lon/lat,
+    // e la conversione lineare usata qui non ne tiene conto).
+    if ($rotated) {
+        $doc['properties'] = [
+            'avviso' => 'Ripresa ruotata in fase di scaricamento: georeferenziazione approssimata.',
+        ];
+    }
     header('Content-Type: application/geo+json');
     header('Content-Disposition: attachment; filename="' . $slugBase . '.geojson"');
     echo json_encode($doc, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);

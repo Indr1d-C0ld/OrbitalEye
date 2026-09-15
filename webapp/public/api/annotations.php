@@ -4,6 +4,21 @@ Auth::requireLogin();
 
 $method = $_SERVER['REQUEST_METHOD'];
 
+/** Accetta solo un colore esadecimale #rrggbb: è l'unico formato che
+ * l'interfaccia produce (<input type="color">). Serve anche come difesa in
+ * profondità — un valore arbitrario finiva in un attributo style lato
+ * client, dove poteva introdurre altri attributi. */
+function clean_annotation_color($value, string $fallback = '#00fff2'): string
+{
+    $value = is_string($value) ? trim($value) : '';
+    return preg_match('/^#[0-9a-f]{6}$/i', $value) ? strtolower($value) : $fallback;
+}
+
+/** Forme riconosciute dal disegno lato client (analyze.js/study.js): un
+ * valore fuori da questo insieme non verrebbe mai disegnato, tanto vale
+ * rifiutarlo invece di archiviarlo. */
+const ANNOTATION_SHAPES = ['rect', 'polyline', 'polygon', 'measure'];
+
 if ($method === 'POST') {
     $body = json_body();
     $studyId = (int) ($body['study_id'] ?? 0);
@@ -17,14 +32,19 @@ if ($method === 'POST') {
         respond_json(['error' => 'Coordinate mancanti'], 400);
     }
 
+    $shapeType = (string) ($body['shape_type'] ?? 'rect');
+    if (!in_array($shapeType, ANNOTATION_SHAPES, true)) {
+        respond_json(['error' => 'Tipo di forma non valido'], 400);
+    }
+
     $id = Annotation::create(
         $studyId,
         !empty($body['capture_id']) ? (int) $body['capture_id'] : null,
         !empty($body['comparison_id']) ? (int) $body['comparison_id'] : null,
         (string) ($body['target_image'] ?? 'unknown'),
-        (string) ($body['shape_type'] ?? 'rect'),
+        $shapeType,
         $coords,
-        (string) ($body['color'] ?? '#00fff2'),
+        clean_annotation_color($body['color'] ?? null),
         trim($body['label'] ?? '') ?: null,
         trim($body['notes'] ?? '') ?: null
     );
@@ -44,7 +64,9 @@ if ($method === 'PUT') {
         $coords,
         trim($body['label'] ?? '') ?: null,
         trim($body['notes'] ?? '') ?: null,
-        isset($body['color']) ? (string) $body['color'] : null
+        // null = lascia il colore invariato (aggiornamenti di sola
+        // posizione/testo); se invece arriva, va validato come alla creazione.
+        isset($body['color']) ? clean_annotation_color($body['color']) : null
     );
     respond_json(['ok' => true]);
 }

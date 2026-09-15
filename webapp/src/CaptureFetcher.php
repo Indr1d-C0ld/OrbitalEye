@@ -53,8 +53,14 @@ final class CaptureFetcher
         if (!in_array($source, ['sentinelhub', 'esri'], true)) {
             throw new CaptureFetchException('Fonte non valida');
         }
-        $width = (int) ($params['width'] ?? 1024);
-        $height = (int) ($params['height'] ?? 1024);
+        // Limiti coerenti con quelli delle fonti (Sentinel Hub rifiuta oltre
+        // 2500px per lato; Esri ha un tetto di complessità non documentato,
+        // gestito con i tentativi a risoluzione ridotta in esri_client.py).
+        // Senza questo controllo un valore assurdo — o negativo — veniva
+        // inoltrato tale e quale al servizio di analisi, che tentava di
+        // allocare l'immagine richiesta.
+        $width = max(64, min((int) ($params['width'] ?? 1024), 2500));
+        $height = max(64, min((int) ($params['height'] ?? 1024), 2500));
 
         // Rotazione dell'area di interesse (vedi map-picker.js + ImageRotateCrop.php):
         // $bbox resta sempre il rettangolo "di base" (non ruotato) scelto

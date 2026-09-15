@@ -13,6 +13,15 @@ date_default_timezone_set('Europe/Rome');
 session_start([
     'cookie_httponly' => true,
     'cookie_samesite' => 'Lax',
+    // Su HTTPS il cookie di sessione non deve poter viaggiare in chiaro.
+    // Impostato in base alla connessione in corso, non a un valore fisso:
+    // l'app resta raggiungibile anche via HTTP semplice (accesso per IP,
+    // dove il redirect a HTTPS del vhost non scatta) e lì un flag Secure
+    // fisso impedirebbe del tutto l'accesso.
+    'cookie_secure' => (
+        (($_SERVER['HTTPS'] ?? '') !== '' && ($_SERVER['HTTPS'] ?? '') !== 'off')
+        || (int) ($_SERVER['SERVER_PORT'] ?? 0) === 443
+    ),
 ]);
 
 spl_autoload_register(function (string $class) {

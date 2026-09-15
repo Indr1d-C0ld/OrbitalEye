@@ -44,9 +44,40 @@ final class Study
         $stmt->execute([':id' => $id]);
     }
 
+    /**
+     * Elimina lo studio e tutto ciò che vi appartiene.
+     *
+     * Le righe figlie (captures, comparisons, annotations, ...) se ne vanno
+     * da sole per via dei vincoli ON DELETE CASCADE dello schema — ma quel
+     * meccanismo vive dentro SQLite e non può eseguire codice PHP: i file su
+     * disco (riprese in raw/processed e output dei confronti in results/)
+     * restavano quindi orfani per sempre, invisibili all'applicazione.
+     * Qui i file vengono rimossi PRIMA della DELETE, finché le righe che li
+     * referenziano esistono ancora ed è possibile sapere quali siano.
+     */
     public static function delete(int $id): void
     {
-        $stmt = Database::get()->prepare('DELETE FROM studies WHERE id = :id');
+        $pdo = Database::get();
+
+        $comparisons = $pdo->prepare('SELECT result_paths_json FROM comparisons WHERE study_id = :id');
+        $comparisons->execute([':id' => $id]);
+        foreach ($comparisons->fetchAll() as $row) {
+            Comparison::deleteResultFiles($row['result_paths_json']);
+        }
+
+        // Tutte le riprese dello studio spariscono insieme: si passano i
+        // rispettivi id come "da ignorare" così un file condiviso fra due
+        // riprese dello STESSO studio viene comunque rimosso, mentre resta
+        // protetto se a referenziarlo è una ripresa di un altro studio.
+        $captures = $pdo->prepare('SELECT id, relative_path, meta_json FROM captures WHERE study_id = :id');
+        $captures->execute([':id' => $id]);
+        $rows = $captures->fetchAll();
+        $allIds = array_map(fn($r) => (int) $r['id'], $rows);
+        foreach ($rows as $row) {
+            Capture::deleteOwnedFiles($row, $allIds);
+        }
+
+        $stmt = $pdo->prepare('DELETE FROM studies WHERE id = :id');
         $stmt->execute([':id' => $id]);
     }
 

@@ -1,5 +1,4 @@
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 
 from .routers import analysis, fetch
 
@@ -10,12 +9,10 @@ app = FastAPI(
     version="1.0.0",
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Nessun middleware CORS: l'unico client di questo servizio è il webapp PHP,
+# che lo chiama server-side via curl — dove CORS non entra in gioco. Il
+# browser non contatta mai direttamente questa porta. Un
+# allow_origins=["*"] era quindi superficie d'attacco senza alcun beneficio.
 
 app.include_router(fetch.router)
 app.include_router(analysis.router)

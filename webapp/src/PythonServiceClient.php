@@ -56,13 +56,42 @@ final class PythonServiceClient
         return $decoded;
     }
 
+    /** Secondi di validità dell'esito di health() memorizzato in sessione. */
+    private const HEALTH_CACHE_TTL = 30;
+
+    /**
+     * Stato del servizio di analisi, mostrato nella barra laterale a ogni
+     * pagina (vedi partials/nav.php).
+     *
+     * L'esito viene messo in cache per qualche secondo nella sessione: senza,
+     * ogni singolo caricamento di pagina faceva una richiesta HTTP sincrona,
+     * e un servizio piantato (che accetta la connessione ma non risponde)
+     * aggiungeva il timeout intero a OGNI pagina, rendendo l'interfaccia
+     * inutilizzabile proprio nel momento in cui si vuole capire cosa non va.
+     * Timeout ridotto di conseguenza: qui interessa solo "risponde subito?".
+     */
     public function health(): bool
     {
+        $now = time();
+        if (isset($_SESSION['_health_cache'], $_SESSION['_health_cache_at'])
+            && ($now - (int) $_SESSION['_health_cache_at']) < self::HEALTH_CACHE_TTL
+        ) {
+            return (bool) $_SESSION['_health_cache'];
+        }
+
         $ch = curl_init($this->baseUrl . '/health');
-        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 5]);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 2,
+            CURLOPT_CONNECTTIMEOUT => 1,
+        ]);
         $response = curl_exec($ch);
         $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
-        return $response !== false && $status === 200;
+
+        $ok = $response !== false && $status === 200;
+        $_SESSION['_health_cache'] = $ok;
+        $_SESSION['_health_cache_at'] = $now;
+        return $ok;
     }
 }

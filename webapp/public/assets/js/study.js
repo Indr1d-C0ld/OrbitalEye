@@ -1102,7 +1102,21 @@
     annotations.forEach((a) => {
       const div = document.createElement('div');
       div.className = 'region-item';
-      div.innerHTML = `<span>${a.label ? a.label : 'senza etichetta'}${a.notes ? ' — ' + a.notes : ''}</span><span style="color:${a.color}">■</span>`;
+      // Etichetta/note/colore sono testo libero scritto dall'analista e
+      // riletto dal database: vanno inseriti come TESTO, mai come HTML.
+      // Con innerHTML un'etichetta tipo <img src=x onerror=...> veniva
+      // eseguita, e il colore (non validato lato server) usciva
+      // dall'attributo style. Stesso approccio già usato in analyze.js.
+      const label = document.createElement('span');
+      label.textContent = (a.label ? a.label : 'senza etichetta') + (a.notes ? ' — ' + a.notes : '');
+      const swatch = document.createElement('span');
+      swatch.textContent = '■';
+      // Assegnato via style.color (non per concatenazione in una stringa
+      // HTML): un valore non valido viene semplicemente ignorato dal
+      // browser, senza poter introdurre altri attributi.
+      swatch.style.color = a.color || '';
+      div.appendChild(label);
+      div.appendChild(swatch);
       container.appendChild(div);
     });
   }

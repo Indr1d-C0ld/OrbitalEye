@@ -16,11 +16,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = trim($_POST['username'] ?? '');
     $password = $_POST['password'] ?? '';
 
-    if (Auth::attempt($username, $password)) {
+    $locked = Auth::lockoutRemaining();
+    if ($locked > 0) {
+        $error = 'Troppi tentativi falliti. Riprova tra ' . ceil($locked / 60) . ' minuti.';
+    } elseif (Auth::attempt($username, $password)) {
         header('Location: index.php');
         exit;
+    } else {
+        $remaining = Auth::lockoutRemaining();
+        $error = $remaining > 0
+            ? 'Troppi tentativi falliti. Riprova tra ' . ceil($remaining / 60) . ' minuti.'
+            : 'Credenziali non valide.';
     }
-    $error = 'Credenziali non valide.';
 }
 
 $pageTitle = 'Accesso';

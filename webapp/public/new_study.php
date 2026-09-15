@@ -73,8 +73,15 @@ require __DIR__ . '/partials/nav.php';
   </form>
 </div>
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<!-- Leaflet 1.9.4 servito localmente (assets/leaflet/), non da CDN: ogni
+     apertura di questa pagina comunicava altrimenti a unpkg.com IP,
+     user-agent e referer dell'analista — incoerente con l'attenzione
+     OPSEC seguita ovunque nel resto della piattaforma — e la mappa di
+     selezione dell'area smetteva di funzionare se il CDN era
+     irraggiungibile. I file sono identici a quelli ufficiali: hash
+     SHA-256 verificati contro gli attributi integrity usati prima. -->
+<link rel="stylesheet" href="assets/leaflet/leaflet.css">
+<script src="assets/leaflet/leaflet.js"></script>
 <script src="assets/js/map-picker.js?v=<?= @filemtime(__DIR__ . '/assets/js/map-picker.js') ?: time() ?>"></script>
 <script>
 initMapPicker(

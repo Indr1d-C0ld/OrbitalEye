@@ -4,6 +4,8 @@ Ogni funzione è pura (input -> output) e opera su immagini BGR uint8,
 così da poter essere incatenata liberamente da una pipeline definita
 lato client (PHP/JS) tramite un elenco ordinato di filtri + parametri.
 """
+import inspect
+
 import cv2
 import numpy as np
 
@@ -13,7 +15,15 @@ def clahe(img: np.ndarray, clip_limit: float = 2.0, tile_grid_size: int = 8) -> 
 
     Migliora il contrasto locale senza saturare le zone già chiare (utile
     su riprese con foschia o forte variazione di illuminazione).
+
+    I due parametri vengono limitati qui e non altrove: con
+    tile_grid_size = 0 OpenCV divide l'immagine per zero a livello C e
+    abbatte l'intero processo con SIGFPE — un segnale, non un'eccezione,
+    quindi non intercettabile da un try/except più a monte. L'unico punto
+    in cui si può impedire è prima della chiamata.
     """
+    clip_limit = max(0.1, min(float(clip_limit), 40.0))
+    tile_grid_size = max(1, min(int(tile_grid_size), 64))
     lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
     l, a, b = cv2.split(lab)
     clahe_op = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=(tile_grid_size, tile_grid_size))
@@ -78,7 +88,16 @@ def desaturate(img: np.ndarray, amount: float = 1.0) -> np.ndarray:
 
 
 def edge_detect(img: np.ndarray, low: int = 50, high: int = 150) -> np.ndarray:
-    """Canny edge detection: utile per evidenziare contorni di strutture/edifici."""
+    """Canny edge detection: utile per evidenziare contorni di strutture/edifici.
+
+    Soglie limitate all'intervallo valido 0-255 (e riordinate se invertite):
+    valori fuori scala arrivano direttamente a OpenCV, che con i parametri
+    sbagliati può fallire in modo non recuperabile.
+    """
+    low = max(0, min(int(low), 255))
+    high = max(0, min(int(high), 255))
+    if low > high:
+        low, high = high, low
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     edges = cv2.Canny(gray, low, high)
     return cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
@@ -109,7 +128,14 @@ FILTER_REGISTRY = {
 
 
 def apply_pipeline(img: np.ndarray, steps: list) -> np.ndarray:
-    """steps: lista di {"filter": nome, "params": {...}} applicati in ordine."""
+    """steps: lista di {"filter": nome, "params": {...}} applicati in ordine.
+
+    I parametri arrivano dal client (vedi api/enhance_capture.php, che
+    inoltra la pipeline così come la costruisce il browser). Vengono quindi
+    filtrati rispetto alla firma della funzione: un nome di parametro
+    sconosciuto farebbe fallire la chiamata con un TypeError, che per il
+    chiamante diventa un 500 opaco invece di un semplice filtro ignorato.
+    """
     out = img
     for step in steps:
         name = step.get("filter")
@@ -117,5 +143,14 @@ def apply_pipeline(img: np.ndarray, steps: list) -> np.ndarray:
         fn = FILTER_REGISTRY.get(name)
         if fn is None:
             continue
-        out = fn(out, **params)
+        if not isinstance(params, dict):
+            params = {}
+        accepted = set(inspect.signature(fn).parameters) - {"img"}
+        safe_params = {k: v for k, v in params.items() if k in accepted}
+        try:
+            out = fn(out, **safe_params)
+        except (cv2.error, TypeError, ValueError):
+            # Un singolo filtro con valori non utilizzabili non deve far
+            # fallire l'intera elaborazione: si salta e si prosegue.
+            continue
     return out

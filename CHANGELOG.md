@@ -4,6 +4,146 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-09-15 — Audit completo della piattaforma: correzioni di sicurezza, integrità dei dati e robustezza
+
+Revisione sistematica dell'intera base di codice (~11.900 righe: PHP, Python,
+JS, SQL, shell). Ogni reperto è stato riprodotto prima di correggerlo e
+riverificato dopo. Nessuna modifica funzionale: solo correzioni.
+
+### Sicurezza
+
+- **[webapp/public/media.php](webapp/public/media.php)** — l'endpoint
+  serviva *qualunque* file sotto lo storage root, comprese le credenziali
+  OAuth Sentinel Hub/Esri in `storage/config/` (scritte da
+  `AppSettings::sync*CredentialsFile`). `storage/.htaccess` nega l'accesso
+  via Apache, ma `readfile()` da PHP scavalcava del tutto quel diniego.
+  Verificato con richiesta HTTP reale: le credenziali venivano restituite
+  integralmente. Ora: allowlist di sottocartelle (`raw`/`processed`/
+  `results`) e di estensioni immagine, `X-Content-Type-Options: nosniff`, e
+  confronto di prefisso con lo slash finale (senza, una cartella sorella
+  tipo `storage_backup` avrebbe superato il controllo).
+- **[webapp/public/assets/js/study.js](webapp/public/assets/js/study.js)** —
+  XSS stored: `label`, `notes` e `color` delle annotazioni finivano in
+  `innerHTML` senza escaping. Verificato: un'etichetta
+  `<img src=x onerror=...>` veniva eseguita, e `color` usciva
+  dall'attributo `style` iniettando altri attributi. Ora si usano
+  `textContent` e `style.color`, come già faceva correttamente `analyze.js`.
+- **[webapp/public/api/annotations.php](webapp/public/api/annotations.php)**
+  — difesa in profondità: `color` accettato solo come `#rrggbb`,
+  `shape_type` solo tra le forme realmente disegnabili.
+- **[webapp/src/Auth.php](webapp/src/Auth.php)** — blocco temporaneo dopo 8
+  tentativi di accesso falliti; `verify()` separato da `attempt()` per
+  ricontrollare la password senza rigenerare l'id di sessione (che
+  scollegava le altre schede aperte); confronto a tempo costante anche per
+  utenti inesistenti (prima il tempo di risposta rivelava quali username
+  esistessero); il cookie di sessione ora viene rimosso al logout.
+- **[webapp/src/bootstrap.php](webapp/src/bootstrap.php)** — flag `Secure`
+  sul cookie di sessione quando la connessione è HTTPS (senza fissarlo,
+  così l'accesso via IP in HTTP semplice continua a funzionare).
+- **[python-service/app/main.py](python-service/app/main.py)** — rimosso il
+  middleware CORS `allow_origins=["*"]`: l'unico client è il webapp PHP via
+  curl server-side, dove CORS non entra in gioco. Era superficie d'attacco
+  senza alcun beneficio.
+- **[python-service/app/deps.py](python-service/app/deps.py)** — la chiave
+  di servizio segnaposto di `.env.example` non viene più accettata (un
+  deployment non configurato era di fatto senza autenticazione); confronto
+  a tempo costante con `secrets.compare_digest`.
+- **[webapp/public/api/share.php](webapp/public/api/share.php)** — l'unico
+  endpoint che invia byte a un servizio terzo non validava nulla del file
+  caricato: ora tipo MIME reale via `finfo` e limite di 10 MB (quello di
+  Telegram), come già faceva `upload_capture.php`.
+
+### Integrità dei dati
+
+- **[webapp/src/Study.php](webapp/src/Study.php)** — `Study::delete()`
+  eseguiva una `DELETE` secca: il `ON DELETE CASCADE` elimina le righe
+  dentro SQLite, che però non può eseguire codice PHP, quindi **tutti** i
+  file su disco dello studio restavano orfani per sempre. Ora vengono
+  rimossi prima della cancellazione, finché è ancora possibile sapere quali
+  siano.
+- **[webapp/src/Capture.php](webapp/src/Capture.php)** — nuovi
+  `ownedFiles()` / `deleteOwnedFiles()`: eliminano anche la banda NIR
+  (`nir_relative_path` in `meta_json`), che non veniva mai cancellata, e
+  saltano i file ancora referenziati da un'altra ripresa (lo stesso file
+  `processed/` può essere salvato più volte — prima cancellarne una rompeva
+  le altre).
+- **[webapp/src/StorageMaintenance.php](webapp/src/StorageMaintenance.php)**
+  (nuovo) + **[webapp/cli/run_scheduled_downloads.php](webapp/cli/run_scheduled_downloads.php)**
+  — anteprime di enhancement e confronti mai salvati restavano su disco a
+  tempo indeterminato. Pulizia periodica agganciata al cron esistente (con
+  48 h di grazia, così un'anteprima appena generata non sparisce sotto i
+  piedi). Il cron ora elimina anche la cartella `results/` che generava a
+  ogni controllo duplicati e che nessuna riga referenziava.
+  Sul deployment reale gli orfani erano **~81 MB su 85 MB totali**;
+  verificato su copia dei dati veri: 85 MB → 18 MB, con tutte le riprese
+  ancora referenziate intatte.
+- **[webapp/public/assets/js/analyze.js](webapp/public/assets/js/analyze.js)**
+  — le misurazioni sono in pixel canvas assoluti (le annotazioni in
+  frazioni): al ridimensionamento della finestra restavano ferme ai vecchi
+  pixel, finendo per indicare un punto diverso del terreno e salvando
+  coordinate sbagliate alla prima modifica successiva. Verificato: deriva
+  del 67% sulla posizione relativa. Ora vengono riscalate insieme al canvas.
+
+### Robustezza
+
+- **[webapp/src/Auth.php](webapp/src/Auth.php)** + **analyze.js** — a
+  sessione scaduta le API rispondevano `302` verso la pagina di login HTML:
+  `fetch` seguiva il redirect, `res.json()` falliva, e siccome i salvataggi
+  erano "fire-and-forget" senza `catch` né controllo di `res.ok`,
+  l'analista poteva lavorare un'intera sessione con **ogni salvataggio
+  fallito e nessuna segnalazione**, perdendo tutto al ricaricamento. Ora le
+  richieste che si aspettano JSON ricevono `401` con un messaggio, e ogni
+  salvataggio passa da `persistFetch()`, che mostra l'errore in pagina.
+- **[python-service/app/core/enhance.py](python-service/app/core/enhance.py)**
+  — `clahe(tile_grid_size=0)` faceva divisione per zero dentro OpenCV e
+  **abbatteva l'intero processo del servizio** con SIGFPE: un segnale, non
+  un'eccezione, quindi non intercettabile da un `try/except`. Un singolo
+  parametro malformato inoltrato da `enhance_capture.php` metteva giù il
+  motore di analisi per tutta la piattaforma. Parametri ora limitati prima
+  della chiamata a OpenCV (unico punto in cui è possibile); i parametri
+  sconosciuti vengono filtrati sulla firma della funzione invece di
+  generare un 500 opaco.
+- **[webapp/src/PythonServiceClient.php](webapp/src/PythonServiceClient.php)**
+  — `health()`, chiamato dalla barra laterale a **ogni** caricamento di
+  pagina, faceva una richiesta HTTP sincrona con timeout di 5 s: un
+  servizio piantato rendeva inutilizzabile l'interfaccia proprio quando
+  serviva capire cosa non andasse. Ora l'esito è in cache 30 s e i timeout
+  sono più stretti.
+- **[webapp/cli/run_scheduled_downloads.php](webapp/cli/run_scheduled_downloads.php)**
+  — lock `flock` esclusivo: due esecuzioni sovrapposte vedevano le stesse
+  pianificazioni come dovute e scaricavano due volte.
+- **[webapp/src/Database.php](webapp/src/Database.php)** — lo schema veniva
+  riletto ed eseguito per intero a ogni richiesta; ora solo quando il file
+  cambia. Documentato il limite noto: `IF NOT EXISTS` crea tabelle nuove ma
+  non aggiunge colonne, servirà una migrazione esplicita.
+- **[webapp/src/CaptureFetcher.php](webapp/src/CaptureFetcher.php)** —
+  `width`/`height` ora limitati a 64-2500 px, coerentemente con la cura già
+  riservata alla validazione della bbox.
+- **[webapp/src/TelegramClient.php](webapp/src/TelegramClient.php)** +
+  **share.php** — il tipo MIME era sempre dichiarato `image/jpeg`:
+  l'assunzione "è sempre un JPEG" non valeva più da quando esiste la
+  condivisione del ritaglio, che produce PNG. Ora deriva dal contenuto reale.
+- **[webapp/public/api/export_geo.php](webapp/public/api/export_geo.php)** —
+  l'avviso "ripresa ruotata, georeferenziazione approssimata" era solo nel
+  KML: chi esportava GeoJSON per QGIS otteneva coordinate approssimate
+  senza alcun avviso.
+
+### Dipendenze esterne
+
+- **webapp/public/assets/leaflet/** (nuovo) + **study.php** /
+  **new_study.php** — Leaflet veniva caricato da `unpkg.com`: ogni apertura
+  di uno studio comunicava a un terzo IP, user-agent e referer
+  dell'analista (incoerente con l'attenzione OPSEC seguita ovunque nel
+  resto della piattaforma), e la mappa di selezione dell'area smetteva di
+  funzionare se il CDN era irraggiungibile. Ora servito in locale; i file
+  sono bit-per-bit quelli ufficiali, verificati confrontando l'hash SHA-256
+  con gli attributi `integrity` che erano già in pagina.
+
+Verificato al termine: tutte le pagine e gli endpoint rispondono 200,
+nessun errore o warning PHP, annotazioni/misurazioni/poligoni creati e
+persistiti correttamente, XSS neutralizzata, credenziali non più
+raggiungibili, mappa e ricerca luogo funzionanti.
+
 ## 2026-09-13 — Basemap Esri World Street Map + ricerca luogo sul selettore mappa
 
 - **[webapp/public/assets/js/map-picker.js](webapp/public/assets/js/map-picker.js)**

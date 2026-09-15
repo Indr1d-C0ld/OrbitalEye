@@ -40,11 +40,25 @@ function resolve_share_image(string $kind, ?int $refId, string $view): array
         if (empty($_FILES['image']) || $_FILES['image']['error'] !== UPLOAD_ERR_OK) {
             throw new RuntimeException('Immagine mancante nella richiesta');
         }
+        // Questo è l'unico punto della piattaforma in cui dei byte lasciano
+        // il server verso un servizio esterno: vanno verificati almeno
+        // quanto quelli di un caricamento normale (vedi upload_capture.php),
+        // che invece già lo faceva. Il limite di dimensione è quello di
+        // Telegram per le foto (10 MB).
+        $maxBytes = 10 * 1024 * 1024;
+        if ($_FILES['image']['size'] > $maxBytes) {
+            throw new RuntimeException('Immagine troppo grande per Telegram (limite 10 MB).');
+        }
+        $allowed = ['image/png' => 'png', 'image/jpeg' => 'jpg', 'image/webp' => 'webp'];
+        $mime = (new finfo(FILEINFO_MIME_TYPE))->file($_FILES['image']['tmp_name']);
+        if (!isset($allowed[$mime])) {
+            throw new RuntimeException('Formato immagine non supportato (usare PNG, JPEG o WEBP).');
+        }
         $bytes = file_get_contents($_FILES['image']['tmp_name']);
         if ($bytes === false) {
             throw new RuntimeException('Immagine caricata non leggibile');
         }
-        return [$bytes, 'ripresa.jpg'];
+        return [$bytes, 'ripresa.' . $allowed[$mime], $mime];
     }
 
     $comparisonId = $refId;
@@ -72,7 +86,8 @@ function resolve_share_image(string $kind, ?int $refId, string $view): array
     if ($bytes === false) {
         throw new RuntimeException('File immagine non trovato su disco');
     }
-    return [$bytes, basename($relPath)];
+    $mime = (new finfo(FILEINFO_MIME_TYPE))->file($absPath) ?: 'image/jpeg';
+    return [$bytes, basename($relPath), $mime];
 }
 
 // Twitter/X: nessun invio server-side in questa piattaforma (l'immagine
@@ -86,14 +101,14 @@ if ($platform === 'twitter') {
 }
 
 try {
-    [$imageBytes, $filename] = resolve_share_image($kind, $refId, $view);
+    [$imageBytes, $filename, $mimeType] = resolve_share_image($kind, $refId, $view);
 } catch (RuntimeException $e) {
     respond_json(['error' => $e->getMessage()], 404);
 }
 
 try {
     $client = new TelegramClient();
-    $client->sendPhoto($imageBytes, $caption, $filename);
+    $client->sendPhoto($imageBytes, $caption, $filename, $mimeType);
 } catch (Throwable $e) {
     respond_json(['error' => $e->getMessage()], 502);
 }

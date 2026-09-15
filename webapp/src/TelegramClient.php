@@ -34,7 +34,7 @@ final class TelegramClient
      * Invia una foto con didascalia al canale/chat configurato.
      * $imageBytes: contenuto binario dell'immagine (jpg/png).
      */
-    public function sendPhoto(string $imageBytes, string $caption, string $filename = 'condivisione.jpg'): array
+    public function sendPhoto(string $imageBytes, string $caption, string $filename = 'condivisione.jpg', string $mimeType = 'image/jpeg'): array
     {
         $url = "https://api.telegram.org/bot{$this->token}/sendPhoto";
         $tmpFile = tmpfile();
@@ -52,7 +52,11 @@ final class TelegramClient
                 // un problema per i testi generati qui (brevi per natura),
                 // ma se l'analista scrive molto di suo non viene troncato
                 // silenziosamente altrove — resta un limite noto di Telegram.
-                'photo' => new CURLFile($tmpPath, 'image/jpeg', $filename),
+                // Tipo dichiarato in base al contenuto reale: i ritagli
+                // condivisi sono PNG, non JPEG (l'assunzione "è sempre un
+                // JPEG" valeva prima che esistesse la condivisione del
+                // frammento ritagliato).
+                'photo' => new CURLFile($tmpPath, $mimeType, $filename),
             ],
             CURLOPT_TIMEOUT => 30,
         ]);

@@ -108,6 +108,7 @@ require __DIR__ . '/partials/nav.php';
     </label>
     <span class="hint" style="margin:0;">Utile per far risaltare meglio i segni a seconda dello sfondo della ripresa.</span>
   </div>
+  <div id="an-persist-status" class="alert alert-error" style="display:none; margin-bottom:10px;"></div>
 
   <div class="grid grid-2">
     <div>

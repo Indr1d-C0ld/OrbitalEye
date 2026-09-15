@@ -669,8 +669,28 @@
   });
 
   function resizeAnnotateCanvas() {
-    canvas.width = imgRight.clientWidth;
-    canvas.height = imgRight.clientHeight;
+    const prevW = canvas.width, prevH = canvas.height;
+    const nextW = imgRight.clientWidth, nextH = imgRight.clientHeight;
+
+    canvas.width = nextW;
+    canvas.height = nextH;
+
+    // Le annotazioni sono memorizzate in coordinate frazionarie e seguono da
+    // sole qualunque nuova dimensione. Le misurazioni invece vivono in pixel
+    // canvas ASSOLUTI (tutto il disegno, l'hit-test e il trascinamento
+    // lavorano così): se il canvas cambia dimensione — ridimensionamento
+    // della finestra, pannello che si apre/chiude — restando ferme ai vecchi
+    // pixel finiscono per indicare un punto diverso del terreno, e la prima
+    // modifica successiva salva sul server le coordinate sbagliate.
+    // Vanno quindi riscalate insieme al canvas.
+    if (prevW > 0 && prevH > 0 && nextW > 0 && nextH > 0 && (prevW !== nextW || prevH !== nextH)) {
+      const sx = nextW / prevW, sy = nextH / prevH;
+      measurements.forEach((m) => {
+        m.x1 *= sx; m.y1 *= sy;
+        m.x2 *= sx; m.y2 *= sy;
+      });
+    }
+
     redrawAnnotations();
     renderOverlay();
   }
@@ -938,13 +958,50 @@
   }
 
   // ---------- Chiamate server per le annotazioni (create/update/delete) ----------
+  // Un salvataggio fallito (sessione scaduta, servizio giù, errore di rete)
+  // DEVE essere visibile: annotazioni e misurazioni sono lavoro d'analisi,
+  // e un fallimento silenzioso le fa sparire al ricaricamento senza che
+  // nulla lo abbia mai segnalato. Qui si centralizza la segnalazione: ogni
+  // chiamata di persistenza passa da persistFetch().
+  const persistStatusEl = $('#an-persist-status');
+  function showPersistError(message) {
+    if (!persistStatusEl) return;
+    persistStatusEl.textContent = '⚠ ' + message;
+    persistStatusEl.style.display = '';
+  }
+  function clearPersistError() {
+    if (!persistStatusEl) return;
+    persistStatusEl.textContent = '';
+    persistStatusEl.style.display = 'none';
+  }
+
+  async function persistFetch(url, options, azione) {
+    let res;
+    try {
+      res = await fetch(url, options);
+    } catch (err) {
+      showPersistError(`${azione} non salvata: servizio non raggiungibile. Il lavoro NON è archiviato.`);
+      throw err;
+    }
+    if (!res.ok) {
+      let detail = 'errore ' + res.status;
+      try {
+        const data = await res.json();
+        if (data && data.error) detail = data.error;
+      } catch (e) { /* risposta non JSON (es. pagina di login): resta il codice di stato */ }
+      showPersistError(`${azione} non salvata: ${detail}`);
+      throw new Error(detail);
+    }
+    clearPersistError();
+    return res.json().catch(() => ({}));
+  }
+
   async function createAnnotationServer(coords, color, label, notes, shapeType) {
-    const res = await fetch('api/annotations.php', {
+    const data = await persistFetch('api/annotations.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ study_id: CFG.studyId, capture_id: CFG.captureId, target_image: TARGET_KEY, shape_type: shapeType || 'rect', coords, color, label, notes }),
-    });
-    const data = await res.json();
+    }, shapeType === 'measure' ? 'Misurazione' : 'Annotazione');
     return data.id;
   }
   async function updateAnnotationServer(id, coords, label, notes, color) {
@@ -954,14 +1011,14 @@
     // per sbaglio.
     const body = { id, coords, label, notes };
     if (color !== undefined) body.color = color;
-    await fetch('api/annotations.php', {
+    await persistFetch('api/annotations.php', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-    });
+    }, 'Modifica');
   }
   async function deleteAnnotationServer(id) {
-    await fetch('api/annotations.php?id=' + id, { method: 'DELETE' });
+    await persistFetch('api/annotations.php?id=' + id, { method: 'DELETE' }, 'Eliminazione');
   }
 
   async function removeAnnotation(a) {
@@ -1150,12 +1207,12 @@
         const prevLabel = labelInput.dataset.prevValue || '';
         m.label = labelInput.value;
         redrawAnnotations();
-        if (m.id) updateAnnotationServer(m.id, measureCoordsFrac(m), m.label || null, null);
+        if (m.id) updateAnnotationServer(m.id, measureCoordsFrac(m), m.label || null, null).catch(() => {});
         pushUndo(() => {
           m.label = prevLabel;
           labelInput.value = prevLabel;
           redrawAnnotations();
-          if (m.id) updateAnnotationServer(m.id, measureCoordsFrac(m), prevLabel || null, null);
+          if (m.id) updateAnnotationServer(m.id, measureCoordsFrac(m), prevLabel || null, null).catch(() => {});
         });
       });
       const right = document.createElement('span');
@@ -1175,12 +1232,12 @@
         const prevColor = m.color;
         m.color = swatch.value;
         redrawAnnotations();
-        if (m.id) updateAnnotationServer(m.id, measureCoordsFrac(m), m.label || null, null, m.color);
+        if (m.id) updateAnnotationServer(m.id, measureCoordsFrac(m), m.label || null, null, m.color).catch(() => {});
         pushUndo(() => {
           m.color = prevColor;
           redrawAnnotations();
           renderMeasurementList();
-          if (m.id) updateAnnotationServer(m.id, measureCoordsFrac(m), m.label || null, null, prevColor);
+          if (m.id) updateAnnotationServer(m.id, measureCoordsFrac(m), m.label || null, null, prevColor).catch(() => {});
         });
       });
       const del = document.createElement('button');
@@ -2081,7 +2138,9 @@
       renderMeasurementList();
       // Persistite come le annotazioni (riga annotations shape_type
       // 'measure'): sopravvivono al ricaricamento della pagina.
-      createAnnotationServer(measureCoordsFrac(m), m.color, m.label || null, null, 'measure').then((id) => { m.id = id; });
+      createAnnotationServer(measureCoordsFrac(m), m.color, m.label || null, null, 'measure')
+        .then((id) => { m.id = id; })
+        .catch(() => {}); // errore gia' segnalato in pagina da persistFetch
       pushUndo(async () => {
         const idx = measurements.indexOf(m);
         if (idx !== -1) measurements.splice(idx, 1);

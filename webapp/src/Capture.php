@@ -101,6 +101,62 @@ final class Capture
         return null;
     }
 
+    /**
+     * Tutti i file su disco che appartengono a una ripresa: l'immagine
+     * principale e, per le riprese Sentinel Hub, la coppia Rosso+NIR
+     * scaricata a parte (usata da NDVI/NDWI/falso colore IR). Quest'ultima
+     * viveva solo dentro meta_json e non veniva mai eliminata: ogni
+     * cancellazione di una ripresa Sentinel lasciava indietro il suo file NIR.
+     *
+     * @param array $capture Riga della tabella captures.
+     * @return string[] Percorsi relativi allo storage root.
+     */
+    public static function ownedFiles(array $capture): array
+    {
+        $files = [];
+        if (!empty($capture['relative_path'])) {
+            $files[] = $capture['relative_path'];
+        }
+        $meta = json_decode($capture['meta_json'] ?? '', true);
+        if (is_array($meta) && !empty($meta['nir_relative_path'])) {
+            $files[] = $meta['nir_relative_path'];
+        }
+        return $files;
+    }
+
+    /**
+     * Elimina dal disco i file di una ripresa, saltando quelli ancora
+     * referenziati da un'altra riga (lo stesso file processed/ può essere
+     * stato salvato come più riprese: vedi api/save_enhanced_capture.php).
+     * Senza questo controllo, eliminarne una lasciava le altre a puntare a
+     * un file inesistente.
+     *
+     * @param int[] $ignoreCaptureIds Righe da non considerare come
+     *   "referenti" perché sono esse stesse in corso di eliminazione.
+     */
+    public static function deleteOwnedFiles(array $capture, array $ignoreCaptureIds = []): void
+    {
+        $root = Config::storageRoot();
+        $ignore = array_map('intval', $ignoreCaptureIds);
+        $ignore[] = (int) $capture['id'];
+        $placeholders = implode(',', array_fill(0, count($ignore), '?'));
+
+        foreach (self::ownedFiles($capture) as $relative) {
+            $stmt = Database::get()->prepare(
+                "SELECT COUNT(*) FROM captures
+                 WHERE relative_path = ? AND id NOT IN ($placeholders)"
+            );
+            $stmt->execute(array_merge([$relative], $ignore));
+            if ((int) $stmt->fetchColumn() > 0) {
+                continue; // ancora in uso da un'altra ripresa
+            }
+            $full = $root . '/' . $relative;
+            if (is_file($full)) {
+                @unlink($full);
+            }
+        }
+    }
+
     /** Restituisce i confronti (id, result_paths_json) che verranno
      * eliminati in cascata insieme a questa ripresa (FK ON DELETE CASCADE su
      * capture_a_id/capture_b_id), inclusi quelli salvati in libreria. */
@@ -128,10 +184,7 @@ final class Capture
             Comparison::deleteResultFiles($cmp['result_paths_json']);
         }
 
-        $path = Config::storageRoot() . '/' . $capture['relative_path'];
-        if (is_file($path)) {
-            @unlink($path);
-        }
+        self::deleteOwnedFiles($capture);
 
         $stmt = Database::get()->prepare('DELETE FROM captures WHERE id = :id');
         $stmt->execute([':id' => $id]);
