@@ -11,6 +11,10 @@ ini_set('display_errors', '0');
 date_default_timezone_set('Europe/Rome');
 
 session_start([
+    // Nome di sessione dedicato: con il PHPSESSID di default e path '/', le app
+    // che convivono su questo host condividono un unico cookie. Poiché ognuna
+    // rigenera l'id al login, accedere a una disconnetteva le altre.
+    'name' => 'ORBITALEYESESSID',
     'cookie_httponly' => true,
     'cookie_samesite' => 'Lax',
     // Su HTTPS il cookie di sessione non deve poter viaggiare in chiaro.
