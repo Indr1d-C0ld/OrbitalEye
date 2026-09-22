@@ -1502,6 +1502,12 @@
   // provati in precedenza sono stati rimossi).
   $('#an-crop-open-lens').addEventListener('click', () => window.open('https://lens.google.com/', '_blank'));
 
+  // Google Gemini, subito dopo Lens: stesso percorso manuale di tutte le
+  // altre destinazioni (apre solo la pagina, il frammento si incolla a mano
+  // dagli appunti). Utile come complemento a Lens, che riconosce, mentre
+  // qui si può chiedere un'interpretazione.
+  $('#an-crop-open-gemini').addEventListener('click', () => window.open('https://gemini.google.com/app', '_blank'));
+
   // Stesso identico percorso di Google Lens, seconda destinazione a scelta
   // dell'analista: apre una chat Claude vuota, il frammento va incollato lì
   // (stesso "Copia negli appunti" qui sopra, nessuna chiamata API/backend

@@ -331,7 +331,7 @@ require __DIR__ . '/partials/nav.php';
 </div>
 
 <div class="panel">
-  <h2>Ricerca inversa e analisi per immagini <span class="info-tip" tabindex="0" data-tip="Copia o scarica il frammento, poi apri Google Lens (riconoscimento visivo) e/o un assistente AI (Claude, ChatGPT, DeepSeek) per un'analisi/interpretazione, e incollalo/trascinalo tu: l'invio a un servizio esterno resta sempre un gesto esplicito e manuale, mai automatico — importante quando si maneggiano riprese potenzialmente sensibili.">?</span></h2>
+  <h2>Ricerca inversa e analisi per immagini <span class="info-tip" tabindex="0" data-tip="Copia o scarica il frammento, poi apri Google Lens (riconoscimento visivo) e/o un assistente AI (Gemini, Claude, ChatGPT, DeepSeek) per un'analisi/interpretazione, e incollalo/trascinalo tu: l'invio a un servizio esterno resta sempre un gesto esplicito e manuale, mai automatico — importante quando si maneggiano riprese potenzialmente sensibili.">?</span></h2>
   <div class="hint" style="margin-bottom:10px;">Passa a modalità Ritaglia e trascina sulla copia di lavoro per selezionare un frammento.</div>
   <div id="an-crop-result" style="display:none;">
     <div class="checkbox-row field" style="margin-bottom:10px;">
@@ -347,7 +347,7 @@ require __DIR__ . '/partials/nav.php';
         <h3>Passi</h3>
         <ol style="color:var(--text-secondary); font-size:13px; padding-left:18px; line-height:1.7;">
           <li>Copia il frammento negli appunti (o scaricalo, se preferisci).</li>
-          <li>Apri Google Lens per un riconoscimento visivo, e/o Claude/ChatGPT/DeepSeek per un'analisi/interpretazione descrittiva — sono tutti indipendenti, anche più di uno sullo stesso frammento.</li>
+          <li>Apri Google Lens per un riconoscimento visivo, e/o Gemini/Claude/ChatGPT/DeepSeek per un'analisi/interpretazione descrittiva — sono tutti indipendenti, anche più di uno sullo stesso frammento.</li>
           <li>Incolla con Ctrl+V — o trascina il file scaricato se l'incolla non fosse supportato dal sito aperto. Sugli assistenti AI aggiungi poi una domanda, es. "Cosa riconosci in questa immagine satellitare? Stime dimensionali se possibile."</li>
         </ol>
         <div class="tag-row">
@@ -357,6 +357,7 @@ require __DIR__ . '/partials/nav.php';
         <span class="hint" id="an-crop-copy-status"></span>
         <div class="tag-row" style="margin-top:8px;">
           <button type="button" class="btn btn-sm btn-primary" id="an-crop-open-lens">🔍 Apri Google Lens ↗</button>
+          <button type="button" class="btn btn-sm btn-primary" id="an-crop-open-gemini">✦ Apri Google Gemini ↗</button>
           <button type="button" class="btn btn-sm btn-primary" id="an-crop-open-claude">🤖 Apri Claude ↗</button>
           <button type="button" class="btn btn-sm btn-primary" id="an-crop-open-chatgpt">💬 Apri ChatGPT ↗</button>
           <button type="button" class="btn btn-sm btn-primary" id="an-crop-open-deepseek">🐋 Apri DeepSeek ↗</button>

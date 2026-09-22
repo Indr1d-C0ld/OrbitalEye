@@ -4,6 +4,23 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-09-20 — Ricerca inversa: aggiunto Google Gemini tra le destinazioni
+
+- **[webapp/public/analyze_capture.php](webapp/public/analyze_capture.php)**
+  — nuovo pulsante "✦ Apri Google Gemini ↗" nel pannello "Ricerca inversa e
+  analisi per immagini", collocato subito dopo Google Lens e prima di
+  Claude/ChatGPT/DeepSeek. Aggiornati i due testi di aiuto che elencano le
+  destinazioni disponibili.
+- **[webapp/public/assets/js/analyze.js](webapp/public/assets/js/analyze.js)**
+  — handler che apre `https://gemini.google.com/app` in una scheda nuova.
+  Stesso percorso manuale di tutte le altre destinazioni: apre solo la
+  pagina, il frammento si incolla a mano dagli appunti (riusa il pulsante
+  "Copia negli appunti" già esistente). Nessuna chiave API, nessun endpoint
+  backend, nessun invio automatico.
+
+Verificato: ordine dei pulsanti corretto, URL aperto corretto, nessun
+errore in console.
+
 ## 2026-09-15 — Audit completo della piattaforma: correzioni di sicurezza, integrità dei dati e robustezza
 
 Revisione sistematica dell'intera base di codice (~11.900 righe: PHP, Python,
