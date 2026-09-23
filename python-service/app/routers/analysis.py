@@ -7,7 +7,7 @@ from ..core import diff as diffmod
 from ..core import enhance as enhancemod
 from ..core import spectral as spectralmod
 from ..core.registration import register_images, register_with_points
-from ..core.utils import load_image, new_id, safe_storage_path, save_image
+from ..core.utils import load_image, load_image_with_mask, new_id, safe_storage_path, save_image
 from ..deps import require_service_key
 
 router = APIRouter(prefix="/analysis", tags=["analysis"], dependencies=[Depends(require_service_key)])
@@ -29,7 +29,7 @@ def enhance(req: EnhanceRequest):
         src = safe_storage_path(req.capture_path)
     except ValueError:
         raise HTTPException(status_code=400, detail="Percorso non valido")
-    if not src.exists():
+    if not src.is_file():
         raise HTTPException(status_code=404, detail="Immagine non trovata")
 
     img = load_image(src)
@@ -83,11 +83,18 @@ def compare(req: CompareRequest):
         path_b = safe_storage_path(req.capture_b_path)
     except ValueError:
         raise HTTPException(status_code=400, detail="Percorso non valido")
-    if not path_a.exists() or not path_b.exists():
+    if not path_a.is_file() or not path_b.is_file():
         raise HTTPException(status_code=404, detail="Una o entrambe le immagini non sono state trovate")
 
-    img_a = load_image(path_a)
-    img_b = load_image(path_b)
+    if req.diff_method not in ("ssim", "absdiff"):
+        # Prima un valore sconosciuto ricadeva in silenzio su SSIM, mentre i
+        # parametri restituiti riportavano il metodo richiesto.
+        raise HTTPException(status_code=400, detail="Metodo di differenza non valido (ssim|absdiff)")
+
+    # Maschere dei pixel con dati reali (trasparenza/dataMask): le zone
+    # senza dati non devono essere contate come cambiamento.
+    img_a, nodata_a = load_image_with_mask(path_a)
+    img_b, nodata_b = load_image_with_mask(path_b)
 
     if req.enhance_a:
         img_a = enhancemod.apply_pipeline(img_a, [s.model_dump() for s in req.enhance_a])
@@ -120,6 +127,16 @@ def compare(req: CompareRequest):
         valid_mask = reg_result.valid_mask
     else:
         img_b_aligned = cv2.resize(img_b, (w, h)) if img_b.shape[:2] != (h, w) else img_b
+        reg_result = None
+
+    if nodata_a is not None:
+        valid_mask = cv2.bitwise_and(valid_mask, nodata_a)
+    if nodata_b is not None:
+        if reg_result is not None and reg_result.warp_like is not None:
+            warped_b = reg_result.warp_like(nodata_b)
+        else:
+            warped_b = cv2.resize(nodata_b, (w, h), interpolation=cv2.INTER_NEAREST) if nodata_b.shape[:2] != (h, w) else nodata_b
+        valid_mask = cv2.bitwise_and(valid_mask, warped_b)
 
     diff_map = diffmod.compute_diff(img_a, img_b_aligned, method=req.diff_method)
     mask = diffmod.apply_threshold(
@@ -204,7 +221,7 @@ def register_manual(req: RegisterManualRequest):
         path_b = safe_storage_path(req.capture_b_path)
     except ValueError:
         raise HTTPException(status_code=400, detail="Percorso non valido")
-    if not path_a.exists() or not path_b.exists():
+    if not path_a.is_file() or not path_b.is_file():
         raise HTTPException(status_code=404, detail="Una o entrambe le immagini non sono state trovate")
     if len(req.control_points) < 3:
         raise HTTPException(status_code=400, detail="Servono almeno 3 punti di controllo")
@@ -242,6 +259,9 @@ class SpectralViewRequest(BaseModel):
     true_color_path: str
     nir_red_path: str
     mode: str = "ndvi"  # 'ndvi' | 'ndwi' | 'false_color_ir'
+    # Guadagno con cui è stata salvata la coppia Rosso+NIR (metadati della
+    # ripresa). Assente per le riprese scaricate prima che diventasse 1.0.
+    nir_gain: float | None = None
 
 
 @router.post("/spectral_view")
@@ -256,7 +276,7 @@ def spectral_view(req: SpectralViewRequest):
         nir_path = safe_storage_path(req.nir_red_path)
     except ValueError:
         raise HTTPException(status_code=400, detail="Percorso non valido")
-    if not tc_path.exists() or not nir_path.exists():
+    if not tc_path.is_file() or not nir_path.is_file():
         raise HTTPException(status_code=404, detail="Immagine non trovata (banda NIR mancante per questa ripresa)")
     if req.mode not in ("ndvi", "ndwi", "false_color_ir"):
         raise HTTPException(status_code=400, detail="Modalità non valida")
@@ -269,10 +289,11 @@ def spectral_view(req: SpectralViewRequest):
     if nir_red_img.shape[:2] != (h, w):
         nir_red_img = cv2.resize(nir_red_img, (w, h), interpolation=cv2.INTER_AREA)
 
+    nir_gain = req.nir_gain if req.nir_gain and req.nir_gain > 0 else spectralmod.LEGACY_NIR_GAIN
     if req.mode == "false_color_ir":
-        out = spectralmod.false_color_ir(nir_red_img, true_color_img)
+        out = spectralmod.false_color_ir(nir_red_img, true_color_img, nir_gain)
     elif req.mode == "ndwi":
-        out = spectralmod.colorize_ndwi(spectralmod.compute_ndwi(nir_red_img, true_color_img))
+        out = spectralmod.colorize_ndwi(spectralmod.compute_ndwi(nir_red_img, true_color_img, nir_gain))
     else:
         out = spectralmod.colorize_ndvi(spectralmod.compute_ndvi(nir_red_img))
 

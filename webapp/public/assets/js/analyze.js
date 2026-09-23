@@ -172,6 +172,11 @@
 
   const filterEl = document.createElementNS(svgNS, 'filter');
   filterEl.setAttribute('id', 'an-sharpen-filter');
+  // I filtri SVG lavorano per default in spazio colore lineare, mentre il
+  // salvataggio (applyPixelAdjustments) e il servizio di analisi lavorano in
+  // sRGB: senza questo, nitidezza e gamma dell'anteprima non coincidevano
+  // con il file salvato.
+  filterEl.setAttribute('color-interpolation-filters', 'sRGB');
   const convolve = document.createElementNS(svgNS, 'feConvolveMatrix');
   convolve.setAttribute('order', '3');
   convolve.setAttribute('divisor', '1');
@@ -188,6 +193,7 @@
   // servizio di analisi.
   const gammaFilterEl = document.createElementNS(svgNS, 'filter');
   gammaFilterEl.setAttribute('id', 'an-gamma-filter');
+  gammaFilterEl.setAttribute('color-interpolation-filters', 'sRGB');
   const gammaTransfer = document.createElementNS(svgNS, 'feComponentTransfer');
   const gammaFuncs = ['feFuncR', 'feFuncG', 'feFuncB'].map((tag) => {
     const fn = document.createElementNS(svgNS, tag);
@@ -264,6 +270,8 @@
   // di lavoro (renderAdjustedCanvas) sia per il ritaglio per la ricerca
   // inversa (renderCropFromSelection), così il frammento ritagliato riflette
   // le stesse regolazioni visibili in anteprima, non l'immagine "nuda".
+  function clamp255(v) { return v < 0 ? 0 : (v > 255 ? 255 : v); }
+
   function applyPixelAdjustments(ctx, w, h) {
     const imageData = ctx.getImageData(0, 0, w, h);
     const data = imageData.data;
@@ -286,8 +294,12 @@
 
     for (let i = 0; i < data.length; i += 4) {
       let r = data[i], g = data[i + 1], bl = data[i + 2];
-      r *= b; g *= b; bl *= b; // luminosità
-      r = (r - 128) * c + 128; g = (g - 128) * c + 128; bl = (bl - 128) * c + 128; // contrasto
+      // Limite a 0-255 dopo OGNI passo, come fa il browser fra un filtro CSS
+      // e il successivo: con un solo limite finale, luminosità alta seguita
+      // da contrasto basso dava un file salvato visibilmente più chiaro di
+      // quello visto in anteprima (es. 200 -> 191 a schermo, 255 nel file).
+      r = clamp255(r * b); g = clamp255(g * b); bl = clamp255(bl * b); // luminosità
+      r = clamp255((r - 128) * c + 128); g = clamp255((g - 128) * c + 128); bl = clamp255((bl - 128) * c + 128); // contrasto
       const r2 = sm[0] * r + sm[1] * g + sm[2] * bl;
       const g2 = sm[3] * r + sm[4] * g + sm[5] * bl;
       const b2 = sm[6] * r + sm[7] * g + sm[8] * bl; // saturazione
@@ -347,12 +359,17 @@
     return canvas;
   }
 
-  $('#an-save-btn').addEventListener('click', () => {
+  const saveBtn = $('#an-save-btn');
+  saveBtn.addEventListener('click', () => {
+    // Un doppio clic caricava due riprese identiche: il pulsante resta
+    // disattivato finché il salvataggio non termina (o fallisce).
+    if (saveBtn.disabled) return;
+    saveBtn.disabled = true;
     const status = $('#an-status');
     status.textContent = 'Rendering in corso...';
     const canvas = renderAdjustedCanvas();
     canvas.toBlob(async (blob) => {
-      if (!blob) { status.textContent = 'Errore: impossibile generare l\'immagine.'; return; }
+      if (!blob) { status.textContent = 'Errore: impossibile generare l\'immagine.'; saveBtn.disabled = false; return; }
       status.textContent = 'Salvataggio in corso...';
       const form = new FormData();
       form.append('study_id', CFG.studyId);
@@ -371,6 +388,7 @@
         setTimeout(() => { window.location.href = 'study.php?id=' + CFG.studyId; }, 700);
       } catch (err) {
         status.textContent = 'Errore: ' + err.message;
+        saveBtn.disabled = false;
       }
     }, 'image/png');
   });
@@ -439,7 +457,13 @@
     });
   });
 
-  $('#an-advanced-apply-btn').addEventListener('click', async () => {
+  // Numero dell'ultima richiesta di filtri avanzati: una risposta che arriva
+  // quando nel frattempo è partita un'altra richiesta — o l'analista ha
+  // premuto "Ripristina originale" — è superata e va ignorata. Prima una
+  // risposta lenta sovrascriveva l'originale appena ripristinato.
+  let advancedRequestSeq = 0;
+  const advancedApplyBtn = $('#an-advanced-apply-btn');
+  advancedApplyBtn.addEventListener('click', async () => {
     const steps = buildAdvancedSteps();
     const status = $('#an-advanced-status');
     if (!steps.length) {
@@ -447,6 +471,8 @@
       return;
     }
     const prevSrc = imgRight.src; // per l'undo: potrebbe già essere un risultato di un'applicazione precedente
+    const seq = ++advancedRequestSeq;
+    advancedApplyBtn.disabled = true; // niente doppi invii
     status.textContent = 'Elaborazione in corso...';
     try {
       const res = await fetch('api/enhance_capture.php', {
@@ -456,6 +482,7 @@
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Errore');
+      if (seq !== advancedRequestSeq) return; // superata da un'azione successiva
       imgRight.src = data.url + '&_=' + Date.now();
       status.textContent = 'Filtri applicati: ora sono la nuova base per le regolazioni in tempo reale sopra.';
       pushUndo(() => {
@@ -463,11 +490,14 @@
         status.textContent = 'Filtri avanzati annullati.';
       });
     } catch (err) {
-      status.textContent = 'Errore: ' + err.message;
+      if (seq === advancedRequestSeq) status.textContent = 'Errore: ' + err.message;
+    } finally {
+      advancedApplyBtn.disabled = false;
     }
   });
 
   $('#an-advanced-reset-btn').addEventListener('click', () => {
+    advancedRequestSeq++; // invalida un'eventuale elaborazione ancora in corso
     const prevSrc = imgRight.src;
     const prevAdjust = { ...adjust };
     const prevChecks = {};
@@ -557,8 +587,15 @@
   }
   const finishShapeBtn = $('#an-annotate-finish-shape');
   if (finishShapeBtn) finishShapeBtn.addEventListener('click', finishPolyDraft);
+  // Tasti rapidi solo quando il fuoco NON è in un campo di testo: scrivendo
+  // una didascalia o un'etichetta, Ctrl+Z deve annullare il testo (non
+  // cancellare dal server l'ultima annotazione) e Invio/Esc non devono
+  // chiudere o annullare il poligono in corso.
+  function isTypingTarget(el) {
+    return !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+  }
   document.addEventListener('keydown', (e) => {
-    if (!polyDraft) return;
+    if (!polyDraft || isTypingTarget(e.target)) return;
     if (e.key === 'Enter') { e.preventDefault(); finishPolyDraft(); }
     else if (e.key === 'Escape') { e.preventDefault(); cancelPolyDraft(); }
   });
@@ -655,14 +692,23 @@
   async function performUndo() {
     const fn = undoStack.pop();
     if (!fn) return;
-    await fn();
-    const btn = $('#an-undo-btn');
-    if (btn) btn.disabled = undoStack.length === 0;
+    try {
+      await fn();
+    } catch (e) {
+      // L'errore di salvataggio è già segnalato in pagina (persistFetch);
+      // qui conta solo non lasciare il pulsante in uno stato incoerente.
+    } finally {
+      const btn = $('#an-undo-btn');
+      if (btn) btn.disabled = undoStack.length === 0;
+    }
   }
   const undoBtn = $('#an-undo-btn');
   if (undoBtn) undoBtn.addEventListener('click', performUndo);
   window.addEventListener('keydown', (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+    if (isTypingTarget(e.target)) return;
+    // Solo Ctrl/Cmd+Z: con Maiusc è "ripeti" (non supportato), che prima
+    // eseguiva comunque un annullamento.
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
       e.preventDefault();
       performUndo();
     }
@@ -671,6 +717,12 @@
   function resizeAnnotateCanvas() {
     const prevW = canvas.width, prevH = canvas.height;
     const nextW = imgRight.clientWidth, nextH = imgRight.clientHeight;
+    // Immagine nascosta (pannello "Anteprima" chiuso, pagina non ancora
+    // disposta): dimensioni zero. Portare il canvas a 0×0 schiacciava tutte
+    // le misurazioni nell'origine e, alla prima modifica, quelle coordinate
+    // sbagliate venivano salvate sul server. Si lascia il canvas com'è: il
+    // ResizeObserver qui sotto lo riallinea appena l'immagine torna visibile.
+    if (nextW === 0 || nextH === 0) return;
 
     canvas.width = nextW;
     canvas.height = nextH;
@@ -695,10 +747,21 @@
     renderOverlay();
   }
   window.addEventListener('resize', resizeAnnotateCanvas);
+  // Qualunque cambio di dimensione dell'immagine, non solo quello della
+  // finestra: apertura del pannello "Anteprima", cambi di layout.
+  if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(() => {
+      if (imgRight.clientWidth !== canvas.width || imgRight.clientHeight !== canvas.height) resizeAnnotateCanvas();
+    }).observe(imgRight);
+  }
   imgRight.addEventListener('load', resizeAnnotateCanvas);
   imgLeft.addEventListener('load', () => { resizeAnnotateCanvas(); computeGeoScale(); });
   if (imgRight.complete) resizeAnnotateCanvas();
-  if (imgLeft.complete) computeGeoScale();
+  // La scala già risolta lato server (CFG.mppX/mppY) non dipende dal
+  // caricamento dell'immagine: va applicata subito. Prima arrivava solo
+  // all'evento load, e al primo accesso (immagine non in cache) le
+  // annotazioni venivano caricate prima, senza scala.
+  if (imgLeft.complete || (CFG.mppX && CFG.mppY)) computeGeoScale();
 
   // Misurazioni <-> righe annotations (shape_type 'measure'): internamente
   // le misurazioni restano in pixel canvas assoluti (tutto il disegno/hit-
@@ -767,7 +830,7 @@
   // frazionarie, le misurazioni no: coordinate assolute in spazio CSS).
   // includeHandles: false per un'esportazione (le maniglie di modifica non
   // sono contenuto, solo un aiuto visivo mentre si lavora dal vivo).
-  function drawOverlayLayer(ctx, targetW, targetH, includeHandles) {
+  function drawOverlayLayer(ctx, targetW, targetH, includeHandles, opts = {}) {
     const k = targetW / canvas.width;
     annotations.forEach((a) => {
       const col = a.color || '#00fff2';
@@ -793,7 +856,7 @@
         if (includeHandles && mode === 'annotate') {
           ctx.fillStyle = col;
           pts.forEach(([hx, hy]) => {
-            ctx.beginPath(); ctx.arc(hx, hy, HANDLE_R * k, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(hx, hy, handleDrawR() * k, 0, Math.PI * 2); ctx.fill();
           });
         }
         return;
@@ -820,7 +883,7 @@
         ctx.fillStyle = col;
         [[rx, ry], [rx + rw, ry], [rx, ry + rh], [rx + rw, ry + rh]].forEach(([hx, hy]) => {
           ctx.beginPath();
-          ctx.arc(hx, hy, HANDLE_R * k, 0, Math.PI * 2);
+          ctx.arc(hx, hy, handleDrawR() * k, 0, Math.PI * 2);
           ctx.fill();
         });
       }
@@ -838,7 +901,7 @@
       ctx.stroke();
       ctx.setLineDash([]);
       polyDraft.points.forEach(([hx, hy]) => {
-        ctx.beginPath(); ctx.arc(hx * k, hy * k, HANDLE_R * k, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(hx * k, hy * k, handleDrawR() * k, 0, Math.PI * 2); ctx.fill();
       });
     }
     measurements.forEach((m) => {
@@ -863,7 +926,7 @@
         ctx.fillStyle = mColor;
         [[x1, y1], [x2, y2]].forEach(([hx, hy]) => {
           ctx.beginPath();
-          ctx.arc(hx, hy, HANDLE_R * k, 0, Math.PI * 2);
+          ctx.arc(hx, hy, handleDrawR() * k, 0, Math.PI * 2);
           ctx.fill();
         });
       }
@@ -872,13 +935,18 @@
     // incorporazione in un export (false): la barra di scala lo riusa come
     // flag "live" per decidere se adattarsi allo zoom o restare a distanza
     // fissa sull'immagine intera.
-    drawScaleBar(ctx, targetW, targetH, includeHandles);
+    if (opts.scaleBar !== false) drawScaleBar(ctx, targetW, targetH, includeHandles);
   }
 
   function redrawAnnotations() {
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     drawOverlayLayer(ctx, canvas.width, canvas.height, true);
+    // Le maniglie della sovrapposizione stanno sullo stesso canvas: vanno
+    // ridisegnate a OGNI pulizia, non solo da renderOverlay(). Prima un
+    // semplice ridisegno (dimensione maniglie, barra di scala, pan) le
+    // cancellava in modalità Sovrapponi.
+    if (mode === 'overlay' && overlay.loaded) drawOverlayHandles();
   }
 
   // ---------- Barra di scala (come su una cartina) ----------
@@ -909,21 +977,37 @@
   // zoom, distanza fissa ~20% della larghezza dell'immagine, ancorata in
   // basso a sinistra dell'immagine intera; spessori scalati col fattore k
   // verso la risoluzione nativa (WYSIWYG rispetto alla vista).
-  function drawScaleBar(ctx, targetW, targetH, live) {
+  // Metri per pixel NATIVO lungo l'orizzontale dell'immagine. Per una
+  // ripresa ruotata nello spazio dei gradi (riprese precedenti al modello
+  // metrico, vedi ImageRotateCrop) l'orizzontale dell'immagine è una
+  // direzione obliqua sul terreno, lungo cui la scala è una combinazione dei
+  // due assi — usare mppX da solo sbagliava fino al 20%. Per le riprese
+  // non ruotate o ruotate in spazio metrico si riduce esattamente a mppX.
+  function horizontalMpp() {
+    if (!CFG.rotation || !mppY) return mppX;
+    const r = (CFG.rotation * Math.PI) / 180;
+    return Math.hypot(Math.cos(r) * mppX, Math.sin(r) * mppY);
+  }
+
+  // opts (solo non-live): nativePerTarget = pixel nativi per pixel del
+  // bersaglio; unit = spessore di "1 px" nel bersaglio. Servono per disegnare
+  // la barra su un frammento ritagliato, con la stessa scala e lo stesso
+  // aspetto che avrebbe sull'immagine intera.
+  function drawScaleBar(ctx, targetW, targetH, live, opts = {}) {
     if (!showScaleBar || !mppX || !imgRight.naturalWidth || !targetW) return;
 
     let metersPerPx, niceMeters, x0, y0, sc;
     if (live) {
       sc = scale || 1;
-      metersPerPx = mppX * (imgRight.naturalWidth / canvas.width); // per pixel canvas
+      metersPerPx = horizontalMpp() * (imgRight.naturalWidth / canvas.width); // per pixel canvas
       const visibleWidthM = (canvas.width / sc) * metersPerPx;
       niceMeters = niceScaleDistance(visibleWidthM * 0.2);
       const xVisMin = -tx / sc, yVisMax = (canvas.height - ty) / sc;
       x0 = xVisMin + 14 / sc;
       y0 = yVisMax - 30 / sc;
     } else {
-      sc = canvas.width / targetW; // divisore comune: k = 1/sc
-      metersPerPx = mppX * (imgRight.naturalWidth / targetW);
+      sc = opts.unit ? 1 / opts.unit : canvas.width / targetW; // divisore comune: k = 1/sc
+      metersPerPx = horizontalMpp() * (opts.nativePerTarget || imgRight.naturalWidth / targetW);
       niceMeters = niceScaleDistance(metersPerPx * targetW * 0.2);
       x0 = targetW * 0.03;
       y0 = targetH - targetH * 0.05;
@@ -1029,7 +1113,10 @@
     redrawAnnotations();
     renderAnnotationList();
     pushUndo(async () => {
-      a.id = await createAnnotationServer(a.coords, a.color, a.label, a.notes);
+      // La forma va ripassata: senza, un poligono o una polilinea ripristinati
+      // venivano salvati come 'rect' con coordinate a punti — invisibili dopo
+      // un ricaricamento ed esportati come un rettangolo degenere.
+      a.id = await createAnnotationServer(a.coords, a.color, a.label, a.notes, a.shape_type || 'rect');
       annotations.push(a);
       redrawAnnotations();
       renderAnnotationList();
@@ -1094,7 +1181,18 @@
       dot.style.padding = '0';
       dot.style.border = 'none';
       dot.style.background = 'none';
-      dot.addEventListener('input', () => recolorAnnotation(a, dot.value));
+      // Anteprima durante il trascinamento nel selettore, salvataggio (e voce
+      // di annullamento) solo alla conferma: prima ogni colore intermedio
+      // generava una richiesta e una voce nella pila dell'annulla.
+      let committedColor = a.color;
+      dot.addEventListener('input', () => { a.color = dot.value; redrawAnnotations(); });
+      dot.addEventListener('change', () => {
+        const target = dot.value;
+        a.color = committedColor;
+        recolorAnnotation(a, target)
+          .then(() => { committedColor = target; })
+          .catch(() => { dot.value = a.color; redrawAnnotations(); });
+      });
       const edit = document.createElement('button');
       edit.type = 'button';
       edit.className = 'btn btn-sm';
@@ -1151,6 +1249,7 @@
       mppY = CFG.mppY;
       scaleSource = 'geo';
       updateScaleStatus();
+      onScaleKnown();
       return;
     }
     if (!CFG.bbox || !imgLeft.naturalWidth) return;
@@ -1163,6 +1262,14 @@
     mppY = heightM / imgLeft.naturalHeight;
     scaleSource = 'geo';
     updateScaleStatus();
+    onScaleKnown();
+  }
+
+  function onScaleKnown() {
+    if (!measurements.length) return;
+    recomputeMeasurementDistances();
+    redrawAnnotations();
+    renderMeasurementList();
   }
 
   function updateScaleStatus() {
@@ -1179,7 +1286,38 @@
   updateScaleStatus();
 
   function formatDistance(m) {
+    // Una misura senza scala nota (distanceM null: scala non ancora
+    // calcolata, o calibrazione manuale non più attiva dopo un
+    // ricaricamento) prima faceva lanciare un'eccezione a m.toFixed: le
+    // liste di annotazioni e misurazioni restavano vuote, come se il lavoro
+    // salvato fosse andato perso.
+    if (typeof m !== 'number' || !isFinite(m)) return '— (scala non nota)';
     return m >= 1000 ? (m / 1000).toFixed(2) + ' km' : m.toFixed(1) + ' m';
+  }
+
+  // Ricalcola la distanza di ogni misurazione con la scala corrente: va
+  // fatto ogni volta che la scala diventa nota (geografica o calibrata a
+  // mano), perché le misure caricate prima di quel momento non ne avevano.
+  function recomputeMeasurementDistances() {
+    measurements.forEach((m) => {
+      m.distanceM = pixelDistance(m.x1, m.y1, m.x2, m.y2).distanceM;
+    });
+  }
+
+  // Esegue fn(id) quando la misurazione ha il suo id sul server. Una misura
+  // appena disegnata lo riceve solo quando il server risponde: prima ogni
+  // modifica (etichetta, colore, trascinamento, eliminazione, Ctrl+Z) fatta
+  // in quell'intervallo veniva saltata in silenzio da "if (m.id)", e una
+  // misura annullata subito ricompariva al ricaricamento.
+  function withMeasureId(m, fn) {
+    return Promise.resolve(m.createPromise).then(() => (m.id ? fn(m.id) : undefined));
+  }
+  function createMeasureOnServer(m) {
+    m.id = undefined;
+    m.createPromise = createAnnotationServer(measureCoordsFrac(m), m.color, m.label || null, null, 'measure')
+      .then((id) => { m.id = id; })
+      .catch(() => {}); // errore già segnalato in pagina da persistFetch
+    return m.createPromise;
   }
 
   function renderMeasurementList() {
@@ -1207,12 +1345,12 @@
         const prevLabel = labelInput.dataset.prevValue || '';
         m.label = labelInput.value;
         redrawAnnotations();
-        if (m.id) updateAnnotationServer(m.id, measureCoordsFrac(m), m.label || null, null).catch(() => {});
+        withMeasureId(m, (id) => updateAnnotationServer(id, measureCoordsFrac(m), m.label || null, null)).catch(() => {});
         pushUndo(() => {
           m.label = prevLabel;
           labelInput.value = prevLabel;
           redrawAnnotations();
-          if (m.id) updateAnnotationServer(m.id, measureCoordsFrac(m), prevLabel || null, null).catch(() => {});
+          withMeasureId(m, (id) => updateAnnotationServer(id, measureCoordsFrac(m), prevLabel || null, null)).catch(() => {});
         });
       });
       const right = document.createElement('span');
@@ -1228,16 +1366,27 @@
       swatch.style.padding = '0';
       swatch.style.border = 'none';
       swatch.style.background = 'none';
+      // 'input' scatta di continuo mentre si trascina nel selettore: lì solo
+      // l'anteprima. Salvataggio e voce di annullamento su 'change' (colore
+      // confermato): prima ogni passaggio intermedio mandava una richiesta —
+      // che potevano arrivare fuori ordine lasciando salvato un colore
+      // intermedio — e riempiva la pila dell'annulla.
+      let colorBefore = m.color;
       swatch.addEventListener('input', () => {
-        const prevColor = m.color;
         m.color = swatch.value;
         redrawAnnotations();
-        if (m.id) updateAnnotationServer(m.id, measureCoordsFrac(m), m.label || null, null, m.color).catch(() => {});
+      });
+      swatch.addEventListener('change', () => {
+        const prevColor = colorBefore;
+        colorBefore = swatch.value;
+        m.color = swatch.value;
+        redrawAnnotations();
+        withMeasureId(m, (id) => updateAnnotationServer(id, measureCoordsFrac(m), m.label || null, null, m.color)).catch(() => {});
         pushUndo(() => {
           m.color = prevColor;
           redrawAnnotations();
           renderMeasurementList();
-          if (m.id) updateAnnotationServer(m.id, measureCoordsFrac(m), m.label || null, null, prevColor).catch(() => {});
+          withMeasureId(m, (id) => updateAnnotationServer(id, measureCoordsFrac(m), m.label || null, null, prevColor)).catch(() => {});
         });
       });
       const del = document.createElement('button');
@@ -1249,12 +1398,12 @@
         measurements.splice(i, 1);
         redrawAnnotations();
         renderMeasurementList();
-        if (m.id) await deleteAnnotationServer(m.id);
+        await withMeasureId(m, (id) => deleteAnnotationServer(id)).catch(() => {});
         pushUndo(async () => {
           measurements.push(m);
-          if (m.id) m.id = await createAnnotationServer(measureCoordsFrac(m), m.color, m.label || null, null, 'measure');
           redrawAnnotations();
           renderMeasurementList();
+          await createMeasureOnServer(m);
         });
       });
       right.appendChild(swatch);
@@ -1268,11 +1417,11 @@
 
   $('#an-measure-clear-btn').addEventListener('click', async () => {
     if (measurements.length && !confirm('Cancellare tutte le misurazioni? Vengono rimosse anche dall\'archivio.')) return;
-    const ids = measurements.filter((m) => m.id).map((m) => m.id);
+    const removed = measurements.slice();
     measurements.length = 0;
     redrawAnnotations();
     renderMeasurementList();
-    for (const id of ids) await deleteAnnotationServer(id);
+    for (const m of removed) await withMeasureId(m, (id) => deleteAnnotationServer(id)).catch(() => {});
   });
 
   $('#an-show-scale-bar').addEventListener('change', (e) => {
@@ -1394,7 +1543,14 @@
     applyPixelAdjustments(ctx, cropCanvas.width, cropCanvas.height);
     lastCropCanvas = cropCanvas;
 
-    cropCanvas.toBlob((blob) => {
+    // Il frammento in anteprima è quello che le azioni useranno davvero: se
+    // "includi livello" è già spuntato, va mostrato con il livello (prima si
+    // vedeva il frammento pulito mentre copia/salva/condividi usavano l'altro).
+    const includeNow = $('#an-crop-include-overlay-layer');
+    const previewBlob = includeNow && includeNow.checked
+      ? buildCropBlob()
+      : new Promise((res) => cropCanvas.toBlob(res, 'image/png'));
+    previewBlob.then((blob) => {
       if (!blob) return;
       if (lastCropBlobUrl) URL.revokeObjectURL(lastCropBlobUrl);
       lastCropBlobUrl = URL.createObjectURL(blob);
@@ -1408,7 +1564,7 @@
       const shareStatus = $('#an-crop-share-status');
       if (saveStatus) saveStatus.textContent = '';
       if (shareStatus) shareStatus.textContent = '';
-    }, 'image/png');
+    });
   }
 
   // Ricompone al volo il frammento col livello annotazioni/misurazioni/
@@ -1430,13 +1586,22 @@
       const fullLayer = document.createElement('canvas');
       fullLayer.width = imgRight.naturalWidth;
       fullLayer.height = imgRight.naturalHeight;
-      drawOverlayLayer(fullLayer.getContext('2d'), fullLayer.width, fullLayer.height, false);
+      // Annotazioni e misurazioni si ritagliano dal livello a piena
+      // risoluzione; la barra di scala no: sull'immagine intera sta in basso
+      // a sinistra, e nel frammento compariva solo se il ritaglio includeva
+      // proprio quell'angolo. Viene ridisegnata sul frammento, alla stessa
+      // scala e con lo stesso aspetto.
+      drawOverlayLayer(fullLayer.getContext('2d'), fullLayer.width, fullLayer.height, false, { scaleBar: false });
       const finalCanvas = document.createElement('canvas');
       finalCanvas.width = lastCropCanvas.width;
       finalCanvas.height = lastCropCanvas.height;
       const fctx = finalCanvas.getContext('2d');
       fctx.drawImage(lastCropCanvas, 0, 0);
       fctx.drawImage(fullLayer, sx, sy, sw, sh, 0, 0, finalCanvas.width, finalCanvas.height);
+      drawScaleBar(fctx, finalCanvas.width, finalCanvas.height, false, {
+        nativePerTarget: sw / finalCanvas.width,
+        unit: imgRight.naturalWidth / canvas.width,
+      });
       finalCanvas.toBlob(resolve, 'image/png');
     });
   }
@@ -1554,6 +1719,16 @@
       // studio — sbagliata di molto per un'area così più piccola (bug
       // segnalato e corretto: vedi Capture::resolveMpp lato server).
       form.append('source_capture_id', CFG.captureId);
+      // Rettangolo del ritaglio in frazioni dell'immagine: il server ne ricava
+      // l'area geografica esatta del frammento (export KML/GeoJSON, stima
+      // ombre), invece di ereditare quella dell'intera ripresa o dello studio.
+      if (lastCropNativeRect && imgRight.naturalWidth && imgRight.naturalHeight) {
+        const { sx, sy, sw, sh } = lastCropNativeRect;
+        form.append('crop_x', sx / imgRight.naturalWidth);
+        form.append('crop_y', sy / imgRight.naturalHeight);
+        form.append('crop_w', sw / imgRight.naturalWidth);
+        form.append('crop_h', sh / imgRight.naturalHeight);
+      }
       const res = await fetch('api/upload_capture.php', { method: 'POST', body: form });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Errore');
@@ -1715,12 +1890,12 @@
       // accumulava sopra le precedenti — il "ghosting" segnalato.
       // redrawAnnotations() fa il clear + ridisegna il resto del livello,
       // poi le maniglie vanno sopra, pulite.
-      redrawAnnotations();
-      drawOverlayHandles();
+      redrawAnnotations(); // include le maniglie
     }
   }
 
-  const OVERLAY_ROTATE_HANDLE_OFFSET = 28; // px canvas, oltre l'angolo in alto
+  // Distanze a schermo (divise per lo zoom dove usate, come i raggi delle maniglie).
+  const OVERLAY_ROTATE_HANDLE_OFFSET = 28; // px, oltre il lato in alto
   const OVERLAY_OPACITY_HANDLE_OFFSET = 28; // px canvas, oltre il lato in basso
 
   // Riporta un punto canvas nel sistema "pre-rotazione" relativo al centro
@@ -1732,6 +1907,19 @@
     const dy = py - overlay.cy * canvas.height;
     const r = (-overlay.rotation * Math.PI) / 180;
     return [dx * Math.cos(r) - dy * Math.sin(r), dx * Math.sin(r) + dy * Math.cos(r)];
+  }
+
+  // Inversa completa di overlayLocalToCanvas: da coordinate canvas al
+  // sistema locale PRIMA di inclinazione e rotazione. Serve alla maniglia
+  // dell'opacità, la cui posizione lungo la guida va letta senza skew: con
+  // skewX = 20° un clic a metà guida dava 73% invece di 50%.
+  function canvasToOverlayLocal(px, py) {
+    const [sx, sy] = canvasToOverlayUnrotated(px, py);
+    const tx = Math.tan((overlay.skewX * Math.PI) / 180);
+    const ty = Math.tan((overlay.skewY * Math.PI) / 180);
+    const det = 1 - tx * ty;
+    if (Math.abs(det) < 1e-6) return [sx, sy];
+    return [(sx - tx * sy) / det, (sy - ty * sx) / det];
   }
 
   // Trasforma un punto "locale" (relativo al centro dell'overlay, in pixel
@@ -1776,12 +1964,12 @@
       w: overlayLocalToCanvas(-hw, 0),
       e: overlayLocalToCanvas(hw, 0),
     };
-    const rotate = overlayLocalToCanvas(0, -hh - OVERLAY_ROTATE_HANDLE_OFFSET);
+    const rotate = overlayLocalToCanvas(0, -hh - OVERLAY_ROTATE_HANDLE_OFFSET / scale);
     // Maniglia opacità: piccola guida sotto il lato inferiore, la posizione
     // lungo la guida (da sinistra a destra) È il valore di opacità 0→1.
-    const opacityTrackL = overlayLocalToCanvas(-hw, hh + OVERLAY_OPACITY_HANDLE_OFFSET);
-    const opacityTrackR = overlayLocalToCanvas(hw, hh + OVERLAY_OPACITY_HANDLE_OFFSET);
-    const opacity = overlayLocalToCanvas(-hw + overlay.opacity * 2 * hw, hh + OVERLAY_OPACITY_HANDLE_OFFSET);
+    const opacityTrackL = overlayLocalToCanvas(-hw, hh + OVERLAY_OPACITY_HANDLE_OFFSET / scale);
+    const opacityTrackR = overlayLocalToCanvas(hw, hh + OVERLAY_OPACITY_HANDLE_OFFSET / scale);
+    const opacity = overlayLocalToCanvas(-hw + overlay.opacity * 2 * hw, hh + OVERLAY_OPACITY_HANDLE_OFFSET / scale);
     return { corners, edges, rotate, opacityTrackL, opacityTrackR, opacity };
   }
 
@@ -1812,22 +2000,22 @@
     // Angoli: cerchi pieni (ridimensiona).
     ctx.fillStyle = '#00fff2';
     Object.values(corners).forEach(([hx, hy]) => {
-      ctx.beginPath(); ctx.arc(hx, hy, HANDLE_R, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(hx, hy, handleDrawR(), 0, Math.PI * 2); ctx.fill();
     });
     // Metà lati: quadratini (inclina/skew), per distinguerli dagli angoli.
     Object.values(edges).forEach(([hx, hy]) => {
-      ctx.fillRect(hx - HANDLE_R, hy - HANDLE_R, HANDLE_R * 2, HANDLE_R * 2);
+      ctx.fillRect(hx - handleDrawR(), hy - handleDrawR(), handleDrawR() * 2, handleDrawR() * 2);
     });
     // Rotazione: cerchio vuoto sopra.
     ctx.beginPath();
-    ctx.arc(rotate[0], rotate[1], HANDLE_R, 0, Math.PI * 2);
+    ctx.arc(rotate[0], rotate[1], handleDrawR(), 0, Math.PI * 2);
     ctx.fillStyle = '#0a0a0a';
     ctx.fill();
     ctx.lineWidth = 2;
     ctx.stroke();
     // Opacità: cerchio pieno che scorre lungo la guida in basso.
     ctx.beginPath();
-    ctx.arc(opacity[0], opacity[1], HANDLE_R, 0, Math.PI * 2);
+    ctx.arc(opacity[0], opacity[1], handleDrawR(), 0, Math.PI * 2);
     ctx.fillStyle = '#00fff2';
     ctx.fill();
     ctx.strokeStyle = '#0a0a0a';
@@ -1965,6 +2153,14 @@
     pushUndo(() => {
       Object.assign(overlay, prev);
       overlay.loaded = true;
+      // Se nel frattempo era stata caricata un'altra immagine, l'elemento a
+      // schermo mostra ancora quella: va riallineato all'immagine ripristinata
+      // (altrimenti il salvataggio incorporava A mentre a schermo c'era B),
+      // insieme a slider e chroma key.
+      refreshOverlayDisplay();
+      OVERLAY_SLIDER_MAP.forEach(([, , key]) => syncOverlaySliderFromStored(key));
+      const chromaEl = $('#an-overlay-chromakey-enabled');
+      if (chromaEl) chromaEl.checked = !!overlay.chromaKeyEnabled;
       renderOverlay();
       $('#an-overlay-status').textContent = 'Rimozione sovrapposizione annullata.';
     });
@@ -1994,7 +2190,13 @@
   // Funzione (non costante) perché HANDLE_R ora cambia dinamicamente con lo
   // slider "Dimensione maniglie": l'area cliccabile deve restare sempre un
   // po' più larga del solo disegno, comoda al dito/mouse a qualunque taglia.
-  function handleHitR() { return Math.max(8, HANDLE_R * 3); }
+  // Raggi in pixel del canvas, divisi per lo zoom: le maniglie e l'area in
+  // cui "prenderle" devono avere la stessa dimensione A SCHERMO a qualunque
+  // ingrandimento. Prima a 10× apparivano dieci volte più grandi, coprendo
+  // proprio i dettagli per cui si era zoomato, e vicino a elementi esistenti
+  // si agganciava una maniglia invece di iniziare un nuovo disegno.
+  function handleDrawR() { return HANDLE_R / scale; }
+  function handleHitR() { return Math.max(8, HANDLE_R * 3) / scale; }
   const OPPOSITE_CORNER = { tl: 'br', tr: 'bl', bl: 'tr', br: 'tl' };
 
   function cornerPoint(rx, ry, rw, rh, name) {
@@ -2089,7 +2291,7 @@
     async function finishAnnotate(x, y) {
       const w = Math.abs(x - startX), h = Math.abs(y - startY);
       const rx = Math.min(startX, x), ry = Math.min(startY, y);
-      if (w < 6 || h < 6) { redrawAnnotations(); return; }
+      if (w * scale < 6 || h * scale < 6) { redrawAnnotations(); return; } // soglie in px a schermo, indipendenti dallo zoom
 
       const label = prompt('Etichetta annotazione (es. "Nuova struttura"):', '');
       if (label === null) { redrawAnnotations(); return; }
@@ -2112,7 +2314,7 @@
 
     function finishMeasure(x, y) {
       const pixelLen = Math.hypot(x - startX, y - startY);
-      if (pixelLen < 6) { redrawAnnotations(); return; }
+      if (pixelLen * scale < 6) { redrawAnnotations(); return; } // a 10× una misura di pochi px canvas è legittima
 
       if (!mppX || !mppY) {
         const known = prompt('Nessuna scala geografica nota per questa ripresa. Indica la lunghezza reale (in metri) di questa linea per calibrare la scala:', '');
@@ -2123,6 +2325,7 @@
         mppX = mppY = knownM / pixelLenNat;
         scaleSource = 'manual';
         updateScaleStatus();
+        recomputeMeasurementDistances();
       }
 
       const { distanceM } = pixelDistance(startX, startY, x, y);
@@ -2144,15 +2347,13 @@
       renderMeasurementList();
       // Persistite come le annotazioni (riga annotations shape_type
       // 'measure'): sopravvivono al ricaricamento della pagina.
-      createAnnotationServer(measureCoordsFrac(m), m.color, m.label || null, null, 'measure')
-        .then((id) => { m.id = id; })
-        .catch(() => {}); // errore gia' segnalato in pagina da persistFetch
+      createMeasureOnServer(m);
       pushUndo(async () => {
         const idx = measurements.indexOf(m);
         if (idx !== -1) measurements.splice(idx, 1);
-        if (m.id) await deleteAnnotationServer(m.id);
         redrawAnnotations();
         renderMeasurementList();
+        await withMeasureId(m, (id) => deleteAnnotationServer(id));
       });
     }
 
@@ -2160,7 +2361,7 @@
       const w = Math.abs(x - startX), h = Math.abs(y - startY);
       const rx = Math.min(startX, x), ry = Math.min(startY, y);
       redrawAnnotations();
-      if (w < 10 || h < 10) return;
+      if (w * scale < 10 || h * scale < 10) return;
       renderCropFromSelection(rx, ry, w, h);
     }
 
@@ -2314,7 +2515,7 @@
       } else if (dragState.type === 'opacity-overlay') {
         // Posizione lungo il lato inferiore (da sinistra = 0 a destra = 1),
         // nel sistema pre-rotazione.
-        const [lx] = canvasToOverlayUnrotated(x, y);
+        const [lx] = canvasToOverlayLocal(x, y);
         const [hw] = overlayHalfExtents();
         overlay.opacity = Math.max(0, Math.min(1, (lx + hw) / (2 * hw)));
         syncOverlaySliderFromStored('opacity');
@@ -2349,10 +2550,10 @@
       } else if (state.type === 'drag-endpoint') {
         const m = state.m;
         renderMeasurementList();
-        if (m.id) await updateAnnotationServer(m.id, measureCoordsFrac(m), m.label || null, null);
+        await withMeasureId(m, (id) => updateAnnotationServer(id, measureCoordsFrac(m), m.label || null, null)).catch(() => {});
         pushUndo(async () => {
           Object.assign(m, state.prev);
-          if (m.id) await updateAnnotationServer(m.id, measureCoordsFrac(m), m.label || null, null);
+          await withMeasureId(m, (id) => updateAnnotationServer(id, measureCoordsFrac(m), m.label || null, null));
           redrawAnnotations();
           renderMeasurementList();
         });
@@ -2386,23 +2587,41 @@
       handleEnd(x, y);
     });
 
+    // Touch: il gesto a un dito parte solo al primo movimento (o al rilascio,
+    // se è un semplice tocco). Farlo partire subito, come col mouse, faceva sì
+    // che un pinch per zoomare — che inizia sempre con UN dito — venisse
+    // scambiato per un disegno: una misura spuria (o la richiesta di
+    // calibrazione), un'etichetta richiesta, un vertice aggiunto al poligono.
+    // All'arrivo del secondo dito il gesto viene annullato.
+    let touchPending = null;
+    let touchAborted = false;
     canvas.addEventListener('touchstart', (e) => {
-      if (!canInteract() || e.touches.length !== 1) return;
+      if (!canInteract()) return;
+      if (e.touches.length !== 1) {
+        touchPending = null;
+        touchAborted = true;
+        if (dragState) { dragState = null; redrawAnnotations(); }
+        return;
+      }
       e.preventDefault();
-      const [x, y] = toCanvasCoords(e.touches[0]);
-      handleStart(x, y);
+      touchAborted = false;
+      touchPending = toCanvasCoords(e.touches[0]);
     }, { passive: false });
     canvas.addEventListener('touchmove', (e) => {
-      if (!dragState || e.touches.length !== 1) return;
+      if (touchAborted || e.touches.length !== 1) return;
       e.preventDefault();
       const [x, y] = toCanvasCoords(e.touches[0]);
-      handleMove(x, y);
+      if (touchPending) { handleStart(touchPending[0], touchPending[1]); touchPending = null; }
+      if (dragState) handleMove(x, y);
     }, { passive: false });
     canvas.addEventListener('touchend', (e) => {
-      if (!dragState) return;
-      const t = e.changedTouches[0];
-      const [x, y] = toCanvasCoords(t);
-      handleEnd(x, y);
+      if (touchAborted) {
+        if (e.touches.length === 0) touchAborted = false;
+        return;
+      }
+      const [x, y] = toCanvasCoords(e.changedTouches[0]);
+      if (touchPending) { handleStart(touchPending[0], touchPending[1]); touchPending = null; }
+      if (dragState) handleEnd(x, y);
     });
   })();
 
@@ -2464,8 +2683,15 @@
         if (!raw) return;
         const g = JSON.parse(raw);
         if (typeof g.left === 'number' && typeof g.top === 'number') {
-          floating.style.left = g.left + 'px';
-          floating.style.top = g.top + 'px';
+          // Posizione salvata su una finestra più grande: va riportata dentro
+          // lo schermo attuale, altrimenti la mini-anteprima restava fuori
+          // vista, irraggiungibile.
+          const w = typeof g.width === 'number' ? g.width : 200;
+          const h = typeof g.height === 'number' ? g.height : 150;
+          const left = Math.max(0, Math.min(g.left, window.innerWidth - Math.min(w, window.innerWidth)));
+          const top = Math.max(0, Math.min(g.top, window.innerHeight - Math.min(h, window.innerHeight)));
+          floating.style.left = left + 'px';
+          floating.style.top = top + 'px';
           floating.style.right = 'auto';
           floating.style.bottom = 'auto';
         }
@@ -2477,9 +2703,12 @@
 
     function saveGeometry() {
       const rect = floating.getBoundingClientRect();
-      localStorage.setItem(posKey, JSON.stringify({
-        left: rect.left, top: rect.top, width: rect.width, height: rect.height,
-      }));
+      if (!rect.width || !rect.height) return; // nascosta: niente da salvare
+      try {
+        localStorage.setItem(posKey, JSON.stringify({
+          left: rect.left, top: rect.top, width: rect.width, height: rect.height,
+        }));
+      } catch (e) { /* archivio del browser non disponibile: solo non ricordata */ }
     }
 
     // Trascinamento dalla sola intestazione (non dall'immagine, che apre

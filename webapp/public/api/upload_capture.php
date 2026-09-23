@@ -24,6 +24,17 @@ if (!isset($allowed[$mime])) {
     respond_json(['error' => 'Formato non supportato (usare PNG, JPEG o WEBP)'], 400);
 }
 
+// Stesso tetto del servizio di analisi (MAX_IMAGE_PIXELS in core/utils.py),
+// letto dalla sola intestazione: meglio rifiutare subito con un messaggio
+// chiaro che archiviare un'immagine che poi nessuna analisi può elaborare.
+$probe = @getimagesize($_FILES['image']['tmp_name']);
+if (!$probe || $probe[0] < 1 || $probe[1] < 1) {
+    respond_json(['error' => 'Immagine non leggibile'], 400);
+}
+if ($probe[0] * $probe[1] > 25000000) {
+    respond_json(['error' => "Immagine troppo grande ({$probe[0]}×{$probe[1]} px, massimo 25 megapixel): riducila prima di caricarla."], 400);
+}
+
 $ext = $allowed[$mime];
 $id = bin2hex(random_bytes(8));
 $destDir = Config::storageRoot() . '/raw';
@@ -60,6 +71,27 @@ if ($sourceCaptureId) {
             $meta += $mpp;
         }
         $meta['source_capture_id'] = $sourceCaptureId;
+
+        // Ritaglio: rettangolo in frazioni dell'immagine sorgente, inviato da
+        // analyze.js. Serve a calcolare l'area geografica ESATTA del
+        // frammento; senza, gli export KML/GeoJSON e la stima delle ombre di
+        // un ritaglio usavano l'area dell'intero studio.
+        $crop = null;
+        if (isset($_POST['crop_x'], $_POST['crop_y'], $_POST['crop_w'], $_POST['crop_h'])) {
+            $c = array_map('floatval', [$_POST['crop_x'], $_POST['crop_y'], $_POST['crop_w'], $_POST['crop_h']]);
+            if ($c[2] > 0 && $c[3] > 0 && $c[0] >= 0 && $c[1] >= 0 && $c[0] + $c[2] <= 1.0001 && $c[1] + $c[3] <= 1.0001) {
+                $crop = ['x' => $c[0], 'y' => $c[1], 'w' => $c[2], 'h' => $c[3]];
+            }
+        }
+        // Area e rotazione della sorgente (o del ritaglio): senza, la copia
+        // salvata perdeva la rotazione e le sue misure risultavano sbagliate.
+        $meta += Capture::geoMetaForDerived($sourceCapture, $crop);
+
+        // Stessa data di acquisizione della sorgente, se non indicata: la
+        // copia di una ripresa è un'elaborazione, non una nuova acquisizione.
+        if ($captureDate === null && !empty($sourceCapture['capture_date'])) {
+            $captureDate = $sourceCapture['capture_date'];
+        }
     }
 }
 

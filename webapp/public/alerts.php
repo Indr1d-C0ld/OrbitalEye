@@ -2,7 +2,12 @@
 require __DIR__ . '/../src/bootstrap.php';
 Auth::requireLogin();
 
-if (($_GET['mark_all_read'] ?? '') === '1') {
+// Solo via POST: con un semplice link (GET), un qualunque altro sito poteva
+// far segnare tutti gli alert come letti — il cookie di sessione SameSite=Lax
+// viaggia anche sulle navigazioni GET da altri siti — nascondendo proprio
+// una rilevazione di cambiamento. Le richieste POST da altri siti invece
+// non portano il cookie.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['mark_all_read'] ?? '') === '1') {
     Alert::markAllRead();
     header('Location: alerts.php');
     exit;
@@ -20,7 +25,7 @@ require __DIR__ . '/partials/nav.php';
   <div style="display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:wrap;">
     <div class="hint">Notifiche generate dagli scaricamenti automatici pianificati (attivabili dalla pagina di uno studio, sezioni Sentinel Hub/Esri): appena arriva una ripresa diversa dalla precedente, compare qui. Le riprese identiche alla precedente vengono scartate automaticamente, senza generare alert.</div>
     <?php if (!empty($alerts)): ?>
-      <a class="btn btn-sm" href="alerts.php?mark_all_read=1">✓ Segna tutti come letti</a>
+      <form method="post" style="margin:0;"><input type="hidden" name="mark_all_read" value="1"><button type="submit" class="btn btn-sm">✓ Segna tutti come letti</button></form>
     <?php endif; ?>
   </div>
 </div>

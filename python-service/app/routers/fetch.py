@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 from ..config import settings
 from ..core.esri_client import EsriError, fetch_world_imagery
-from ..core.sentinelhub_client import SentinelHubError, fetch_red_nir, fetch_true_color
+from ..core.sentinelhub_client import RED_NIR_GAIN, SentinelHubError, fetch_red_nir, fetch_true_color
 from ..core.utils import new_id
 from ..deps import require_service_key
 
@@ -59,14 +59,19 @@ def fetch_sentinelhub(req: SentinelHubFetchRequest):
         nir_filename = f"{file_id}_nir.png"
         (settings.raw_dir / nir_filename).write_bytes(nir_bytes)
         nir_relative_path = f"raw/{nir_filename}"
-    except SentinelHubError:
-        pass
+    except Exception:
+        # Qualunque errore (non solo SentinelHubError: anche un timeout o una
+        # risposta inattesa) sulla sola banda NIR non deve far fallire un
+        # download il cui prodotto principale è già stato scritto su disco —
+        # altrimenti quel file resterebbe orfano, non registrato da nessuno.
+        nir_relative_path = None
 
     return {
         "id": file_id,
         "filename": filename,
         "relative_path": f"raw/{filename}",
         "nir_relative_path": nir_relative_path,
+        "nir_gain": RED_NIR_GAIN if nir_relative_path else None,
         "source": "sentinel-2-l2a",
         "bbox": req.bbox,
         "date_from": req.date_from,
@@ -86,7 +91,7 @@ class EsriFetchRequest(BaseModel):
 @router.post("/esri")
 def fetch_esri(req: EsriFetchRequest):
     try:
-        jpg_bytes, adjusted_bbox = fetch_world_imagery(bbox=req.bbox, width=req.width, height=req.height)
+        jpg_bytes, adjusted_bbox, (real_w, real_h) = fetch_world_imagery(bbox=req.bbox, width=req.width, height=req.height)
     except EsriError as e:
         raise HTTPException(status_code=502, detail=str(e))
 
@@ -106,6 +111,9 @@ def fetch_esri(req: EsriFetchRequest):
         # salvata come riferimento geografico della ripresa.
         "bbox": adjusted_bbox,
         "fetched_at": datetime.utcnow().isoformat() + "Z",
-        "width": req.width,
-        "height": req.height,
+        # Dimensioni REALI dell'immagine: dopo un tentativo a risoluzione
+        # ridotta non coincidono con quelle richieste, e sono queste che la
+        # scala (metri/pixel) deve usare.
+        "width": real_w,
+        "height": real_h,
     }

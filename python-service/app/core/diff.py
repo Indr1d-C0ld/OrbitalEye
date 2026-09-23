@@ -121,7 +121,13 @@ def clean_mask(
     e i micro-disallineamenti residui, che generano tanti puntini isolati
     invece di una regione compatta come una nuova costruzione.
     """
-    morph_kernel = max(1, int(morph_kernel))
+    # Limiti: un kernel o un numero di iterazioni arbitrari arrivavano tali
+    # e quali dalla richiesta. Con kernel 301 un confronto 1024² impiegava
+    # ~7 s solo qui; con valori ancora più grandi OpenCV tenta allocazioni di
+    # gigabyte. Oltre questi valori il risultato non è comunque più utile.
+    morph_kernel = max(1, min(int(morph_kernel), 31))
+    open_iterations = max(0, min(int(open_iterations), 10))
+    close_iterations = max(0, min(int(close_iterations), 10))
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (morph_kernel, morph_kernel))
 
     cleaned = mask
@@ -132,11 +138,14 @@ def clean_mask(
 
     if min_blob_area > 0:
         num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(cleaned, connectivity=8)
-        filtered = np.zeros_like(cleaned)
-        for label in range(1, num_labels):
-            if stats[label, cv2.CC_STAT_AREA] >= min_blob_area:
-                filtered[labels == label] = 255
-        cleaned = filtered
+        # Una sola passata vettoriale: prima si scandiva l'intera immagine una
+        # volta PER OGNI blob tenuto (labels == label), costo proporzionale a
+        # blob × pixel — oltre 6 s con ~13mila blob su 1024², e crescita
+        # quadratica. Su scene urbane con soglia bassa bastava a superare il
+        # timeout del PHP mentre il servizio continuava a lavorare.
+        keep = stats[:, cv2.CC_STAT_AREA] >= min_blob_area
+        keep[0] = False  # etichetta 0 = sfondo
+        cleaned = np.where(keep[labels], 255, 0).astype(np.uint8)
 
     return cleaned
 
@@ -153,17 +162,32 @@ class ChangeRegion:
 
 
 def find_change_regions(mask: np.ndarray, min_area: int = 40) -> list:
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    """Regioni di cambiamento = componenti connesse della maschera pulita.
+
+    L'area è il NUMERO DI PIXEL effettivamente cambiati, la stessa unità di
+    misura di clean_mask (che filtra i blob per pixel) e di changed_pixels
+    nelle statistiche. In precedenza si usava cv2.contourArea sul contorno
+    esterno, che misura il poligono passante per i centri dei pixel di bordo
+    e riempie i buchi: un blob 7×7 (49 px) risultava 36 e spariva dalle
+    regioni pur essendo nella maschera, e un cambiamento ad anello veniva
+    riportato più grande dell'intera area cambiata (con m² di regione
+    incoerenti col totale).
+    """
+    num, _, stats, centroids = cv2.connectedComponentsWithStats(mask, connectivity=8)
     regions = []
-    for c in contours:
-        area = cv2.contourArea(c)
+    for label in range(1, num):
+        area = int(stats[label, cv2.CC_STAT_AREA])
         if area < min_area:
             continue
-        x, y, w, h = cv2.boundingRect(c)
-        M = cv2.moments(c)
-        cx = M["m10"] / M["m00"] if M["m00"] else x + w / 2
-        cy = M["m01"] / M["m00"] if M["m00"] else y + h / 2
-        regions.append(ChangeRegion(x=x, y=y, w=w, h=h, area=int(area), cx=cx, cy=cy))
+        regions.append(ChangeRegion(
+            x=int(stats[label, cv2.CC_STAT_LEFT]),
+            y=int(stats[label, cv2.CC_STAT_TOP]),
+            w=int(stats[label, cv2.CC_STAT_WIDTH]),
+            h=int(stats[label, cv2.CC_STAT_HEIGHT]),
+            area=area,
+            cx=float(centroids[label][0]),
+            cy=float(centroids[label][1]),
+        ))
     regions.sort(key=lambda r: r.area, reverse=True)
     return regions
 

@@ -4,6 +4,243 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-09-23 — Secondo audit completo: correttezza analitica, geometria, robustezza e frontend
+
+Revisione dell'intera base di codice (~13.200 righe) in quattro aree
+indipendenti (servizio Python, backend PHP, vista di analisi, pagina studio
+e resto del frontend), più una suite di test end-to-end in ambiente
+completamente isolato, con una seconda istanza del motore di analisi e
+download reali Esri/Sentinel: 192 controlli API + test interattivi nel
+browser, tutti superati al termine. Ogni reperto è stato riprodotto prima
+della correzione.
+
+### Risultati analitici sbagliati in silenzio
+
+- **[python-service/app/core/esri_client.py](python-service/app/core/esri_client.py)**,
+  **[routers/fetch.py](python-service/app/routers/fetch.py)**,
+  **[webapp/src/CaptureFetcher.php](webapp/src/CaptureFetcher.php)** —
+  quando Esri rifiuta una richiesta e viene riprovata a risoluzione ridotta,
+  si registravano le dimensioni *richieste* invece di quelle reali. La
+  scala (metri/pixel) si calcola dividendo l'area per quelle dimensioni:
+  su un'immagine 501×501 registrata come 1024×1024 ogni distanza risultava
+  metà del vero e ogni area un quarto. Sul deployment reale: 5 riprese su
+  13. Ora il servizio restituisce le dimensioni lette dall'immagine e il PHP
+  le verifica sul file salvato (`getimagesize`); i tentativi ridotti
+  scalano entrambi i lati dello stesso fattore (un minimo su un solo lato
+  alterava il rapporto d'aspetto e con esso l'area coperta).
+- **[python-service/app/core/diff.py](python-service/app/core/diff.py)** —
+  l'area delle regioni di cambiamento era misurata sul contorno
+  (`cv2.contourArea`: poligono per i centri dei pixel di bordo, buchi
+  riempiti) invece che in pixel: un blob di 49 px risultava 36 e spariva
+  dalle regioni, un cambiamento ad anello di 1032 px ne risultava 3754, più
+  dell'intera area cambiata. Ora componenti connesse, area = pixel reali
+  (verificato: 1032 + 400 + 49 = 1481 = totale). Stesso file: il filtro dei
+  blob scandiva l'immagine una volta per blob (13mila blob su 1024² = 6,7 s,
+  crescita quadratica fino a superare il timeout del PHP): ora una sola
+  passata vettoriale, 0,02 s. Kernel morfologico e iterazioni limitati
+  (valori enormi tentavano allocazioni di gigabyte).
+- **[python-service/app/core/registration.py](python-service/app/core/registration.py)** —
+  punti di controllo coincidenti o allineati producevano una trasformazione
+  nulla o degenere dichiarata "successo, confidenza 1.0": fra due immagini
+  *identiche* il confronto riportava l'89% di cambiamento. Ora vengono
+  rifiutati con una spiegazione, così come le trasformazioni che fanno
+  uscire quasi tutta la ripresa B. L'allineamento automatico di ripiego
+  (ECC affine) "convergeva" anche fra immagini senza relazione
+  (correlazione 0,17) e si dichiarava riuscito: ora serve una correlazione
+  di almeno 0,5, e la confidenza riportata è quella reale.
+- **[python-service/app/core/sentinelhub_client.py](python-service/app/core/sentinelhub_client.py)**,
+  **[core/spectral.py](python-service/app/core/spectral.py)** — la banda NIR
+  veniva salvata a 8 bit con guadagno 2,5: ogni riflettanza oltre 0,4
+  saturava, e la vegetazione sana sta proprio lì (NDVI 0,77 → 0,67;
+  0,05 → 0,00). Ora guadagno 1,0, registrato nei metadati della ripresa
+  (`nir_gain`) così NDWI e falso colore riportano vero colore e NIR alla
+  stessa scala anche per file più vecchi
+  ([api/spectral_view.php](webapp/public/api/spectral_view.php)).
+- **[python-service/app/core/utils.py](python-service/app/core/utils.py)**,
+  **[routers/analysis.py](python-service/app/routers/analysis.py)** — le
+  zone senza dati (trasparenza / `dataMask` Sentinel) diventavano nero e
+  venivano contate come cambiamento: ora sono escluse, anche su B dopo
+  l'allineamento (stessa trasformazione applicata alla maschera). I PNG a
+  16 bit con dati a 12 bit risultavano quasi neri: ora scalati sulla
+  profondità effettiva. Metodo di differenza sconosciuto rifiutato (prima
+  ricadeva in silenzio su SSIM).
+- **[webapp/public/api/compare.php](webapp/public/api/compare.php)** — se
+  solo B ha una scala nota, ora viene riportata sulla griglia di A.
+
+### Geometria delle riprese ruotate ed export geografico
+
+- **[webapp/src/ImageRotateCrop.php](webapp/src/ImageRotateCrop.php)** — la
+  mappa ruota il rettangolo nelle proporzioni reali del terreno, il server
+  lo ruotava nello spazio dei gradi (un grado di longitudine è cos(lat)
+  volte uno di latitudine): la ripresa salvata era tagliata in obliquo e
+  non coincideva con il poligono mostrato — a 37–60° di latitudine 2–4
+  angoli del poligono cadevano fuori dall'area scaricata. Ora l'immagine
+  viene ricampionata a pixel quadrati in metri prima di ruotarla. Test a
+  livello di pixel: proporzioni esatte e angoli al loro posto a ogni
+  latitudine. Le nuove riprese ruotate sono marcate `rotation_model:
+  metric`; le precedenti restano gestite col loro modello.
+- **[webapp/src/Capture.php](webapp/src/Capture.php)** — nuovi
+  `resolveGeoRef()`, `geoMetaForDerived()`, `fracToLonLat()`: le riprese
+  derivate (copie migliorate, "salva come nuova ripresa", ritagli) ricevono
+  area, rotazione e data della sorgente — i ritagli la propria area esatta,
+  calcolata dal rettangolo inviato da
+  [analyze.js](webapp/public/assets/js/analyze.js) — invece di ricadere
+  sull'area dell'intero studio (export spostati anche di chilometri,
+  misure sbagliate sulle copie di riprese ruotate, data persa). Usati da
+  [upload_capture.php](webapp/public/api/upload_capture.php),
+  [enhance_capture.php](webapp/public/api/enhance_capture.php),
+  [save_enhanced_capture.php](webapp/public/api/save_enhanced_capture.php),
+  [analyze_capture.php](webapp/public/analyze_capture.php).
+- **[webapp/public/api/export_geo.php](webapp/public/api/export_geo.php)** —
+  conversione in coordinate geografiche ora esatta anche per le riprese
+  ruotate (verificato: angoli dell'immagine = poligono sulla mappa con meno
+  di 0,5 m di scarto); l'avviso "approssimata" resta solo per le immagini
+  caricate a mano senza alcun riferimento proprio.
+
+### Pianificazioni, download, dati
+
+- **[webapp/src/ScheduledDownload.php](webapp/src/ScheduledDownload.php)** —
+  `last_run_at` viene scritto a fine esecuzione, qualche secondo dopo
+  l'orario del cron: il giro del giorno dopo trovava la pianificazione
+  "dovuta fra pochi secondi" e la saltava. Una pianificazione giornaliera
+  girava ogni 30 ore (visibile nel log di produzione). Tolleranza di 30
+  minuti, ben sotto l'intervallo del cron.
+- **[webapp/src/CaptureFetcher.php](webapp/src/CaptureFetcher.php)**,
+  **[PythonServiceClient.php](webapp/src/PythonServiceClient.php)**,
+  client Esri/Sentinel — timeout dedicato ai download (180 s) e tetti di
+  tempo del servizio tarati sotto di esso: prima il PHP poteva rinunciare
+  mentre il servizio scriveva ancora i file, rimasti orfani. Errori di rete
+  tradotti in messaggi chiari; un errore sulla sola banda NIR non fa più
+  perdere il vero colore già scaricato; file rimossi se il ritaglio ruotato
+  fallisce.
+- **[webapp/public/new_study.php](webapp/public/new_study.php)** — l'area
+  dello studio veniva salvata senza controlli ("10,23" → 10, testo → 0,
+  min/max invertiti accettati). Ora validata, virgola decimale accettata,
+  modulo che conserva i valori dopo un errore.
+- **[webapp/public/api/upload_capture.php](webapp/public/api/upload_capture.php)**,
+  **[core/utils.py](python-service/app/core/utils.py)**,
+  **[app/main.py](python-service/app/main.py)** — tetto di 25 megapixel alle
+  immagini elaborate (SSIM in float64 su immagini enormi poteva esaurire la
+  memoria).
+
+### Condivisione
+
+- **[webapp/public/api/share.php](webapp/public/api/share.php)**,
+  **[study.js](webapp/public/assets/js/study.js)** — dalle viste "Originale
+  A/B" Telegram riceveva in silenzio l'overlay: ora le viste sono mappate
+  sui file corretti, "Prima/Dopo" e viste sconosciute vengono rifiutate con
+  un messaggio. Il "Riepilogo di studio" pubblicava l'ultimo confronto
+  *eseguito*, anche esplorativo: ora l'ultimo salvato in libreria, come
+  promesso ([Comparison::latestSaved](webapp/src/Comparison.php),
+  [study.php](webapp/public/study.php)). Un errore nel registro dopo
+  l'invio non si trasforma più in un errore per l'analista (che avrebbe
+  ripubblicato).
+
+### Sicurezza e robustezza
+
+- **[fix_permissions.sh](fix_permissions.sh)** — database e storage erano
+  664/775: il database (token Telegram, credenziali, hash della password)
+  era leggibile da qualunque utente della macchina. Ora 660/2770, e i file
+  sensibili non passano più dal 644 generico.
+- **[webapp/public/alerts.php](webapp/public/alerts.php)**,
+  **[logout.php](webapp/public/logout.php)**,
+  **[partials/nav.php](webapp/public/partials/nav.php)** — "segna tutti come
+  letti" e logout erano semplici link GET, attivabili da un altro sito (il
+  cookie SameSite=Lax viaggia sulle navigazioni GET): ora solo POST.
+- **[webapp/src/Auth.php](webapp/src/Auth.php)** — l'hash fittizio usato
+  per gli utenti inesistenti aveva costo 10 contro 12: 75 ms contro 320 ms,
+  e i tempi rivelavano quali username esistono. Ora stesso costo.
+- **[webapp/src/bootstrap.php](webapp/src/bootstrap.php)** — le eccezioni non
+  gestite negli endpoint `api/` restituivano un 500 vuoto: ora JSON con un
+  messaggio (dettagli solo nel log).
+- **[python-service/app/main.py](python-service/app/main.py)**,
+  **[deps.py](python-service/app/deps.py)**,
+  **[core/utils.py](python-service/app/core/utils.py)** — errori delle
+  immagini e di OpenCV restituiti come 400/422 con messaggio invece di 500
+  opachi; percorso vuoto o "." (radice dello storage) rifiutato; chiave non
+  ASCII → 401 invece di 500.
+- **[deploy_apache.sh](deploy_apache.sh)** — in caso di errore il rollback
+  ripristinava l'ultimo backup di *ogni* vhost dell'elenco, anche di quelli
+  non toccati: ora solo i file modificati in quell'esecuzione.
+- **[webapp/public/settings.php](webapp/public/settings.php)** — kernel
+  morfologico predefinito sempre dispari (un valore pari veniva mostrato
+  ma lo slider inviava il successivo).
+
+### Vista di analisi ([analyze.js](webapp/public/assets/js/analyze.js), [analyze_capture.php](webapp/public/analyze_capture.php))
+
+- **Crash con misurazioni salvate**: su una ripresa senza scala (o al primo
+  accesso, se le annotazioni arrivavano prima dell'immagine) una misura
+  salvata faceva lanciare un'eccezione e **le liste di annotazioni e
+  misurazioni restavano vuote**, come se il lavoro fosse perso. Ora le
+  distanze vengono ricalcolate appena la scala è nota.
+- **Pannello "Anteprima" chiuso**: il canvas andava a 0×0, le misure
+  finivano nell'origine e la prima modifica salvava coordinate sbagliate.
+  Ora il canvas non viene mai azzerato e un `ResizeObserver` lo riallinea.
+- Annullare l'eliminazione di un poligono/polilinea lo ricreava come
+  rettangolo (invisibile ed esportato degenere).
+- Ctrl+Z mentre si scrive in un campo annullava l'ultima annotazione sul
+  server; Invio/Esc chiudevano il poligono in corso.
+- Misure appena disegnate: modifiche fatte prima della risposta del server
+  venivano scartate (e una misura annullata subito ricompariva).
+- Maniglie e soglie di trascinamento in pixel del canvas: a zoom 10× dieci
+  volte più grandi e misure brevi scartate. Ora costanti a schermo.
+- Pinch-zoom su touch in modalità Annota/Misura/Ritaglia creava elementi
+  spuri.
+- Selettori colore: una richiesta e una voce di annullamento per ogni
+  colore intermedio; ora solo alla conferma.
+- Ritaglio con livello incorporato: la barra di scala mancava quasi sempre
+  (era nell'angolo dell'immagine intera); ora ridisegnata sul frammento.
+  Anteprima coerente con l'opzione già spuntata.
+- Immagine salvata più chiara dell'anteprima (limiti fra i passi e spazio
+  colore dei filtri SVG allineati al browser).
+- Filtri avanzati e "Salva come nuova ripresa": niente doppi invii né
+  risposte superate che sovrascrivono lo stato.
+- Maniglie della sovrapposizione che sparivano dopo un ridisegno; opacità
+  letta ignorando l'inclinazione; annullare la rimozione mostrava
+  l'immagine sbagliata; barra di scala corretta sulle riprese ruotate
+  precedenti; mini-anteprima riportata nello schermo; `localStorage`
+  protetto.
+
+### Pagina studio e resto del frontend ([study.js](webapp/public/assets/js/study.js), [map-picker.js](webapp/public/assets/js/map-picker.js), [common.js](webapp/public/assets/js/common.js))
+
+- Editor dei punti di controllo: salvava sulla coppia selezionata al
+  momento del salvataggio, non su quella per cui era aperto; ora usa la
+  propria e si chiude se la selezione cambia.
+- Slider Prima/Dopo sotto zoom: la linea finiva lontano dal clic (a 2× un
+  clic al 75% la portava al bordo); listener che si accumulavano; larghezza
+  al ridimensionamento.
+- Un nuovo confronto ereditava il titolo del confronto aperto in
+  precedenza; un risultato arrivato dopo un cambio di selezione veniva
+  attribuito alla nuova coppia.
+- Pannelli filtri e indici spettrali: risposte fuori ordine potevano far
+  salvare "Enhanced: Y" con i pixel di X.
+- Doppi invii su download, caricamenti e pianificazioni; soglia duplicati
+  0% trasformata in 0,5%; annotazioni sui risultati mostrate come salvate
+  anche se il server le rifiutava; attesa senza fine se un'immagine non si
+  caricava; annotazioni della vista precedente mostrate dopo un cambio
+  rapido.
+- Selettore mappa: longitudini oltre ±180° disegnando su una "copia" del
+  mondo; etichetta della rotazione non allineata al valore ripristinato
+  dal browser.
+- Pannelli collassabili: `localStorage` protetto, chiave senza contatori
+  (la scelta veniva dimenticata al cambiare di "Riprese (N)"), titolo del
+  pannello indici spettrali che cancellava l'icona.
+
+### README
+
+- **[README.md](README.md)** — aggiornato allo stato reale: mappa Esri World
+  Street Map e ricerca luogo (introdotte il 13/09 ma mai riportate qui),
+  Leaflet incluso nel progetto, rotazione nelle proporzioni reali, export
+  esatto, Gemini fra le destinazioni del ritaglio, affidabilità
+  dell'allineamento, banda NIR, manutenzione dello storage, sezione
+  Sicurezza riscritta.
+
+**Nota per chi aggiorna un'installazione esistente**: rieseguire
+`fix_permissions.sh` e riavviare il servizio di analisi. Le riprese Esri
+scaricate prima di questa versione dopo un tentativo a risoluzione ridotta
+possono avere dimensioni registrate errate: confrontare `width`/`height`
+nella tabella `captures` con le dimensioni reali dei file.
+
 ## 2026-09-20 — Ricerca inversa: aggiunto Google Gemini tra le destinazioni
 
 - **[webapp/public/analyze_capture.php](webapp/public/analyze_capture.php)**

@@ -18,9 +18,35 @@
  *
  * Convenzione rotazione: gradi, positivo = orario come visto sulla mappa
  * (stessa di CSS/canvas rotate() già usata per l'overlay in analyze.js).
+ *
+ * Spazio in cui avviene la rotazione: METRICO. L'immagine scaricata ha
+ * pixel quadrati in GRADI, ma un grado di longitudine è cos(latitudine)
+ * volte un grado di latitudine (a 37° è il 20% più corto). La mappa invece
+ * ruota il rettangolo in proiezione conforme, cioè con le proporzioni reali
+ * del terreno. Ruotare nello spazio dei gradi, come si faceva prima,
+ * equivaleva sul terreno a una rotazione più un taglio obliquo: l'area
+ * salvata non coincideva con il poligono mostrato sulla mappa (centinaia di
+ * metri di scarto agli angoli per un chilometro di lato, a 45° di latitudine
+ * e di rotazione) e il contenuto usciva deformato in diagonale. Ora
+ * l'immagine viene prima ricampionata a pixel quadrati in METRI, poi ruotata
+ * e ritagliata: il risultato è esattamente l'area vista sulla mappa, con
+ * pixel isotropi (stessa scala sui due assi).
  */
 final class ImageRotateCrop
 {
+    /** Valore dei metadati che identifica le riprese ruotate con questo
+     * modello (rotazione in spazio metrico, pixel isotropi). Le riprese
+     * ruotate prima della correzione ne sono prive: la loro immagine è
+     * ruotata nello spazio dei gradi. */
+    public const ROTATION_MODEL = 'metric';
+
+    /** Rapporto fra la lunghezza a terra di un grado di longitudine e di un
+     * grado di latitudine alla latitudine data. */
+    public static function lonScale(float $lat): float
+    {
+        return max(1e-6, cos(deg2rad($lat)));
+    }
+
     /**
      * Calcola il bounding box (non ruotato) che racchiude per intero il
      * rettangolo $rect ruotato di $rotationDeg attorno al proprio centro.
@@ -46,10 +72,15 @@ final class ImageRotateCrop
         $rad = deg2rad($rotationDeg);
         $cos = abs(cos($rad));
         $sin = abs(sin($rad));
-        $margin = 1.03; // +3% di sicurezza (arrotondamenti + approssimazione piatta)
+        $margin = 1.03; // +3% di sicurezza (arrotondamenti del ritaglio)
 
-        $encHalfLon = ($halfLon * $cos + $halfLat * $sin) * $margin;
-        $encHalfLat = ($halfLon * $sin + $halfLat * $cos) * $margin;
+        // Rotazione in spazio metrico (vedi intestazione della classe): la
+        // longitudine va prima portata alla stessa scala della latitudine.
+        $k = self::lonScale($cLat);
+        $halfX = $halfLon * $k;
+        $encHalfX = ($halfX * $cos + $halfLat * $sin) * $margin;
+        $encHalfLat = ($halfX * $sin + $halfLat * $cos) * $margin;
+        $encHalfLon = $encHalfX / $k;
 
         return [$cLon - $encHalfLon, $cLat - $encHalfLat, $cLon + $encHalfLon, $cLat + $encHalfLat];
     }
@@ -135,19 +166,42 @@ final class ImageRotateCrop
             throw new RuntimeException('Impossibile decodificare l\'immagine scaricata per il ritaglio ruotato.');
         }
 
-        $fw = imagesx($src);
-        $fh = imagesy($src);
-        $pxPerLonX = $fw / ($fetchedBbox[2] - $fetchedBbox[0]);
-        $pxPerLatY = $fh / ($fetchedBbox[3] - $fetchedBbox[1]);
+        $isPng = str_starts_with(strtolower($format), 'png');
 
         $cLon = ($rect[0] + $rect[2]) / 2;
         $cLat = ($rect[1] + $rect[3]) / 2;
+        $k = self::lonScale($cLat);
+
+        // 1) Ricampionamento a pixel quadrati IN METRI (vedi intestazione):
+        //    in "unità di latitudine" un pixel copre dx = Δlon·k/larghezza in
+        //    orizzontale e dy = Δlat/altezza in verticale. Si adotta il più
+        //    piccolo dei due come passo comune, così nessun asse perde
+        //    risoluzione.
+        $fw0 = imagesx($src);
+        $fh0 = imagesy($src);
+        $unitX = ($fetchedBbox[2] - $fetchedBbox[0]) * $k / $fw0;
+        $unitY = ($fetchedBbox[3] - $fetchedBbox[1]) / $fh0;
+        $unit = min($unitX, $unitY);
+        $fw = max(1, (int) round($fw0 * $unitX / $unit));
+        $fh = max(1, (int) round($fh0 * $unitY / $unit));
+        if ($fw !== $fw0 || $fh !== $fh0) {
+            $iso = imagecreatetruecolor($fw, $fh);
+            if ($isPng) {
+                imagealphablending($iso, false);
+                imagesavealpha($iso, true);
+            }
+            imagecopyresampled($iso, $src, 0, 0, 0, 0, $fw, $fh, $fw0, $fh0);
+            imagedestroy($src);
+            $src = $iso;
+        }
+        $pxPerLonX = $fw / ($fetchedBbox[2] - $fetchedBbox[0]);
+        $pxPerLatY = $fh / ($fetchedBbox[3] - $fetchedBbox[1]);
+
         $cxPx = ($cLon - $fetchedBbox[0]) * $pxPerLonX;
         $cyPx = ($fetchedBbox[3] - $cLat) * $pxPerLatY; // Y invertita: riga 0 = lat massima
         $halfWpx = ($rect[2] - $rect[0]) / 2 * $pxPerLonX;
         $halfHpx = ($rect[3] - $rect[1]) / 2 * $pxPerLatY;
 
-        $isPng = str_starts_with(strtolower($format), 'png');
         if ($isPng) {
             imagesavealpha($src, true);
             $bg = imagecolorallocatealpha($src, 0, 0, 0, 127);

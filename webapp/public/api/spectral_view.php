@@ -33,6 +33,9 @@ try {
         'true_color_path' => $capture['relative_path'],
         'nir_red_path' => $nirPath,
         'mode' => $mode,
+        // Guadagno della banda NIR salvata: assente sulle riprese scaricate
+        // prima che passasse a 1.0 (il servizio usa allora il valore storico).
+        'nir_gain' => isset($meta['nir_gain']) ? (float) $meta['nir_gain'] : null,
     ]);
 } catch (PythonServiceException $e) {
     respond_json(['error' => $e->getMessage()], 502);

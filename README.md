@@ -37,11 +37,12 @@ Il confronto non è una semplice sovrapposizione: le due immagini vengono prima 
 **Acquisizione riprese**
 - Caricamento manuale di immagini da qualunque fonte tu sia autorizzato a usare offline
 - Fetch automatico da **Copernicus/Sentinel-2** (storico, ~10m/pixel, con coppia Rosso+NIR scaricata a parte per gli indici spettrali) e **Esri World Imagery** (risoluzione più alta, ultima disponibile; retry automatico a risoluzione ridotta contro il limite di complessità del servizio) tramite le rispettive API ufficiali
-- Selettore d'area interattivo su mappa (Leaflet + OpenStreetMap), con basemap satellitare opzionale, e possibilità di **ruotare l'area** del ritaglio prima dello scaricamento
+- Selettore d'area interattivo su mappa (Leaflet, incluso nel progetto) con mappa stradale Esri World Street Map, basemap satellitare opzionale e **ricerca luogo** per nome (Nominatim/OpenStreetMap, solo su richiesta esplicita)
+- Possibilità di **ruotare l'area** prima dello scaricamento: la rotazione avviene nelle proporzioni reali del terreno, quindi la ripresa salvata coincide esattamente con il poligono mostrato sulla mappa, a qualunque latitudine
 - **Scaricamento pianificato**: controllo periodico di un'area/fonte, scarto automatico dei duplicati (soglia configurabile) e **alert** all'arrivo di una ripresa diversa; pagina di gestione centralizzata di tutte le pianificazioni con badge d'errore nel menu
 
 **Analisi e change detection**
-- Allineamento automatico (feature matching ORB/RANSAC + rifinitura sub-pixel ECC) o **manuale** tramite editor di punti di controllo
+- Allineamento automatico (feature matching ORB/RANSAC + rifinitura sub-pixel ECC) o **manuale** tramite editor di punti di controllo. Quando l'allineamento non è affidabile il motore lo dichiara (metodo "none") invece di forzare un risultato, e punti di controllo coincidenti o allineati vengono rifiutati con una spiegazione
 - Confronto per differenza SSIM (robusta a luce/contrasto) o differenza assoluta
 - Soglia di sensibilità manuale o automatica (Otsu), con preset rapidi (bassa/media/alta)
 - Pulizia morfologica e filtro per area minima, per scartare rumore fotografico e falsi positivi
@@ -49,7 +50,8 @@ Il confronto non è una semplice sovrapposizione: le due immagini vengono prima 
 - Viste multiple: overlay differenze, heatmap, contorni (edge detection), maschera binaria, slider prima/dopo
 - Statistiche: superficie variata (%), numero di regioni e — quando la scala reale è nota — **aree in m²/km²** (totale variato, regione più estesa, area di ogni regione)
 - Regioni di cambiamento rilevate automaticamente, numerate, cliccabili (zoom automatico sulla regione) e convertibili in annotazioni con un click
-- **Indici spettrali** per le riprese Sentinel Hub con banda NIR: NDVI (vegetazione), NDWI (acqua), falso colore infrarosso
+- **Indici spettrali** per le riprese Sentinel Hub con banda NIR: NDVI (vegetazione), NDWI (acqua), falso colore infrarosso. La banda NIR è scaricata senza saturazione, così l'NDVI della vegetazione densa non viene compresso
+- Le zone senza dati delle riprese (trasparenza / `dataMask` Sentinel) sono escluse dal calcolo del cambiamento
 
 **Vista di analisi ripresa singola**
 - Zoom/pan sincronizzato tra originale e copia di lavoro (rotellina/pulsanti, pinch-to-zoom e trascinamento su touch)
@@ -59,16 +61,16 @@ Il confronto non è una semplice sovrapposizione: le due immagini vengono prima 
 - **Stima altezza da ombra** (elevazione solare + lunghezza dell'ombra)
 - **Annotazioni vettoriali**: rettangolo, polilinea, poligono (vertici trascinabili), con colore ed etichetta, persistenti
 - **Barra di scala** sovrapposta "come su una cartina": adattiva allo zoom nella vista live, fissa nell'export
-- **Ritaglio** di un frammento → ricerca inversa (Google Lens) e/o analisi con assistenti AI (Claude, ChatGPT, DeepSeek) per incolla manuale; il frammento si può salvare come nuova ripresa o condividere
+- **Ritaglio** di un frammento → ricerca inversa (Google Lens) e/o analisi con assistenti AI (Google Gemini, Claude, ChatGPT, DeepSeek) per incolla manuale; il frammento si può salvare come nuova ripresa (con la propria area geografica esatta) o condividere
 - **Livello annotazioni/misurazioni/scala incorporabile a scelta** nelle immagini salvate/condivise
-- Salva come nuova ripresa (cuoce le regolazioni nei pixel), con **ereditarietà della scala reale** dalla sorgente (misurazioni corrette anche su ritagli e riprese migliorate)
+- Salva come nuova ripresa (cuoce le regolazioni nei pixel), con **ereditarietà di scala, area geografica, rotazione e data** dalla sorgente (misurazioni ed export corretti anche su ritagli e riprese migliorate)
 - Mini-anteprima flottante durante lo scroll (spostabile, ridimensionabile, ricordata); pannelli collassabili in tutta la piattaforma
 
 **Organizzazione e output**
 - Annotazioni e misurazioni persistenti, disegnabili direttamente sulle immagini
 - Libreria degli studi salvati, con ricerca
 - **Condivisione** manuale di ripresa/confronto/riepilogo studio su Telegram (bot) o X/Twitter (finestra di composizione), con registro di controllo — nessuna pubblicazione automatica, mai agganciata al motore di scaricamento
-- **Export georeferenziato KML/GeoJSON** di annotazioni e misurazioni (per Google Earth / QGIS)
+- **Export georeferenziato KML/GeoJSON** di annotazioni e misurazioni (per Google Earth / QGIS), esatto anche per riprese ruotate, ritagli e copie derivate
 - Export per singola immagine, per confronto (ZIP con immagini + report HTML/JSON) o per l'intera libreria
 - Tooltip esplicativi su ogni parametro/filtro
 
@@ -106,7 +108,7 @@ Le tile satellitari di **Google Maps/Earth non sono scaricabili in blocco** per 
 
 Per immagini a risoluzione ancora più alta puoi sempre usare il **caricamento manuale**, con qualunque fonte tu sia legalmente autorizzato a usare offline (dataset pubblici come USGS/NAIP per gli USA, riprese aeree proprie, immagini acquistate da provider commerciali con licenza per uso offline, ecc.).
 
-Il selettore mappa integrato usa tile **OpenStreetMap** per la navigazione (uso conforme alla relativa policy: solo visualizzazione interattiva in-browser, nessun download bulk) e, opzionalmente, tile **Esri World Imagery** come basemap satellitare per il solo riconoscimento visivo dell'area — anche qui senza alcun download/archiviazione delle tile stesse.
+Il selettore mappa integrato usa tile **Esri World Street Map** per la navigazione (i tile OSM anonimi vengono spesso limitati per uso non banale) e, opzionalmente, tile **Esri World Imagery** come basemap satellitare per il solo riconoscimento visivo dell'area — in entrambi i casi solo visualizzazione interattiva, senza alcun download/archiviazione delle tile. La **ricerca luogo** interroga [Nominatim](https://nominatim.org/) (OpenStreetMap) solo quando l'analista preme Invio o la lente, mai mentre digita, nel rispetto della sua policy d'uso. La libreria Leaflet è inclusa nel progetto e servita localmente: aprire una mappa non comunica nulla a CDN di terze parti.
 
 ## Requisiti
 
@@ -127,7 +129,7 @@ cd OrbitalEye
 bash fix_permissions.sh
 ```
 
-Non serve sudo: imposta proprietario/gruppo su tutto il progetto (auto-rileva il tuo utente; passa `bash fix_permissions.sh utente gruppo` per specificarli esplicitamente), rende scrivibili da webserver e servizio Python le cartelle condivise (`storage/*`, `webapp/data/`), restringe i file con segreti e isola il virtualenv Python.
+Non serve sudo: imposta proprietario/gruppo su tutto il progetto (auto-rileva il tuo utente; passa `bash fix_permissions.sh utente gruppo` per specificarli esplicitamente), rende scrivibili da webserver e servizio Python le cartelle condivise (`storage/*`, `webapp/data/`) senza lasciarle leggibili ad altri utenti della macchina (il database contiene token e credenziali), restringe i file con segreti e isola il virtualenv Python.
 
 ### 2. Servizio Python (motore di analisi)
 
@@ -225,7 +227,7 @@ Nella vista di analisi ripresa singola sono disponibili anche **misurazioni** di
 ### Condivisione ed export
 
 - **Condivisione** (Telegram / X) di una ripresa, di un confronto o del riepilogo di uno studio: gesto sempre manuale e previewabile, con didascalia modificabile e registro di controllo. Nessun contenuto viene mai pubblicato automaticamente.
-- **Export georeferenziato KML / GeoJSON** di annotazioni e misurazioni, pronto per Google Earth / QGIS.
+- **Export georeferenziato KML / GeoJSON** di annotazioni e misurazioni, pronto per Google Earth / QGIS. La conversione in coordinate geografiche è esatta anche per le riprese ruotate e per ritagli e copie derivate (che conservano l'area geografica della sorgente); solo per un'immagine caricata a mano senza alcun riferimento viene usata, con un avviso esplicito, l'area dello studio.
 - **Singola immagine**: download diretto con nome file descrittivo.
 - **Confronto**: ZIP con le due riprese originali, le immagini di risultato, un report HTML autonomo (apribile offline, con tutti i parametri/statistiche/regioni/annotazioni) e gli stessi dati in JSON.
 - **Libreria**: export massivo (tutta la libreria, il risultato di una ricerca, o una selezione) in un unico ZIP con una sottocartella per confronto.
@@ -241,15 +243,22 @@ Dalla pagina **Impostazioni** puoi modificare in qualunque momento, senza toccar
 Lo **scaricamento pianificato** richiede una voce cron che invochi
 periodicamente `webapp/cli/run_scheduled_downloads.php` (es. ogni 6 ore); le
 pianificazioni si creano e si gestiscono dall'interfaccia (sezione
-scaricamento di uno studio e pagina **Pianificazioni**).
+scaricamento di uno studio e pagina **Pianificazioni**). Lo stesso cron esegue
+anche la **manutenzione dello storage**: anteprime e confronti mai salvati
+vengono rimossi dopo 48 ore. Un'esecuzione alla volta (lock), e le
+pianificazioni rispettano la cadenza impostata anche se il giro precedente è
+terminato qualche secondo dopo l'orario del cron.
 
 ## Sicurezza
 
-- Autenticazione a sessione singola, password con hashing nativo PHP (`password_hash`)
-- File con segreti (`config.php`, `.env`, credenziali dinamiche) impostati a permessi `640`, mai serviti via HTTP
-- Protezione da path traversal su tutti gli endpoint che accettano percorsi file
+- Autenticazione a sessione singola, password con hashing nativo PHP (`password_hash`); blocco temporaneo dopo ripetuti tentativi falliti; tempi di risposta uguali per utenti esistenti e inesistenti
+- Cookie di sessione dedicato, `HttpOnly`, `SameSite=Lax`, `Secure` quando il sito è servito in HTTPS; le azioni che modificano dati (incluso "segna tutti come letti" e il logout) sono solo POST
+- File con segreti (`config.php`, `.env`, credenziali dinamiche) a permessi `640`; database e storage non leggibili da altri utenti della macchina (`fix_permissions.sh`), mai serviti via HTTP
+- Le immagini arrivano al browser solo tramite `media.php`, limitato alle cartelle delle riprese e ai formati immagine: file di configurazione e credenziali non sono raggiungibili nemmeno da una sessione autenticata
+- Protezione da path traversal su tutti gli endpoint che accettano percorsi file; testo inserito dall'analista (etichette, note, colori, titoli) sempre inserito come testo, mai come HTML
 - `storage/` e le altre cartelle sensibili sono protette da `.htaccess` (`Require all denied`) indipendentemente da come è configurato il document root
-- Il servizio Python richiede una chiave condivisa (`X-OrbitalEye-Key`) su ogni richiesta ed è pensato per restare su `127.0.0.1`, mai esposto direttamente
+- Il servizio Python richiede una chiave condivisa (`X-OrbitalEye-Key`, confrontata a tempo costante; il valore segnaposto dell'esempio viene rifiutato), non espone CORS ed è pensato per restare su `127.0.0.1`, mai esposto direttamente; parametri e dimensioni delle immagini sono limitati prima di arrivare a OpenCV
+- Le API rispondono sempre in JSON, anche in caso di sessione scaduta (401) o errore interno, e l'interfaccia segnala ogni salvataggio non riuscito invece di perderlo in silenzio
 
 ## Struttura del progetto
 
@@ -259,8 +268,9 @@ Vedi [Architettura](#architettura) sopra per l'albero delle cartelle principali.
 
 - [FastAPI](https://fastapi.tiangolo.com/) / [Uvicorn](https://www.uvicorn.org/) — servizio di analisi
 - [OpenCV](https://opencv.org/) / [NumPy](https://numpy.org/) — elaborazione immagini
-- [Leaflet](https://leafletjs.com/) — selettore mappa interattivo
-- [OpenStreetMap](https://www.openstreetmap.org/) — tile di navigazione della mappa
+- [Leaflet](https://leafletjs.com/) — selettore mappa interattivo (incluso in `webapp/public/assets/leaflet/`)
+- [Esri World Street Map](https://www.esri.com/) — tile di navigazione della mappa
+- [Nominatim](https://nominatim.org/) / [OpenStreetMap](https://www.openstreetmap.org/) — ricerca luogo
 - [Copernicus Data Space Ecosystem](https://dataspace.copernicus.eu/) — imagery Sentinel-2
 - [Esri World Imagery](https://www.esri.com/) — imagery satellitare ad alta risoluzione
 

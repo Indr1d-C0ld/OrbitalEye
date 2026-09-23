@@ -23,6 +23,7 @@ contrasto molto diversi, sia ORB che ECC lavorano su versioni delle immagini
 normalizzate con CLAHE (vedi `_clahe_normalize`) invece che sui grigi grezzi.
 """
 from dataclasses import dataclass, field
+from typing import Callable
 
 import cv2
 import numpy as np
@@ -39,6 +40,10 @@ class RegistrationResult:
     warp_matrix: list = field(default_factory=list)
     matched_features: int = 0
     confidence: float = 0.0
+    # Applica a un'immagine a un canale (es. la maschera dei dati validi di
+    # B) la STESSA trasformazione geometrica usata per allineare B su A, così
+    # le zone senza dati di B finiscono esattamente dove finisce B.
+    warp_like: Callable[[np.ndarray], np.ndarray] | None = None
 
 
 def _erode_valid_mask(mask: np.ndarray, margin: int = 4) -> np.ndarray:
@@ -109,12 +114,34 @@ def _ecc_refine(gray_a: np.ndarray, gray_b_warped: np.ndarray, warp_mode=cv2.MOT
     warp_matrix = np.eye(2, 3, dtype=np.float32)
     criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 200, 1e-6)
     try:
-        _, warp_matrix = cv2.findTransformECC(
+        cc, warp_matrix = cv2.findTransformECC(
             _clahe_normalize(gray_a), _clahe_normalize(gray_b_warped), warp_matrix, warp_mode, criteria, None, 5
         )
-        return warp_matrix, True
+        return warp_matrix, True, float(cc)
     except cv2.error:
-        return warp_matrix, False
+        return warp_matrix, False, 0.0
+
+
+# Correlazione ECC minima perché l'allineamento di ripiego sia considerato
+# riuscito. ECC "converge" quasi sempre, anche fra immagini senza alcuna
+# relazione: su due texture scorrelate trovava una deformazione del 10% con
+# correlazione 0.17 e la dichiarava riuscita, per poi calcolare il
+# cambiamento su un allineamento privo di senso. Coppie davvero sovrapponibili
+# stanno ben oltre 0.9.
+ECC_MIN_CORRELATION = 0.5
+
+# Quota minima dell'immagine che deve restare coperta da dati reali dopo il
+# warp: sotto questa soglia la trasformazione è degenerata (punti allineati,
+# omografia che collassa l'immagine) e il confronto non avrebbe senso.
+MIN_VALID_COVERAGE = 0.2
+
+
+def _fit(ch: np.ndarray, w: int, h: int) -> np.ndarray:
+    return cv2.resize(ch, (w, h), interpolation=cv2.INTER_NEAREST) if ch.shape[:2] != (h, w) else ch
+
+
+def _coverage(valid_mask: np.ndarray) -> float:
+    return float(np.count_nonzero(valid_mask)) / float(valid_mask.size or 1)
 
 
 def register_images(img_a: np.ndarray, img_b: np.ndarray) -> RegistrationResult:
@@ -145,7 +172,7 @@ def register_images(img_a: np.ndarray, img_b: np.ndarray) -> RegistrationResult:
             borderMode=cv2.BORDER_CONSTANT, borderValue=0,
         )
         gray_aligned = to_gray(aligned)
-        warp2x3, ecc_ok = _ecc_refine(gray_a, gray_aligned)
+        warp2x3, ecc_ok, _cc = _ecc_refine(gray_a, gray_aligned)
         if ecc_ok:
             aligned = cv2.warpAffine(
                 aligned, warp2x3, (w, h), flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP,
@@ -156,7 +183,24 @@ def register_images(img_a: np.ndarray, img_b: np.ndarray) -> RegistrationResult:
                 borderMode=cv2.BORDER_CONSTANT, borderValue=0,
             )
         confidence = min(1.0, inliers / 200.0)
+        if _coverage(valid_mask) < MIN_VALID_COVERAGE:
+            # Omografia degenerata nonostante gli inlier: meglio ammettere
+            # di non aver allineato che confrontare un'immagine collassata.
+            return RegistrationResult(
+                warp_like=lambda ch: _fit(ch, w, h),
+                aligned=img_b_resized, method="none", success=False,
+                valid_mask=full_mask, matched_features=inliers, confidence=0.0,
+            )
+        def warp_orb(ch, _h=homography, _m=warp2x3, _ecc=ecc_ok):
+            out = cv2.warpPerspective(_fit(ch, w, h), _h, (w, h), flags=cv2.INTER_NEAREST,
+                                      borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+            if _ecc:
+                out = cv2.warpAffine(out, _m, (w, h), flags=cv2.INTER_NEAREST | cv2.WARP_INVERSE_MAP,
+                                     borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+            return out
+
         return RegistrationResult(
+            warp_like=warp_orb,
             aligned=aligned,
             method="orb+ecc" if ecc_ok else "orb",
             success=True,
@@ -174,8 +218,8 @@ def register_images(img_a: np.ndarray, img_b: np.ndarray) -> RegistrationResult:
     # da solo non può correggere differenze di scala/inclinazione tra
     # riprese della stessa area provenienti da fonti diverse, ed è la causa
     # più probabile dell'allineamento "storto" osservato in questi casi.
-    warp2x3, ecc_ok = _ecc_refine(gray_a, gray_b, warp_mode=cv2.MOTION_AFFINE)
-    if ecc_ok:
+    warp2x3, ecc_ok, cc = _ecc_refine(gray_a, gray_b, warp_mode=cv2.MOTION_AFFINE)
+    if ecc_ok and cc >= ECC_MIN_CORRELATION:
         aligned = cv2.warpAffine(
             img_b_resized, warp2x3, (w, h), flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP,
             borderMode=cv2.BORDER_CONSTANT, borderValue=0,
@@ -184,17 +228,24 @@ def register_images(img_a: np.ndarray, img_b: np.ndarray) -> RegistrationResult:
             full_mask, warp2x3, (w, h), flags=cv2.INTER_NEAREST | cv2.WARP_INVERSE_MAP,
             borderMode=cv2.BORDER_CONSTANT, borderValue=0,
         )
-        return RegistrationResult(
-            aligned=aligned,
-            method="ecc-affine",
-            success=True,
-            valid_mask=_erode_valid_mask(valid_mask),
-            warp_matrix=warp2x3.tolist(),
-            matched_features=inliers,
-            confidence=0.4,
-        )
+        if _coverage(valid_mask) >= MIN_VALID_COVERAGE:
+            return RegistrationResult(
+                warp_like=lambda ch, _m=warp2x3: cv2.warpAffine(
+                    _fit(ch, w, h), _m, (w, h), flags=cv2.INTER_NEAREST | cv2.WARP_INVERSE_MAP,
+                    borderMode=cv2.BORDER_CONSTANT, borderValue=0),
+                aligned=aligned,
+                method="ecc-affine",
+                success=True,
+                valid_mask=_erode_valid_mask(valid_mask),
+                warp_matrix=warp2x3.tolist(),
+                matched_features=inliers,
+                # La correlazione raggiunta è una misura reale della bontà
+                # dell'allineamento (prima era un 0.4 fisso).
+                confidence=round(max(0.0, min(1.0, cc)), 3),
+            )
 
     return RegistrationResult(
+        warp_like=lambda ch: _fit(ch, w, h),
         aligned=img_b_resized,
         method="none",
         success=False,
@@ -245,6 +296,27 @@ def register_with_points(
     # conseguenza prima di stimare la trasformazione.
     pts_b = np.float32([[p[2] * scale_x, p[3] * scale_y] for p in points])
 
+    # Punti coincidenti o allineati lungo una retta non determinano una
+    # trasformazione: getAffineTransform restituisce una matrice nulla (tutta
+    # l'immagine B diventa il colore di un solo pixel) e findHomography senza
+    # RANSAC una trasformazione che collassa l'immagine — in entrambi i casi
+    # prima si dichiarava "successo, confidenza 1.0" e il confronto riportava
+    # cambiamenti enormi anche fra due immagini identiche.
+    diag = float(np.hypot(w, h))
+    for label, pts in (("A", pts_a), ("B", pts_b)):
+        centered = pts - pts.mean(axis=0)
+        singular = np.linalg.svd(centered, compute_uv=False)
+        # Il secondo valore singolare, diviso per √n, è lo scarto quadratico
+        # medio dei punti dalla retta che meglio li approssima: sotto lo 0,5%
+        # della diagonale dell'immagine (≈7 px su 1024²) sono di fatto
+        # allineati e la trasformazione non è determinata.
+        if len(singular) < 2 or singular[1] / np.sqrt(len(points)) < 0.005 * diag:
+            raise ValueError(
+                f"I punti di controllo su {label} sono troppo vicini tra loro o allineati "
+                "lungo una linea: sceglili ben distribuiti sull'immagine (per esempio "
+                "vicino ai quattro angoli)."
+            )
+
     full_mask = np.full((h, w), 255, dtype=np.uint8)
 
     if len(points) == 3:
@@ -259,6 +331,9 @@ def register_with_points(
         )
         method = "manual-affine"
         warp_out = matrix.tolist()
+        warp_like = lambda ch, _m=matrix: cv2.warpAffine(  # noqa: E731
+            _fit(ch, w, h), _m, (w, h), flags=cv2.INTER_NEAREST,
+            borderMode=cv2.BORDER_CONSTANT, borderValue=0)
     else:
         ransac_method = cv2.RANSAC if len(points) > 4 else 0
         matrix, _inlier_mask = cv2.findHomography(pts_b, pts_a, ransac_method, 5.0)
@@ -278,6 +353,15 @@ def register_with_points(
         )
         method = "manual-homography"
         warp_out = matrix.tolist()
+        warp_like = lambda ch, _m=matrix: cv2.warpPerspective(  # noqa: E731
+            _fit(ch, w, h), _m, (w, h), flags=cv2.INTER_NEAREST,
+            borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+
+    if _coverage(valid_mask) < MIN_VALID_COVERAGE:
+        raise ValueError(
+            "La trasformazione ricavata da questi punti fa uscire quasi tutta la ripresa B "
+            "dall'area di A: controlla che ogni coppia indichi davvero lo stesso punto nelle due immagini."
+        )
 
     return RegistrationResult(
         aligned=aligned,
@@ -287,4 +371,5 @@ def register_with_points(
         warp_matrix=warp_out,
         matched_features=len(points),
         confidence=1.0,
+        warp_like=warp_like,
     )

@@ -102,6 +102,123 @@ final class Capture
     }
 
     /**
+     * Riferimento geografico di una ripresa: ['bbox' => [minLon,minLat,
+     * maxLon,maxLat], 'rotation' => gradi, 'rotation_model' => ...], oppure
+     * null se non è noto.
+     *
+     * Per una ripresa derivata creata prima che il riferimento venisse
+     * copiato nei suoi metadati si risale la catena source_capture_id fino a
+     * una ripresa che lo possiede. Non si ricade MAI sulla bbox dello studio:
+     * per una copia migliorata o un ritaglio quella bbox non descrive l'area
+     * dei pixel, e gli export KML/GeoJSON finivano spostati anche di
+     * chilometri (vedi api/export_geo.php).
+     */
+    public static function resolveGeoRef(array $capture): ?array
+    {
+        $seen = [];
+        while ($capture && !isset($seen[(int) $capture['id']])) {
+            $seen[(int) $capture['id']] = true;
+            $meta = json_decode($capture['meta_json'] ?? '', true);
+            if (!is_array($meta)) {
+                return null;
+            }
+            if (!empty($meta['bbox']) && is_array($meta['bbox']) && count($meta['bbox']) === 4) {
+                return [
+                    'bbox' => array_map('floatval', $meta['bbox']),
+                    'rotation' => (float) ($meta['rotation'] ?? 0),
+                    'rotation_model' => $meta['rotation_model'] ?? null,
+                ];
+            }
+            if (empty($meta['source_capture_id'])) {
+                return null;
+            }
+            // Solo le derivate "a immagine intera" condividono la griglia della
+            // sorgente: si riconoscono dalle dimensioni identiche. Un vecchio
+            // ritaglio (dimensioni diverse, nessuna bbox propria) non è
+            // georeferenziabile e viene lasciato tale, invece di ereditare per
+            // errore l'area dell'intera sorgente.
+            $source = self::find((int) $meta['source_capture_id']);
+            if (!$source || (int) $source['width'] !== (int) $capture['width']
+                || (int) $source['height'] !== (int) $capture['height']) {
+                return null;
+            }
+            $capture = $source;
+        }
+        return null;
+    }
+
+    /**
+     * Metadati geografici da assegnare a una ripresa derivata da $source:
+     * la stessa area (copie a immagine intera) o, se $crop è indicato, l'area
+     * esatta del ritaglio.
+     *
+     * @param array|null $crop Ritaglio in frazioni dell'immagine sorgente:
+     *   ['x' => ..., 'y' => ..., 'w' => ..., 'h' => ...], origine in alto a sinistra.
+     */
+    public static function geoMetaForDerived(array $source, ?array $crop = null): array
+    {
+        $geo = self::resolveGeoRef($source);
+        if (!$geo) {
+            return [];
+        }
+        $meta = [];
+        if ($geo['rotation'] && abs($geo['rotation']) >= 0.01) {
+            $meta['rotation'] = $geo['rotation'];
+            if ($geo['rotation_model']) {
+                $meta['rotation_model'] = $geo['rotation_model'];
+            }
+        }
+        if (!$crop) {
+            $meta['bbox'] = $geo['bbox'];
+            return $meta;
+        }
+        // Rettangolo "di base" del ritaglio: centrato nel centro del
+        // ritaglio, con la stessa rotazione della sorgente e lati pari a
+        // quelli del ritaglio (nel sistema ruotato della sorgente).
+        [$fx, $fy, $fw, $fh] = [$crop['x'], $crop['y'], $crop['w'], $crop['h']];
+        [$cLon, $cLat] = self::fracToLonLat($geo, $fx + $fw / 2, $fy + $fh / 2);
+        [$minLon, $minLat, $maxLon, $maxLat] = $geo['bbox'];
+        $halfLon = ($maxLon - $minLon) * $fw / 2;
+        $halfLat = ($maxLat - $minLat) * $fh / 2;
+        $meta['bbox'] = [$cLon - $halfLon, $cLat - $halfLat, $cLon + $halfLon, $cLat + $halfLat];
+        $meta['crop'] = ['x' => $fx, 'y' => $fy, 'w' => $fw, 'h' => $fh];
+        return $meta;
+    }
+
+    /**
+     * Converte un punto dell'immagine (frazioni 0..1, origine in alto a
+     * sinistra) in [lon, lat], dato il riferimento di resolveGeoRef().
+     *
+     * Ripresa non ruotata: interpolazione lineare sulla bbox (le immagini
+     * sono equirettangolari). Ripresa ruotata: il punto viene riportato nel
+     * sistema del rettangolo di base e ruotato attorno al suo centro, nello
+     * stesso spazio in cui è stata ruotata l'immagine — metrico per le
+     * riprese attuali (vedi ImageRotateCrop), dei gradi per quelle più
+     * vecchie. In entrambi i casi il risultato è esatto, non approssimato.
+     */
+    public static function fracToLonLat(array $geo, float $fx, float $fy): array
+    {
+        [$minLon, $minLat, $maxLon, $maxLat] = $geo['bbox'];
+        $rotation = (float) ($geo['rotation'] ?? 0);
+        if (abs($rotation) < 0.01) {
+            return [$minLon + $fx * ($maxLon - $minLon), $maxLat - $fy * ($maxLat - $minLat)];
+        }
+        $cLon = ($minLon + $maxLon) / 2;
+        $cLat = ($minLat + $maxLat) / 2;
+        $k = ($geo['rotation_model'] ?? null) === ImageRotateCrop::ROTATION_MODEL
+            ? ImageRotateCrop::lonScale($cLat)
+            : 1.0;
+        // Coordinate "schermo" (x verso est, y verso sud) nel sistema del
+        // rettangolo di base, in unità di latitudine.
+        $ex = ($fx - 0.5) * ($maxLon - $minLon) * $k;
+        $ey = ($fy - 0.5) * ($maxLat - $minLat);
+        $t = deg2rad($rotation); // positivo = orario, come sulla mappa
+        $x = $ex * cos($t) - $ey * sin($t);
+        $y = $ex * sin($t) + $ey * cos($t);
+        return [$cLon + $x / $k, $cLat - $y];
+    }
+
+    /**
      * Tutti i file su disco che appartengono a una ripresa: l'immagine
      * principale e, per le riprese Sentinel Hub, la coppia Rosso+NIR
      * scaricata a parte (usata da NDVI/NDWI/falso colore IR). Quest'ultima

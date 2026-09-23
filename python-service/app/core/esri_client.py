@@ -15,7 +15,10 @@ Esri richiede un account ArcGIS Developer (livello gratuito disponibile su
 developers.arcgis.com) e il rispetto dei relativi termini d'uso.
 """
 import json
+import time
 
+import cv2
+import numpy as np
 import requests
 
 from ..config import settings
@@ -93,13 +96,13 @@ def _adjust_bbox_to_aspect(bbox: list, width: int, height: int) -> list:
     return [min_lon, min_lat, max_lon, max_lat]
 
 
-def fetch_world_imagery(bbox: list, width: int = 1024, height: int = 1024) -> tuple[bytes, list]:
+def fetch_world_imagery(bbox: list, width: int = 1024, height: int = 1024) -> tuple[bytes, list, tuple[int, int]]:
     """bbox: [min_lon, min_lat, max_lon, max_lat] in EPSG:4326.
-    Ritorna una tupla (byte JPEG del composito World Imagery corrente per
-    l'area, bbox EFFETTIVAMENTE coperta dall'immagine — vedi
-    _adjust_bbox_to_aspect) — il chiamante deve salvare quest'ultima, non
-    quella originale, come riferimento geografico della ripresa (es. per il
-    calcolo della scala nello strumento di misura).
+    Ritorna (byte JPEG del composito World Imagery corrente per l'area, bbox
+    EFFETTIVAMENTE coperta dall'immagine — vedi _adjust_bbox_to_aspect —,
+    (larghezza, altezza) REALI dell'immagine restituita). Il chiamante deve
+    salvare queste ultime due, non i valori richiesti, come riferimento
+    geografico e dimensionale della ripresa.
 
     Il servizio non permette di scegliere una data storica specifica: la
     copertura è il mosaico "più recente disponibile" mantenuto da Esri, che
@@ -119,26 +122,43 @@ def fetch_world_imagery(bbox: list, width: int = 1024, height: int = 1024) -> tu
     if api_key:
         params_base["token"] = api_key
 
-    # Il servizio pubblico Esri World Imagery rifiuta silenziosamente
-    # (HTTP 500, corpo "Error: bytes") le richieste "size" oltre una soglia
-    # di complessità NON documentata — verificato empiricamente: non è un
-    # semplice limite per lato né per pixel totali (dipende anche da
-    # quanta risoluzione sorgente è realmente disponibile in quel punto),
-    # quindi non prevedibile a monte con una formula. Diventa frequente con
-    # la rotazione dell'area (vedi ImageRotateCrop.php), che su rettangoli
-    # molto allungati può richiedere risoluzioni elevate. Anziché fallire
-    # subito, si ritenta a risoluzione ridotta (stesso rapporto d'aspetto,
-    # quindi la stessa bbox già adattata resta valida) finché non va a buon
-    # fine o si rinuncia: il chiamante riceve comunque una ripresa, a una
-    # risoluzione magari inferiore al nominale invece di un errore secco.
-    cur_w, cur_h = width, height
+    # Esri rifiuta a volte le richieste troppo "complesse" (limite non
+    # documentato): si riprova a risoluzione ridotta. Entrambi i lati vengono
+    # ridotti dello STESSO fattore — un minimo applicato a un solo lato
+    # cambierebbe il rapporto d'aspetto, e ArcGIS allargherebbe di nuovo la
+    # bbox per conto suo, rendendo falsa quella che restituiamo.
+    # Tetto al tempo totale: il chiamante PHP ha un proprio timeout, e un
+    # file scritto dopo che il PHP ha già rinunciato resterebbe orfano.
+    deadline = time.monotonic() + 150
+    factor = 1.0
     last_status, last_body = None, None
     for _attempt in range(4):
-        resp = requests.get(EXPORT_URL, params={**params_base, "size": f"{cur_w},{cur_h}"}, timeout=60)
+        cur_w, cur_h = int(round(width * factor)), int(round(height * factor))
+        if min(cur_w, cur_h) < 64 or time.monotonic() > deadline:
+            break
+        try:
+            resp = requests.get(
+                EXPORT_URL,
+                params={**params_base, "size": f"{cur_w},{cur_h}"},
+                timeout=(10, 40),
+            )
+        except requests.RequestException as e:
+            last_status, last_body = "errore di rete", str(e)[:300]
+            factor *= 0.7
+            continue
         if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image"):
-            return resp.content, adjusted_bbox
+            # Dimensioni lette dall'immagine stessa, non da ciò che si è
+            # chiesto: sono quelle che la scala (metri/pixel) deve usare.
+            # Registrare quelle richieste dopo un tentativo ridotto dava
+            # distanze dimezzate e aree ridotte a un quarto.
+            decoded = cv2.imdecode(np.frombuffer(resp.content, np.uint8), cv2.IMREAD_UNCHANGED)
+            if decoded is None:
+                last_status, last_body = resp.status_code, "immagine non decodificabile"
+                factor *= 0.7
+                continue
+            real_h, real_w = decoded.shape[:2]
+            return resp.content, adjusted_bbox, (int(real_w), int(real_h))
         last_status, last_body = resp.status_code, resp.text[:300]
-        cur_w = max(128, int(cur_w * 0.7))
-        cur_h = max(128, int(cur_h * 0.7))
+        factor *= 0.7
 
     raise EsriError(f"Richiesta a Esri World Imagery fallita anche a risoluzione ridotta: {last_status} {last_body}")

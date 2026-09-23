@@ -85,8 +85,16 @@
     ) {
       $('#results-panel').style.display = 'none';
       state.currentComparison = null;
+      // Il titolo apparteneva al confronto mostrato: lasciato nel campo
+      // (nascosto), il confronto successivo lo ereditava in cronologia e
+      // in libreria.
+      const titleEl = $('#result-title');
+      if (titleEl) titleEl.value = '';
     }
 
+    if (typeof window.closeControlPointsEditorIfStale === 'function') {
+      window.closeControlPointsEditorIfStale();
+    }
     if (typeof window.refreshManualAlignStatus === 'function') {
       window.refreshManualAlignStatus();
     }
@@ -110,6 +118,10 @@
     uploadForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const status = $('#upload-status');
+      const submitBtn = uploadForm.querySelector('button[type="submit"]');
+      if (uploadForm.dataset.busy === '1') return;
+      uploadForm.dataset.busy = '1';
+      if (submitBtn) submitBtn.disabled = true;
       status.textContent = 'Caricamento in corso...';
       try {
         const res = await fetch('api/upload_capture.php', { method: 'POST', body: new FormData(uploadForm) });
@@ -119,6 +131,8 @@
         setTimeout(() => window.location.reload(), 400);
       } catch (err) {
         status.textContent = 'Errore: ' + err.message;
+        uploadForm.dataset.busy = '';
+        if (submitBtn) submitBtn.disabled = false;
       }
     });
   }
@@ -129,6 +143,12 @@
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const status = form.querySelector('.fetch-status');
+      // Un download Sentinel/Esri dura diversi secondi: un secondo clic (o
+      // Invio) ne avviava un altro, con una ripresa duplicata e quota spesa.
+      const submitBtn = form.querySelector('button[type="submit"], input[type="submit"]');
+      if (form.dataset.busy === '1') return;
+      form.dataset.busy = '1';
+      if (submitBtn) submitBtn.disabled = true;
       status.textContent = 'Richiesta al servizio di analisi in corso (può richiedere qualche secondo)...';
       const fd = new FormData(form);
       const payload = {
@@ -156,6 +176,8 @@
         setTimeout(() => window.location.reload(), 400);
       } catch (err) {
         status.textContent = 'Errore: ' + err.message;
+        form.dataset.busy = '';
+        if (submitBtn) submitBtn.disabled = false;
       }
     });
   });
@@ -224,6 +246,9 @@
     loadSchedules();
 
     saveBtn.addEventListener('click', async () => {
+      // Un doppio clic creava due pianificazioni, ognuna col proprio primo
+      // scaricamento di base.
+      if (saveBtn.disabled) return;
       const fd = new FormData(form);
       const intervalUnit = parseInt(panel.querySelector('.schedule-interval-unit').value, 10);
       const intervalValue = parseInt(panel.querySelector('.schedule-interval-value').value, 10) || 1;
@@ -233,7 +258,12 @@
         source,
         bbox: [fd.get('min_lon'), fd.get('min_lat'), fd.get('max_lon'), fd.get('max_lat')],
         interval_days: intervalValue * intervalUnit,
-        duplicate_threshold: (parseFloat(panel.querySelector('.schedule-threshold').value) || 0.5) / 100,
+        // 0 è un valore valido ("tieni ogni ripresa, anche identica"): con
+        // "|| 0.5" diventava in silenzio 0.5%.
+        duplicate_threshold: (() => {
+          const v = parseFloat(panel.querySelector('.schedule-threshold').value);
+          return (Number.isFinite(v) ? v : 0.5) / 100;
+        })(),
       };
       const rotationRaw = fd.has('rotation') ? parseFloat(fd.get('rotation')) : 0;
       if (rotationRaw) payload.rotation = rotationRaw;
@@ -244,6 +274,7 @@
       }
 
       status.textContent = 'Attivo la pianificazione e scarico la prima ripresa di base (può richiedere qualche secondo)...';
+      saveBtn.disabled = true;
       try {
         const res = await fetch('api/schedule_download.php', {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
@@ -258,6 +289,8 @@
         if (!data.warning) setTimeout(() => window.location.reload(), 600);
       } catch (err) {
         status.textContent = 'Errore: ' + err.message;
+      } finally {
+        saveBtn.disabled = false;
       }
     });
   });
@@ -377,8 +410,11 @@
         status.textContent = 'Completato.';
         renderResult({
           comparisonId: data.comparison_id,
-          captureAId: state.selectedA,
-          captureBId: state.selectedB,
+          // Gli id con cui è stata FATTA la richiesta, non la selezione
+          // attuale: se nel frattempo l'analista ha cambiato riprese, il
+          // risultato non deve essere attribuito alla nuova coppia.
+          captureAId: payload.capture_a_id,
+          captureBId: payload.capture_b_id,
           stats: data.stats,
           regions: data.regions,
           urls: data.urls,
@@ -500,11 +536,18 @@
       callback();
       return;
     }
-    const check = () => {
-      if (img.naturalWidth) callback();
-      else setTimeout(check, 30);
+    // Eventi load/error invece di un'attesa attiva senza fine: se
+    // l'immagine non si carica (file mancante) si rinuncia, invece di
+    // interrogarla ogni 30 ms per sempre ed eseguire poi tutte le richieste
+    // accumulate al primo caricamento successivo.
+    const onLoad = () => { cleanup(); callback(); };
+    const onError = () => cleanup();
+    const cleanup = () => {
+      img.removeEventListener('load', onLoad);
+      img.removeEventListener('error', onError);
     };
-    check();
+    img.addEventListener('load', onLoad);
+    img.addEventListener('error', onError);
   }
 
   function highlightRegionListItem(index) {
@@ -578,7 +621,14 @@
           notes,
         }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      // Prima la risposta non veniva controllata: un errore (sessione
+      // scaduta, confronto eliminato) mostrava comunque l'annotazione come
+      // salvata, che poi spariva al cambio di vista.
+      if (!res.ok || !data.id) {
+        alert('Annotazione non salvata: ' + (data.error || ('errore ' + res.status)));
+        return;
+      }
       annotations.push({ id: data.id, coords, color, label, notes });
       redrawAnnotations();
       renderAnnotationList();
@@ -869,32 +919,41 @@
   }
 
   // ---------- Swipe slider ----------
+  // Lo slider sta DENTRO #swipe-content, che viene ingrandito e spostato
+  // dallo zoom: la posizione del cursore va quindi misurata rispetto al
+  // rettangolo del contenuto trasformato, non del contenitore esterno —
+  // prima, a zoom 2×, un clic a 3/4 della vista portava la linea al bordo.
+  // I listener si registrano una volta sola: prima si accumulavano su
+  // window a ogni riapertura della vista.
+  let swipeReady = false;
+  let swipePct = 50;
+  function swipeSetPct(pct) {
+    swipePct = Math.max(0, Math.min(100, pct));
+    $('#swipe-after-wrap').style.width = swipePct + '%';
+    $('#swipe-handle').style.left = swipePct + '%';
+    // L'immagine "dopo" deve restare larga quanto l'intero contenuto (non
+    // quanto il suo contenitore ritagliato), anche dopo un ridimensionamento.
+    $('#swipe-after').style.width = $('#stage-swipe').clientWidth + 'px';
+  }
+  function swipePctFromClientX(clientX) {
+    const rect = $('#swipe-content').getBoundingClientRect();
+    return rect.width ? ((clientX - rect.left) / rect.width) * 100 : swipePct;
+  }
   function initSwipe() {
+    swipeSetPct(50);
+    if (swipeReady) return;
+    swipeReady = true;
     const wrap = $('#stage-swipe');
-    const afterWrap = $('#swipe-after-wrap');
     const handle = $('#swipe-handle');
-
-    function setPct(pct) {
-      pct = Math.max(0, Math.min(100, pct));
-      afterWrap.style.width = pct + '%';
-      handle.style.left = pct + '%';
-      const w = wrap.clientWidth;
-      $('#swipe-after').style.width = w + 'px';
-    }
-    setPct(50);
 
     let dragging = false;
     handle.addEventListener('mousedown', () => (dragging = true));
     window.addEventListener('mouseup', () => (dragging = false));
     window.addEventListener('mousemove', (e) => {
       if (!dragging) return;
-      const rect = wrap.getBoundingClientRect();
-      setPct(((e.clientX - rect.left) / rect.width) * 100);
+      swipeSetPct(swipePctFromClientX(e.clientX));
     });
-    wrap.addEventListener('click', (e) => {
-      const rect = wrap.getBoundingClientRect();
-      setPct(((e.clientX - rect.left) / rect.width) * 100);
-    });
+    wrap.addEventListener('click', (e) => swipeSetPct(swipePctFromClientX(e.clientX)));
 
     // Touch: trascina la maniglia con un dito (equivalente del drag mouse).
     handle.addEventListener('touchstart', (e) => {
@@ -905,9 +964,11 @@
     window.addEventListener('touchmove', (e) => {
       if (!dragging || e.touches.length !== 1) return;
       e.preventDefault();
-      const rect = wrap.getBoundingClientRect();
-      setPct(((e.touches[0].clientX - rect.left) / rect.width) * 100);
+      swipeSetPct(swipePctFromClientX(e.touches[0].clientX));
     }, { passive: false });
+    window.addEventListener('resize', () => {
+      if (wrap.style.display !== 'none') swipeSetPct(swipePct);
+    });
   }
 
   // ---------- Save to library ----------
@@ -1025,20 +1086,28 @@
     }
   }
 
+  // Nomi delle viste dell'interfaccia -> file del confronto (gli stessi che
+  // il server usa per Telegram, vedi api/share.php). "Originale A/B" non
+  // hanno un proprio file: sono le immagini effettivamente confrontate.
+  const VIEW_FILES = { 'original-a': 'enhanced_a', 'original-b': 'aligned_b' };
   setupShareBlock({
     prefix: 'cmp',
     getComparisonId: () => state.currentComparison && state.currentComparison.comparisonId,
     getView: () => state.currentView,
-    getViewUrl: () => state.currentComparison && state.currentComparison.urls[state.currentView],
+    getViewUrl: () => state.currentComparison && state.currentComparison.urls[VIEW_FILES[state.currentView] || state.currentView],
     getStudyId: () => window.ORBITALEYE.studyId,
   });
 
   setupShareBlock({
     prefix: 'study',
-    getComparisonId: () => (window.ORBITALEYE.comparisons[0] || {}).id,
+    // Stesso confronto che il server usa per Telegram: l'ultimo SALVATO in
+    // libreria, non l'ultimo eseguito (che può essere un tentativo
+    // esplorativo mai salvato).
+    getComparisonId: () => window.ORBITALEYE.latestSavedComparisonId,
     getView: () => 'overlay',
     getViewUrl: () => {
-      const latest = window.ORBITALEYE.comparisons[0];
+      const id = window.ORBITALEYE.latestSavedComparisonId;
+      const latest = window.ORBITALEYE.comparisons.find((c) => parseInt(c.id, 10) === id);
       return latest ? window.ORBITALEYE.mediaBase + encodeURIComponent(latest.result_paths.overlay) : null;
     },
     getStudyId: () => window.ORBITALEYE.studyId,
@@ -1065,7 +1134,10 @@
     if (!state.currentComparison) return;
     const key = targetKey();
     const res = await fetch(`api/annotations.php?study_id=${window.ORBITALEYE.studyId}&target_image=${encodeURIComponent(key)}`);
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
+    // Cambiando vista in fretta, una risposta lenta per la vista precedente
+    // mostrava le sue annotazioni su quella nuova.
+    if (targetKey() !== key) return;
     annotations = data.annotations || [];
     redrawAnnotations();
     renderAnnotationList();
@@ -1178,7 +1250,12 @@
           notes,
         }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.id) {
+        redrawAnnotations();
+        alert('Annotazione non salvata: ' + (data.error || ('errore ' + res.status)));
+        return;
+      }
       annotations.push({ id: data.id, coords, color: '#00fff2', label, notes });
       redrawAnnotations();
       renderAnnotationList();
@@ -1286,8 +1363,13 @@
     let currentOriginalUrl = null;
     let lastPreviewPath = null;
     let lastSteps = null;
+    // Numero dell'ultima richiesta di anteprima: una risposta lenta per una
+    // ripresa (o per parametri) precedente non deve sovrascrivere quella
+    // corrente — prima "Salva" poteva creare "Enhanced: Y" con i pixel di X.
+    let enhanceSeq = 0;
 
     window.openEnhancePanel = function (captureId, imgUrl, label) {
+      enhanceSeq++;
       currentCaptureId = captureId;
       currentOriginalUrl = imgUrl;
       lastPreviewPath = null;
@@ -1378,6 +1460,9 @@
         return;
       }
       status.textContent = 'Elaborazione in corso...';
+      const seq = ++enhanceSeq;
+      const applyBtn = $('#enhance-apply-btn');
+      applyBtn.disabled = true;
       try {
         const res = await fetch('api/enhance_capture.php', {
           method: 'POST',
@@ -1386,6 +1471,7 @@
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Errore');
+        if (seq !== enhanceSeq) return; // risposta superata
         lastPreviewPath = data.relative_path;
         lastSteps = steps;
         $('#enhance-img-before').src = currentOriginalUrl;
@@ -1393,7 +1479,9 @@
         $('#enhance-preview-row').style.display = '';
         status.textContent = 'Anteprima generata. Se ti convince, salvala come nuova ripresa.';
       } catch (err) {
-        status.textContent = 'Errore: ' + err.message;
+        if (seq === enhanceSeq) status.textContent = 'Errore: ' + err.message;
+      } finally {
+        applyBtn.disabled = false;
       }
     });
 
@@ -1439,7 +1527,12 @@
 
     window.openSpectralPanel = async function (captureId, mode, label) {
       const capture = window.ORBITALEYE.captures.find((c) => c.id === captureId);
-      $('#spectral-title').textContent = TITLES[mode] || 'Indice spettrale';
+      // Solo il nodo di testo: textContent sull'intestazione cancellava anche
+      // l'icona del pannello collassabile aggiunta da common.js.
+      const spectralTitle = $('#spectral-title');
+      const titleText = TITLES[mode] || 'Indice spettrale';
+      if (spectralTitle.firstChild && spectralTitle.firstChild.nodeType === 3) spectralTitle.firstChild.nodeValue = titleText;
+      else spectralTitle.insertBefore(document.createTextNode(titleText), spectralTitle.firstChild);
       $('#spectral-hint').textContent = HINTS[mode] || '';
       $('#spectral-result-title').textContent = (TITLES[mode] || 'Risultato') + ' — ' + (label || ('ripresa #' + captureId));
       $('#spectral-img-before').src = capture ? window.ORBITALEYE.mediaBase + encodeURIComponent(capture.relative_path) : '';
@@ -1452,6 +1545,9 @@
       panel.dataset.captureId = captureId;
       panel.dataset.mode = mode;
       panel.dataset.relativePath = '';
+      // Stesso principio del pannello filtri: solo l'ultima richiesta conta.
+      const reqToken = String(Date.now()) + Math.random();
+      panel.dataset.reqToken = reqToken;
 
       try {
         const res = await fetch('api/spectral_view.php', {
@@ -1461,11 +1557,12 @@
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Errore');
+        if (panel.dataset.reqToken !== reqToken) return; // superata da un'altra apertura
         $('#spectral-img-after').src = data.url + '&_=' + Date.now();
         panel.dataset.relativePath = data.relative_path;
         $('#spectral-status').textContent = 'Fatto.';
       } catch (err) {
-        $('#spectral-status').textContent = 'Errore: ' + err.message;
+        if (panel.dataset.reqToken === reqToken) $('#spectral-status').textContent = 'Errore: ' + err.message;
       }
     };
 
@@ -1512,6 +1609,18 @@
 
     let points = []; // [{ax, ay, bx, by}] in pixel immagine originale
     let draft = null; // {ax, ay} in attesa del punto corrispondente su B
+    // Coppia di riprese per cui l'editor è stato APERTO: anteprima e
+    // salvataggio usano questa, non la selezione corrente. Prima, cambiando
+    // selezione con l'editor aperto, i punti piazzati su una coppia venivano
+    // salvati per un'altra (e usati poi per allinearla).
+    let editorPair = null;
+    window.closeControlPointsEditorIfStale = function () {
+      if (editorPair && panel.style.display !== 'none'
+          && (editorPair.a !== state.selectedA || editorPair.b !== state.selectedB)) {
+        panel.style.display = 'none';
+        editorPair = null;
+      }
+    };
     let natA = { w: 0, h: 0 };
     let natB = { w: 0, h: 0 };
     let cpMode = 'point'; // 'point' (clic piazza un punto) | 'pan' (trascina per spostare la vista)
@@ -1651,8 +1760,9 @@
       const imgB = $('#cp-img-b');
       imgA.onload = () => { natA = { w: imgA.naturalWidth, h: imgA.naturalHeight }; setZoom('a', 'fit'); };
       imgB.onload = () => { natB = { w: imgB.naturalWidth, h: imgB.naturalHeight }; setZoom('b', 'fit'); };
-      imgA.src = captureUrl(state.selectedA);
-      imgB.src = captureUrl(state.selectedB);
+      editorPair = { a: state.selectedA, b: state.selectedB };
+      imgA.src = captureUrl(editorPair.a);
+      imgB.src = captureUrl(editorPair.b);
 
       panel.style.display = '';
       panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1778,7 +1888,7 @@
         const res = await fetch('api/register_manual_preview.php', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ capture_a_id: state.selectedA, capture_b_id: state.selectedB, points }),
+          body: JSON.stringify({ capture_a_id: editorPair.a, capture_b_id: editorPair.b, points }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Errore');
@@ -1801,7 +1911,7 @@
         const res = await fetch('api/control_points.php', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ capture_a_id: state.selectedA, capture_b_id: state.selectedB, points }),
+          body: JSON.stringify({ capture_a_id: editorPair.a, capture_b_id: editorPair.b, points }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Errore');

@@ -75,7 +75,18 @@ if (($body['align_mode'] ?? 'auto') === 'manual') {
 // m² e non solo in pixel/%. Si prende dalla ripresa A (il diff avviene alla
 // sua risoluzione, B viene allineata su A): mpp diretti nel meta o ricavati
 // dalla bbox propria — vedi Capture::resolveMpp.
-$mpp = Capture::resolveMpp($captureA) ?? Capture::resolveMpp($captureB);
+$mpp = Capture::resolveMpp($captureA);
+if (!$mpp && ($mppB = Capture::resolveMpp($captureB))
+    && (int) $captureA['width'] > 0 && (int) $captureA['height'] > 0
+) {
+    // Solo B ha una scala nota: va riportata sulla griglia di A, perché B
+    // viene ridimensionata alle dimensioni di A prima del confronto. Usarla
+    // così com'era falsava le aree in m² del rapporto fra le due dimensioni.
+    $mpp = [
+        'mpp_x' => $mppB['mpp_x'] * (int) $captureB['width'] / (int) $captureA['width'],
+        'mpp_y' => $mppB['mpp_y'] * (int) $captureB['height'] / (int) $captureA['height'],
+    ];
+}
 
 $payload = [
     'capture_a_path' => $captureA['relative_path'],

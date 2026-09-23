@@ -18,7 +18,7 @@ $defaults = AppSettings::all();
 // aggiunge lui a mano se vuole includerle, editando il campo prima
 // dell'invio. Il riepilogo condivide sempre l'ULTIMO confronto salvato
 // (vedi api/share.php), quindi ha senso solo se ne esiste almeno uno.
-$latestComparison = $comparisons[0] ?? null;
+$latestComparison = Comparison::latestSaved($studyId);
 $studySummaryCaption = null;
 if ($latestComparison) {
     $latestStats = json_decode($latestComparison['stats_json'] ?? '', true) ?: [];
@@ -698,6 +698,9 @@ window.ORBITALEYE = {
       $c['result_paths'] = json_decode($c['result_paths_json'], true);
       return $c;
   }, $comparisons)) ?>,
+  // Ultimo confronto SALVATO in libreria: è quello del "Riepilogo di studio"
+  // (lo stesso che il server condivide su Telegram, vedi api/share.php).
+  latestSavedComparisonId: <?= $latestComparison ? (int) $latestComparison['id'] : 'null' ?>,
   mediaBase: 'media.php?path='
 };
 </script>

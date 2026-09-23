@@ -30,16 +30,23 @@ if (!$study) {
 $captureMeta = json_decode($capture['meta_json'] ?? '', true);
 $measureMpp = Capture::resolveMpp($capture);
 $measureBbox = null;
-if (!$measureMpp && !empty($study['bbox_json'])) {
+if (!$measureMpp && empty($captureMeta['source_capture_id']) && !empty($study['bbox_json'])) {
     $measureBbox = json_decode($study['bbox_json'], true);
 }
 // Bbox geografica "grezza" (indipendente dalla risoluzione della scala):
 // serve lato client alla stima altezza da ombra (centro area -> lat/lon).
 // Preferisce quella propria della ripresa, poi quella dello studio.
-$geoBbox = (is_array($captureMeta) && !empty($captureMeta['bbox'])) ? array_map('floatval', $captureMeta['bbox']) : null;
-if (!$geoBbox && !empty($study['bbox_json'])) {
+// Riferimento geografico risolto anche per le riprese derivate (vedi
+// Capture::resolveGeoRef); l'area dello studio resta solo come ripiego per
+// le riprese originali caricate a mano, mai per copie o ritagli.
+$geoRef = Capture::resolveGeoRef($capture);
+$geoBbox = $geoRef['bbox'] ?? null;
+$isDerived = is_array($captureMeta) && !empty($captureMeta['source_capture_id']);
+if (!$geoBbox && !$isDerived && !empty($study['bbox_json'])) {
     $geoBbox = array_map('floatval', json_decode($study['bbox_json'], true));
 }
+$captureRotation = $geoRef ? (float) $geoRef['rotation'] : (is_array($captureMeta) ? (float) ($captureMeta['rotation'] ?? 0) : 0.0);
+$rotationModel = $geoRef['rotation_model'] ?? (is_array($captureMeta) ? ($captureMeta['rotation_model'] ?? null) : null);
 
 // Didascalia di default per la condivisione (Telegram/X): dati generici
 // non sensibili, MAI coordinate esatte — se l'analista le vuole includere
@@ -427,7 +434,10 @@ window.ORBITALEYE_ANALYZE = {
   // ruotata (vedi ImageRotateCrop.php): gli assi pixel di questa immagine
   // non sono allineati a lon/lat come al solito, serve per calcolare
   // correttamente le distanze reali — vedi pixelDistance() in analyze.js.
-  rotation: <?= json_encode(is_array($captureMeta) ? (float)($captureMeta['rotation'] ?? 0) : 0.0) ?>,
+  rotation: <?= json_encode($captureRotation) ?>,
+  // 'metric' = immagine ruotata in spazio metrico (pixel isotropi); assente =
+  // ruotata nello spazio dei gradi (riprese precedenti). Vedi ImageRotateCrop.
+  rotationModel: <?= json_encode($rotationModel) ?>,
 };
 </script>
 <script src="assets/js/analyze.js?v=<?= @filemtime(__DIR__ . '/assets/js/analyze.js') ?: time() ?>"></script>

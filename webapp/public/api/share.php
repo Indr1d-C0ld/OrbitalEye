@@ -20,12 +20,25 @@ $refId = !empty($_POST['ref_id']) ? (int) $_POST['ref_id'] : null;
 $caption = trim($_POST['caption'] ?? '');
 $studyId = !empty($_POST['study_id']) ? (int) $_POST['study_id'] : null;
 $view = $_POST['view'] ?? 'overlay';
+// Viste dell'interfaccia -> file del confronto. "Originale A/B" sono le
+// immagini effettivamente confrontate (A con i filtri pre-analisi, B
+// riallineata). Prima una vista non riconosciuta ricadeva in silenzio
+// sull'overlay: guardando "Originale B" si pubblicava un'immagine diversa da
+// quella a schermo, senza alcun avviso.
+$viewAliases = ['original-a' => 'enhanced_a', 'original-b' => 'aligned_b'];
+$view = $viewAliases[$view] ?? $view;
+$shareableViews = ['overlay', 'heatmap', 'mask', 'edges', 'enhanced_a', 'aligned_b'];
 
 if (!in_array($platform, ['telegram', 'twitter'], true)) {
     respond_json(['error' => 'Piattaforma non valida'], 400);
 }
 if (!in_array($kind, ['capture', 'comparison', 'study'], true)) {
     respond_json(['error' => 'Tipo di contenuto non valido'], 400);
+}
+if ($kind === 'comparison' && !in_array($view, $shareableViews, true)) {
+    respond_json(['error' => $view === 'swipe'
+        ? 'La vista Prima/Dopo non è una singola immagine: passa a un\'altra vista per condividere.'
+        : 'Vista non condivisibile.'], 400);
 }
 
 /**
@@ -66,7 +79,7 @@ function resolve_share_image(string $kind, ?int $refId, string $view): array
         if (!$refId) {
             throw new RuntimeException('Studio non specificato');
         }
-        $latest = Comparison::forStudy($refId)[0] ?? null;
+        $latest = Comparison::latestSaved($refId);
         if (!$latest) {
             throw new RuntimeException('Nessun confronto salvato per questo studio: esegui e salva un confronto prima di condividere un riepilogo.');
         }
@@ -76,8 +89,9 @@ function resolve_share_image(string $kind, ?int $refId, string $view): array
         throw new RuntimeException('Confronto non trovato');
     }
     $paths = json_decode($comparison['result_paths_json'], true) ?: [];
-    // "overlay" come ripiego se la vista richiesta non esiste per questo confronto.
-    $relPath = $paths[$view] ?? $paths['overlay'] ?? null;
+    // Per il riepilogo di studio la vista è sempre l'overlay; per un
+    // confronto è già stata validata sopra. Nessun ripiego silenzioso.
+    $relPath = $paths[$kind === 'study' ? 'overlay' : $view] ?? null;
     if (!$relPath) {
         throw new RuntimeException('Immagine del confronto non disponibile');
     }
@@ -113,5 +127,12 @@ try {
     respond_json(['error' => $e->getMessage()], 502);
 }
 
-Share::create($studyId, $kind, $refId, 'telegram', $caption);
+// La foto è già pubblicata: un errore nel registro (es. studio eliminato
+// nel frattempo) non deve trasformarsi in un errore per l'analista, che
+// riproverebbe e pubblicherebbe la stessa immagine una seconda volta.
+try {
+    Share::create($studyId, $kind, $refId, 'telegram', $caption);
+} catch (Throwable $e) {
+    error_log('OrbitalEye: condivisione Telegram inviata ma non registrata: ' . $e->getMessage());
+}
 respond_json(['ok' => true]);

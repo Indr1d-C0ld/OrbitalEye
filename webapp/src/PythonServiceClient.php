@@ -18,7 +18,9 @@ final class PythonServiceClient
         $this->timeout = $config['python_service_timeout'] ?? 60;
     }
 
-    public function post(string $path, array $payload): array
+    /** @param int|null $timeout Secondi di attesa per questa chiamata, se
+     * diversi dal valore generale di configurazione (es. i download). */
+    public function post(string $path, array $payload, ?int $timeout = null): array
     {
         $ch = curl_init($this->baseUrl . $path);
         curl_setopt_array($ch, [
@@ -29,7 +31,7 @@ final class PythonServiceClient
                 'Content-Type: application/json',
                 'X-OrbitalEye-Key: ' . $this->apiKey,
             ],
-            CURLOPT_TIMEOUT => $this->timeout,
+            CURLOPT_TIMEOUT => $timeout ?? $this->timeout,
         ]);
 
         $response = curl_exec($ch);

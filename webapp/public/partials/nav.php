@@ -33,7 +33,7 @@ $scheduleErrors = ScheduledDownload::errorCount();
     </nav>
     <div class="sidebar-footer">
       <div><span class="status-dot <?= $serviceOk ? 'ok' : 'bad' ?>"></span>Analysis Engine <?= $serviceOk ? 'ONLINE' : 'OFFLINE' ?></div>
-      <div style="margin-top:8px;"><?= e($_SESSION['username'] ?? '') ?> · <a href="logout.php">esci</a></div>
+      <div style="margin-top:8px;"><?= e($_SESSION['username'] ?? '') ?> · <form method="post" action="logout.php" style="display:inline; margin:0;"><button type="submit" class="link-btn">esci</button></form></div>
     </div>
   </aside>
   <main class="main">

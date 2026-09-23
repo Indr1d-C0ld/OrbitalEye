@@ -39,8 +39,15 @@
         const h2 = panel.firstElementChild;
         if (!h2 || h2.tagName !== 'H2') return;
 
+        // Chiave dal testo dell'intestazione SENZA i contatori (es. "Riprese in
+        // archivio (5)") e senza il "?" dei suggerimenti: prima la scelta di
+        // chiudere il pannello andava persa appena cambiava il numero.
+        const headingText = Array.from(h2.childNodes)
+            .filter((n) => !(n.nodeType === 1 && n.classList.contains('info-tip')))
+            .map((n) => n.textContent).join('')
+            .replace(/\(\s*\d+\s*\)/g, '').trim();
         const key = 'oe_panel_collapsed:' + location.pathname + ':'
-            + (h2.textContent.trim().replace(/\s+/g, '_').slice(0, 60) || idx);
+            + (headingText.replace(/\s+/g, '_').slice(0, 60) || idx);
 
         h2.classList.add('panel-toggle');
         const icon = document.createElement('span');
@@ -52,7 +59,12 @@
             panel.classList.toggle('collapsed', collapsed);
             icon.textContent = collapsed ? '▸' : '▾';
         }
-        setCollapsed(localStorage.getItem(key) === '1');
+        // localStorage può non essere disponibile (dati del sito bloccati,
+        // finestra privata restrittiva): prima l'eccezione interrompeva la
+        // configurazione e i pannelli successivi restavano senza comando.
+        let stored = null;
+        try { stored = localStorage.getItem(key); } catch (e) { /* non ricordato */ }
+        setCollapsed(stored === '1');
 
         h2.addEventListener('click', (e) => {
             // Non intercetta il click sul tooltip informativo (?) dentro
@@ -60,7 +72,7 @@
             if (e.target.closest('.info-tip')) return;
             const collapsed = !panel.classList.contains('collapsed');
             setCollapsed(collapsed);
-            localStorage.setItem(key, collapsed ? '1' : '0');
+            try { localStorage.setItem(key, collapsed ? '1' : '0'); } catch (e) { /* non ricordato */ }
         });
     });
 })();

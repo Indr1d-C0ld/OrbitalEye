@@ -63,6 +63,13 @@ $mpp = Capture::resolveMpp($capture);
 if ($mpp) {
     $enhancedMeta += $mpp;
 }
+// Stessa area e rotazione della sorgente (i filtri non spostano i pixel):
+// senza, la copia perdeva la rotazione (misure sbagliate) e gli export
+// KML/GeoJSON ricadevano sull'area generica dello studio.
+$enhancedMeta += Capture::geoMetaForDerived($capture);
+// Dimensioni lette dal file prodotto, non copiate dalla sorgente: se quelle
+// della sorgente fossero errate l'errore si propagherebbe alla copia.
+$producedSize = @getimagesize(Config::storageRoot() . '/' . $result['relative_path']);
 
 $newId = Capture::create(
     (int) $capture['study_id'],
@@ -70,8 +77,8 @@ $newId = Capture::create(
     'processed',
     $capture['capture_date'],
     $result['relative_path'],
-    $capture['width'],
-    $capture['height'],
+    $producedSize[0] ?? $capture['width'],
+    $producedSize[1] ?? $capture['height'],
     $enhancedMeta
 );
 

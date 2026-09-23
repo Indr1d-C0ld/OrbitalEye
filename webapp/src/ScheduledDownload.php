@@ -61,12 +61,24 @@ final class ScheduledDownload
      * riga per riga in PHP, per restare corretta anche con last_run_at in
      * fusi orari/formati leggermente diversi (tutto in SQLite, stesso motore
      * di confronto date usato per created_at/last_run_at). */
+    /**
+     * Pianificazioni da eseguire adesso.
+     *
+     * Tolleranza di 30 minuti: last_run_at viene scritto a FINE esecuzione,
+     * qualche secondo dopo l'orario del cron. Senza margine, il giro del
+     * giorno dopo alla stessa ora trovava la pianificazione "dovuta fra pochi
+     * secondi" e la saltava, rimandandola al giro successivo: una
+     * pianificazione giornaliera girava in realtà ogni 30 ore (verificato sul
+     * log di produzione). Il margine è ben sotto l'intervallo fra due giri
+     * del cron (6 ore), quindi non può mai causare esecuzioni doppie.
+     */
     public static function due(): array
     {
         $stmt = Database::get()->query(
             "SELECT * FROM scheduled_downloads
              WHERE is_active = 1
-               AND (last_run_at IS NULL OR datetime(last_run_at, '+' || interval_days || ' days') <= datetime('now'))
+               AND (last_run_at IS NULL
+                    OR datetime(last_run_at, '+' || interval_days || ' days', '-30 minutes') <= datetime('now'))
              ORDER BY id ASC"
         );
         return $stmt->fetchAll();

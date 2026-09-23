@@ -45,9 +45,15 @@ mkdir -p "$WEBAPP_DATA_DIR"
 #    questi errori attesi interrompano lo script prima dei passi successivi.
 chown -R "$USER:$GROUP" "$PROJECT_DIR" || true
 
-# 2. Permessi generali: directory 755, file 644 (stessa tolleranza del punto 1)
-find "$PROJECT_DIR" -type d -exec chmod 755 {} \; || true
-find "$PROJECT_DIR" -type f -exec chmod 644 {} \; || true
+# 2. Permessi generali per il codice: directory 755, file 644 (stessa
+#    tolleranza del punto 1). Esclusi database, storage, virtualenv e i due
+#    file di configurazione con segreti, che ricevono permessi più stretti ai
+#    punti successivi: passarli prima da 644 li lasciava leggibili da
+#    chiunque sulla macchina, anche solo per un istante.
+find "$PROJECT_DIR" \( -path "$STORAGE_DIR" -o -path "$WEBAPP_DATA_DIR" -o -path "$VENV_DIR" \) -prune \
+    -o -type d -exec chmod 755 {} \; || true
+find "$PROJECT_DIR" \( -path "$STORAGE_DIR" -o -path "$WEBAPP_DATA_DIR" -o -path "$VENV_DIR" \) -prune \
+    -o -type f ! -path "$WEBAPP_CONFIG" ! -path "$PY_ENV_FILE" -exec chmod 644 {} \; || true
 
 # 3. Script eseguibili
 chmod +x "$PROJECT_DIR/python-service/run.sh"
@@ -57,13 +63,22 @@ chmod +x "$PROJECT_DIR/fix_permissions.sh"
 #    (che scarica riprese Sentinel Hub e scrive gli output di analisi): bit
 #    setgid così i nuovi file create da chiunque dei due ereditano il gruppo
 #    www-data, ed entrambi possono leggerli/scriverli.
+#
+#    Nessun accesso per "altri" (bit finale 0): il database contiene token
+#    Telegram, credenziali Sentinel Hub/Esri e l'hash della password, lo
+#    storage le immagini analizzate e le credenziali dei servizi. Entrambi i
+#    servizi vi accedono come proprietario o tramite il gruppo condiviso;
+#    prima (775/664) erano leggibili da qualunque utente della macchina.
+chmod 2770 "$STORAGE_DIR" 2>/dev/null || true
 for d in "$STORAGE_DIR/raw" "$STORAGE_DIR/processed" "$STORAGE_DIR/results" "$STORAGE_DIR/config" "$WEBAPP_DATA_DIR"; do
     mkdir -p "$d"
-    chmod 2775 "$d"
+    chmod 2770 "$d"
 done
-find "$STORAGE_DIR" -type f -exec chmod 664 {} \; 2>/dev/null || true
-for f in "$WEBAPP_DATA_DIR"/*.sqlite; do
-    [ -f "$f" ] && chmod 664 "$f" || true
+find "$STORAGE_DIR" -mindepth 2 -type d -exec chmod 2770 {} \; 2>/dev/null || true
+find "$STORAGE_DIR" -type f -exec chmod 660 {} \; 2>/dev/null || true
+find "$STORAGE_DIR/config" -type f -exec chmod 640 {} \; 2>/dev/null || true
+for f in "$WEBAPP_DATA_DIR"/*.sqlite*; do
+    [ -f "$f" ] && chmod 660 "$f" || true
 done
 
 # 5. File con segreti (chiave condivisa PHP<->Python, credenziali): niente

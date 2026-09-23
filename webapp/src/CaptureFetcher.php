@@ -22,6 +22,38 @@ final class CaptureFetchException extends RuntimeException
  */
 final class CaptureFetcher
 {
+    /** Timeout (s) di attesa del servizio di analisi per un download: vero
+     * colore e banda NIR vengono scaricati in sequenza, e il servizio ha i
+     * propri tetti di tempo (vedi esri_client.py/sentinelhub_client.py)
+     * tarati per restare sotto questo valore. Con i 60 s generici il PHP
+     * poteva rinunciare mentre il servizio stava ancora scrivendo i file,
+     * che restavano orfani. */
+    private const FETCH_TIMEOUT = 180;
+
+    /** Allinea larghezza/altezza al file realmente salvato. Il file è la
+     * fonte di verità: dopo un tentativo a risoluzione ridotta di Esri le
+     * dimensioni registrate erano quelle richieste, non quelle reali, e la
+     * scala calcolata su di esse falsava distanze e aree (la metà e un
+     * quarto del vero su un'immagine 501×501 registrata come 1024×1024). */
+    private static function syncRealSize(array &$result): void
+    {
+        $size = @getimagesize(Config::storageRoot() . '/' . $result['relative_path']);
+        if ($size) {
+            $result['width'] = $size[0];
+            $result['height'] = $size[1];
+        }
+    }
+
+    /** Rimuove i file già scritti di un download non andato a buon fine. */
+    private static function discardFiles(array $relativePaths): void
+    {
+        foreach ($relativePaths as $rel) {
+            if ($rel && strpos($rel, '..') === false) {
+                @unlink(Config::storageRoot() . '/' . $rel);
+            }
+        }
+    }
+
     /**
      * @param array $params Stessa forma del body JSON che api/fetch_capture.php
      *   riceveva prima del refactor: study_id, source, bbox, width, height,
@@ -112,7 +144,7 @@ final class CaptureFetcher
                     'width' => $fetchWidth,
                     'height' => $fetchHeight,
                     'max_cloud_coverage' => (int) ($params['max_cloud_coverage'] ?? 20),
-                ]);
+                ], self::FETCH_TIMEOUT);
             } catch (PythonServiceException $e) {
                 throw new CaptureFetchException($e->getMessage(), 502, $e);
             }
@@ -131,9 +163,11 @@ final class CaptureFetcher
                         $result['nir_relative_path'] = $croppedNir['relative_path'];
                     }
                 } catch (Throwable $e) {
+                    self::discardFiles([$result['relative_path'] ?? null, $result['nir_relative_path'] ?? null]);
                     throw new CaptureFetchException('Ripresa scaricata ma ritaglio ruotato fallito: ' . $e->getMessage(), 500, $e);
                 }
             }
+            self::syncRealSize($result);
 
             $captureId = Capture::create(
                 $studyId,
@@ -146,7 +180,11 @@ final class CaptureFetcher
                 array_filter([
                     'bbox' => $bbox, 'date_from' => $dateFrom, 'date_to' => $dateTo, 'source' => 'sentinel-2-l2a',
                     'nir_relative_path' => $result['nir_relative_path'] ?? null,
+                    // Guadagno della coppia Rosso+NIR (vedi sentinelhub_client.py):
+                    // serve a NDWI/falso colore per combinarla col vero colore.
+                    'nir_gain' => !empty($result['nir_relative_path']) ? ($result['nir_gain'] ?? null) : null,
                     'rotation' => abs($rotation) >= 0.01 ? $rotation : null,
+                    'rotation_model' => abs($rotation) >= 0.01 ? ImageRotateCrop::ROTATION_MODEL : null,
                     'fetch_aabb' => abs($rotation) >= 0.01 ? $fetchBbox : null,
                 ], fn($v) => $v !== null)
             );
@@ -156,7 +194,7 @@ final class CaptureFetcher
                     'bbox' => array_map('floatval', $fetchBbox),
                     'width' => $fetchWidth,
                     'height' => $fetchHeight,
-                ]);
+                ], self::FETCH_TIMEOUT);
             } catch (PythonServiceException $e) {
                 throw new CaptureFetchException($e->getMessage(), 502, $e);
             }
@@ -175,9 +213,11 @@ final class CaptureFetcher
                     $result['width'] = $cropped['width'];
                     $result['height'] = $cropped['height'];
                 } catch (Throwable $e) {
+                    self::discardFiles([$result['relative_path'] ?? null]);
                     throw new CaptureFetchException('Ripresa scaricata ma ritaglio ruotato fallito: ' . $e->getMessage(), 500, $e);
                 }
             }
+            self::syncRealSize($result);
 
             $captureId = Capture::create(
                 $studyId,
@@ -191,6 +231,7 @@ final class CaptureFetcher
                     'bbox' => (abs($rotation) >= 0.01) ? $bbox : ($result['bbox'] ?? $bbox),
                     'source' => 'esri-world-imagery', 'fetched_at' => date('c'),
                     'rotation' => abs($rotation) >= 0.01 ? $rotation : null,
+                    'rotation_model' => abs($rotation) >= 0.01 ? ImageRotateCrop::ROTATION_MODEL : null,
                     'fetch_aabb' => abs($rotation) >= 0.01 ? $actualFetchedBbox : null,
                 ], fn($v) => $v !== null)
             );

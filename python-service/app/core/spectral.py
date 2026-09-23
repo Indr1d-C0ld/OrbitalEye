@@ -12,6 +12,12 @@ schema dell'evalscript di fetch): canale R=Rosso*gain, G=NIR*gain, B=0.
 import cv2
 import numpy as np
 
+# Guadagno del vero colore Sentinel (vedi sentinelhub_client.py) e guadagno
+# con cui erano salvate le coppie Rosso+NIR prima che passasse a 1.0: le
+# riprese più vecchie non hanno "nir_gain" nei metadati e usano questo.
+TRUE_COLOR_GAIN = 2.5
+LEGACY_NIR_GAIN = 2.5
+
 
 def compute_ndvi(nir_red_img: np.ndarray) -> np.ndarray:
     """Calcola l'NDVI = (NIR - Rosso) / (NIR + Rosso) dalla coppia
@@ -58,7 +64,7 @@ def colorize_ndvi(ndvi_gray: np.ndarray) -> np.ndarray:
     return cv2.applyColorMap(ndvi_gray, _NDVI_LUT)
 
 
-def compute_ndwi(nir_red_img: np.ndarray, true_color_img: np.ndarray) -> np.ndarray:
+def compute_ndwi(nir_red_img: np.ndarray, true_color_img: np.ndarray, nir_gain: float = LEGACY_NIR_GAIN) -> np.ndarray:
     """Calcola l'NDWI (McFeeters, 1996) = (Verde - NIR) / (Verde + NIR).
     Il Verde non fa parte della coppia Rosso+NIR (per scaricare una sola
     immagine aggiuntiva): si riusa il canale verde della ripresa vero-colore
@@ -69,8 +75,11 @@ def compute_ndwi(nir_red_img: np.ndarray, true_color_img: np.ndarray) -> np.ndar
     all'NDVI, utile per individuare corpi d'acqua/allagamenti a colpo
     d'occhio invece di dedurli per esclusione dalla sola vegetazione.
     """
-    nir = nir_red_img[:, :, 1].astype(np.float32)
-    green = true_color_img[:, :, 1].astype(np.float32)
+    # Verde e NIR vengono da due prodotti con guadagni diversi (vero colore
+    # 2.5, coppia Rosso+NIR `nir_gain`): vanno riportati entrambi in
+    # riflettanza prima di combinarli, altrimenti l'indice è distorto.
+    nir = nir_red_img[:, :, 1].astype(np.float32) / nir_gain
+    green = true_color_img[:, :, 1].astype(np.float32) / TRUE_COLOR_GAIN
     denom = green + nir
     denom[denom < 1e-3] = 1e-3
     ndwi = (green - nir) / denom  # range teorico -1..1
@@ -107,7 +116,7 @@ def colorize_ndwi(ndwi_gray: np.ndarray) -> np.ndarray:
     return cv2.applyColorMap(ndwi_gray, _NDWI_LUT)
 
 
-def false_color_ir(nir_red_img: np.ndarray, true_color_img: np.ndarray) -> np.ndarray:
+def false_color_ir(nir_red_img: np.ndarray, true_color_img: np.ndarray, nir_gain: float = LEGACY_NIR_GAIN) -> np.ndarray:
     """Composito falso colore infrarosso classico (R=NIR, G=Rosso, B=Verde):
     la vegetazione viva appare in rosso/rosa acceso (la clorofilla riflette
     fortemente il NIR), suolo nudo/superfici artificiali in toni blu-grigi,
@@ -119,7 +128,10 @@ def false_color_ir(nir_red_img: np.ndarray, true_color_img: np.ndarray) -> np.nd
     sola immagine aggiuntiva): si riusa il canale verde della ripresa
     vero-colore già scaricata in coppia (stessa area/risoluzione).
     """
-    nir = nir_red_img[:, :, 1]
-    red = nir_red_img[:, :, 2]
+    # Stessa luminosità del vero colore (guadagno 2.5) qualunque sia il
+    # guadagno con cui è stata salvata la coppia Rosso+NIR.
+    k = TRUE_COLOR_GAIN / nir_gain
+    nir = np.clip(nir_red_img[:, :, 1].astype(np.float32) * k, 0, 255).astype(np.uint8)
+    red = np.clip(nir_red_img[:, :, 2].astype(np.float32) * k, 0, 255).astype(np.uint8)
     green = true_color_img[:, :, 1]
     return cv2.merge([green, red, nir])  # BGR: B=Verde, G=Rosso, R=NIR

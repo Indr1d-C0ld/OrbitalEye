@@ -13,7 +13,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'default_diff_method' => $_POST['default_diff_method'] ?? 'ssim',
             'default_threshold' => (int) ($_POST['default_threshold'] ?? 30),
             'default_min_blob_area' => (int) ($_POST['default_min_blob_area'] ?? 40),
-            'default_morph_kernel' => (int) ($_POST['default_morph_kernel'] ?? 3),
+            // Dispari e fra 1 e 31, come lo slider del confronto (passo 2) e il
+            // servizio di analisi: un valore pari veniva mostrato tale ma lo
+            // slider inviava il dispari successivo.
+            'default_morph_kernel' => (function ($k) { $k = max(1, min(31, $k)); return $k % 2 ? $k : $k + 1; })((int) ($_POST['default_morph_kernel'] ?? 3)),
             'default_overlay_alpha' => (float) ($_POST['default_overlay_alpha'] ?? 0.35),
         ]);
         $message = 'Parametri predefiniti aggiornati.';

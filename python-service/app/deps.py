@@ -22,5 +22,7 @@ def require_service_key(x_orbitaleye_key: str = Header(default="")):
         )
     # Confronto a tempo costante: con un != normale il tempo di risposta
     # dipende da quanti caratteri iniziali coincidono.
-    if not secrets.compare_digest(x_orbitaleye_key, key):
+    # Confronto fra byte: compare_digest su stringhe solleva TypeError se una
+    # contiene caratteri non ASCII (500 invece di 401).
+    if not secrets.compare_digest(x_orbitaleye_key.encode("utf-8"), key.encode("utf-8")):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Chiave di servizio non valida")

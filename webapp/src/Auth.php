@@ -19,6 +19,11 @@ final class Auth
         ]);
     }
 
+    /** Hash bcrypt precalcolato (costo 12, come quelli generati da
+     * password_hash con PASSWORD_DEFAULT): serve solo a rendere uguale il
+     * tempo di risposta per utenti esistenti e inesistenti. */
+    private const TIMING_DUMMY_HASH = '$2y$12$lChyXAxn0//sE1nlyatwoOpkjDJ0MyScGjM1O.CQg8Wa9MS6iOTXC';
+
     /** Tentativi falliti consecutivi oltre i quali si impone un'attesa. */
     private const MAX_ATTEMPTS = 8;
     private const LOCKOUT_SECONDS = 300;
@@ -43,9 +48,12 @@ final class Auth
         $user = $stmt->fetch();
 
         if (!$user) {
-            // Hash fittizio: senza, un utente inesistente risponderebbe molto
-            // più in fretta di uno esistente, rivelando quali username esistono.
-            password_verify($password, '$2y$10$usesomesillystringforsalttoavoidtimingleak0000000000000');
+            // Verifica contro un hash fittizio con lo STESSO algoritmo e costo
+            // di quelli reali: senza, un utente inesistente risponde molto più
+            // in fretta, rivelando quali username esistono. (Il precedente
+            // hash fisso aveva costo 10 contro il 12 di quelli reali: 75 ms
+            // contro 320 ms, differenza misurabile.)
+            password_verify($password, self::TIMING_DUMMY_HASH);
             return false;
         }
         return password_verify($password, $user['password_hash']);

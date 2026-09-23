@@ -89,6 +89,22 @@ function format_date_it(?string $isoDate): string
     return $ts !== false ? date('d/m/Y', $ts) : e($isoDate);
 }
 
+// Qualunque eccezione non gestita in un endpoint api/ deve arrivare al
+// browser come JSON: il frontend fa sempre res.json(), e una pagina d'errore
+// vuota lo lasciava senza alcun messaggio da mostrare all'analista (es. una
+// violazione di chiave esterna annotando una ripresa appena eliminata in
+// un'altra scheda). Il dettaglio tecnico finisce nel log, non nella risposta.
+if (str_contains($_SERVER['REQUEST_URI'] ?? '', '/api/')) {
+    set_exception_handler(function (Throwable $e): void {
+        error_log('OrbitalEye API: ' . $e::class . ': ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
+        if (!headers_sent()) {
+            http_response_code(500);
+            header('Content-Type: application/json');
+        }
+        echo json_encode(['error' => 'Errore interno del server: operazione non completata.']);
+    });
+}
+
 try {
     Config::get();
 } catch (Throwable $e) {

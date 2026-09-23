@@ -154,6 +154,18 @@ function initMapPicker(mapDivId, fields, toggles) {
       : L.rectangle(bounds, { color: '#00fff2', weight: 2, fillOpacity: 0.08 }).addTo(map);
   }
 
+  // Leaflet non riporta le longitudini in [-180, 180] quando si disegna su
+  // una "copia" del mondo (mappa fatta scorrere oltre il Pacifico): i campi
+  // ricevevano valori come 190.12, poi rifiutati al download. Il rettangolo
+  // viene spostato di multipli interi di 360° in base al suo centro, così
+  // resta intero; uno che attraversa davvero l'antimeridiano non è
+  // supportato e verrà segnalato come fuori range dal server.
+  function normalizedBounds(a, b) {
+    const centerLng = (a.lng + b.lng) / 2;
+    const shift = Math.round(centerLng / 360) * 360;
+    return L.latLngBounds(L.latLng(a.lat, a.lng - shift), L.latLng(b.lat, b.lng - shift));
+  }
+
   function boundsToFields(bounds) {
     fieldEl('minLon').value = bounds.getWest().toFixed(6);
     fieldEl('minLat').value = bounds.getSouth().toFixed(6);
@@ -216,6 +228,10 @@ function initMapPicker(mapDivId, fields, toggles) {
   }
   if (rotationInput) {
     rotationDeg = parseFloat(rotationInput.value) || 0;
+    // Il browser può ripristinare il valore dello slider ricaricando la
+    // pagina: l'etichetta va allineata subito, altrimenti mostrava "0°"
+    // mentre anteprima e download usavano l'angolo ripristinato.
+    if (rotationOut) rotationOut.textContent = Math.round(rotationDeg) + '°';
     rotationInput.addEventListener('input', () => {
       rotationDeg = parseFloat(rotationInput.value) || 0;
       if (rotationOut) rotationOut.textContent = Math.round(rotationDeg) + '°';
@@ -238,7 +254,7 @@ function initMapPicker(mapDivId, fields, toggles) {
   });
   map.on('mousemove', (e) => {
     if (!drawing) return;
-    const bounds = L.latLngBounds(startLatLng, e.latlng);
+    const bounds = normalizedBounds(startLatLng, e.latlng);
     paintRect(bounds);
     boundsToFields(bounds);
   });
@@ -264,7 +280,7 @@ function initMapPicker(mapDivId, fields, toggles) {
   mapContainer.addEventListener('touchmove', (e) => {
     if (!drawing || e.touches.length !== 1) return;
     e.preventDefault();
-    const bounds = L.latLngBounds(startLatLng, touchToLatLng(e.touches[0]));
+    const bounds = normalizedBounds(startLatLng, touchToLatLng(e.touches[0]));
     paintRect(bounds);
     boundsToFields(bounds);
   }, { passive: false });

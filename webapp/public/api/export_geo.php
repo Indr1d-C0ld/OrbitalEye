@@ -20,24 +20,30 @@ if (!$capture) {
 }
 $study = Study::find((int) $capture['study_id']);
 
-$meta = json_decode($capture['meta_json'] ?? '', true);
-$bbox = (is_array($meta) && !empty($meta['bbox'])) ? array_map('floatval', $meta['bbox']) : null;
-if (!$bbox && $study && !empty($study['bbox_json'])) {
-    $bbox = array_map('floatval', json_decode($study['bbox_json'], true));
+// Riferimento geografico della ripresa (bbox, rotazione) — anche per le
+// riprese derivate, risalendo alla sorgente (vedi Capture::resolveGeoRef).
+// La conversione è esatta anche per le riprese ruotate: i punti vengono
+// riportati nel sistema del rettangolo di base e ruotati come l'immagine.
+$geo = Capture::resolveGeoRef($capture);
+$warning = null;
+if (!$geo) {
+    $meta = json_decode($capture['meta_json'] ?? '', true);
+    $isDerived = is_array($meta) && !empty($meta['source_capture_id']);
+    // Unico ripiego ammesso: una ripresa originale caricata a mano, per la
+    // quale l'area dello studio è l'unica indicazione disponibile. Mai per
+    // una derivata (ritaglio o copia): lì l'area dello studio è sicuramente
+    // sbagliata.
+    if (!$isDerived && $study && !empty($study['bbox_json'])) {
+        $geo = ['bbox' => array_map('floatval', json_decode($study['bbox_json'], true)), 'rotation' => 0.0, 'rotation_model' => null];
+        $warning = 'Ripresa caricata manualmente: georeferenziazione basata sull\'area dello studio, approssimata.';
+    }
 }
-if (!$bbox || count($bbox) !== 4) {
-    respond_json(['error' => 'Nessuna bbox geografica nota per questa ripresa: impossibile georeferenziare.'], 400);
+if (!$geo || count($geo['bbox']) !== 4) {
+    respond_json(['error' => 'Nessun riferimento geografico noto per questa ripresa: impossibile georeferenziare.'], 400);
 }
-$rotated = is_array($meta) && !empty($meta['rotation']) && abs((float) $meta['rotation']) > 0.01;
 
-[$minLon, $minLat, $maxLon, $maxLat] = $bbox;
 // fx,fy in [0,1] con origine in alto a sinistra -> lon/lat.
-$toLonLat = function (float $fx, float $fy) use ($minLon, $minLat, $maxLon, $maxLat): array {
-    return [
-        $minLon + $fx * ($maxLon - $minLon),
-        $maxLat - $fy * ($maxLat - $minLat),
-    ];
-};
+$toLonLat = fn(float $fx, float $fy): array => Capture::fracToLonLat($geo, $fx, $fy);
 
 $targetKey = 'capture' . $captureId . '_analyze';
 $rows = Annotation::forTarget((int) $capture['study_id'], $targetKey);
@@ -98,14 +104,8 @@ if ($format === 'geojson') {
         ];
     }
     $doc = ['type' => 'FeatureCollection', 'features' => $geoFeatures];
-    // Stesso avviso già presente nel KML: senza, chi apre il file in QGIS
-    // otterrebbe coordinate approssimate senza saperlo (per un'area ruotata
-    // in fase di scaricamento gli assi pixel non sono allineati a lon/lat,
-    // e la conversione lineare usata qui non ne tiene conto).
-    if ($rotated) {
-        $doc['properties'] = [
-            'avviso' => 'Ripresa ruotata in fase di scaricamento: georeferenziazione approssimata.',
-        ];
+    if ($warning) {
+        $doc['properties'] = ['avviso' => $warning];
     }
     header('Content-Type: application/geo+json');
     header('Content-Disposition: attachment; filename="' . $slugBase . '.geojson"');
@@ -148,6 +148,6 @@ header('Content-Disposition: attachment; filename="' . $slugBase . '.kml"');
 echo "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
     . "<kml xmlns=\"http://www.opengis.net/kml/2.2\"><Document>"
     . "<name>{$esc($capture['label'] ?: ('Ripresa #' . $captureId))} — OrbitalEye</name>"
-    . ($rotated ? "<description>Attenzione: ripresa ruotata in fase di scaricamento, georeferenziazione approssimata.</description>" : '')
+    . ($warning ? "<description>Attenzione: {$esc($warning)}</description>" : '')
     . $styles . $placemarks
     . "</Document></kml>";

@@ -53,7 +53,7 @@ function evaluatePixel(sample) {
 # un PNG RGBA esattamente come il vero colore sopra (stesso gain, stessa
 # scala 0-255) così può essere caricata con lo stesso load_image() usato
 # ovunque nel servizio, senza dipendenze aggiuntive per formati float/TIFF.
-# Canali: R=Red*gain, G=NIR*gain, B=0 (inutilizzato), A=dataMask.
+# Canali: R=Red*RED_NIR_GAIN, G=NIR*RED_NIR_GAIN, B=0 (inutilizzato), A=dataMask.
 # Serve a calcolare indici spettrali (NDVI, falso colore infrarosso) — vedi
 # core/spectral.py — possibili SOLO per riprese Sentinel-2 (Esri World
 # Imagery e i caricamenti manuali non hanno mai dati oltre il visibile RGB).
@@ -66,12 +66,23 @@ function setup() {
   };
 }
 function evaluatePixel(sample) {
-  let gain = 2.5;
+  let gain = 1.0;
   return [
     sample.B04 * gain, sample.B08 * gain, 0, sample.dataMask
   ];
 }
 """
+
+# Guadagno applicato alla coppia Rosso+NIR qui sopra. Era 2.5 come per il
+# vero colore, ma l'uscita è a 8 bit: ogni riflettanza oltre 0.4 saturava a
+# 255 — e il NIR della vegetazione sana sta proprio fra 0.3 e 0.6, così
+# l'NDVI risultava compresso (0.77 reale → 0.67; 0.05 → 0.00). A 1.0 l'intero
+# intervallo di riflettanza sta nei 256 livelli. Il valore viene restituito
+# al chiamante e salvato nei metadati della ripresa, così NDWI e falso colore
+# (che combinano questa coppia con il vero colore a guadagno 2.5) possono
+# riportare i due prodotti alla stessa scala anche per file più vecchi.
+RED_NIR_GAIN = 1.0
+TRUE_COLOR_GAIN = 2.5
 
 _token_cache = {"token": None, "expires_at": 0}
 
@@ -91,20 +102,29 @@ def _get_token() -> str:
     if _token_cache["token"] and _token_cache["expires_at"] > now + 30 and _token_cache.get("client_id") == client_id:
         return _token_cache["token"]
 
-    resp = requests.post(
-        settings.sentinelhub_token_url,
-        data={
-            "grant_type": "client_credentials",
-            "client_id": client_id,
-            "client_secret": client_secret,
-        },
-        timeout=30,
-    )
+    # Errori di rete e risposte malformate vanno tradotti in SentinelHubError:
+    # altrimenti arrivano al chiamante come 500 opachi, senza messaggio utile.
+    try:
+        resp = requests.post(
+            settings.sentinelhub_token_url,
+            data={
+                "grant_type": "client_credentials",
+                "client_id": client_id,
+                "client_secret": client_secret,
+            },
+            timeout=(10, 20),
+        )
+    except requests.RequestException as e:
+        raise SentinelHubError(f"Servizio di autenticazione Copernicus non raggiungibile: {e}") from e
     if resp.status_code != 200:
         raise SentinelHubError(f"Autenticazione Sentinel Hub fallita: {resp.status_code} {resp.text[:300]}")
 
-    data = resp.json()
-    _token_cache["token"] = data["access_token"]
+    try:
+        data = resp.json()
+        access_token = data["access_token"]
+    except (ValueError, KeyError, TypeError) as e:
+        raise SentinelHubError("Risposta di autenticazione Copernicus non valida") from e
+    _token_cache["token"] = access_token
     _token_cache["expires_at"] = now + data.get("expires_in", 300)
     _token_cache["client_id"] = client_id
     return _token_cache["token"]
@@ -155,12 +175,19 @@ def _process_request(
         "evalscript": evalscript,
     }
 
-    resp = requests.post(
-        settings.sentinelhub_process_url,
-        json=payload,
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=90,
-    )
+    # Timeout di lettura contenuto: vero colore + NIR vengono scaricati in
+    # sequenza e l'intera richiesta deve chiudersi entro il timeout con cui il
+    # PHP attende la risposta (vedi CaptureFetcher), altrimenti i file
+    # verrebbero scritti dopo che il PHP ha già rinunciato, restando orfani.
+    try:
+        resp = requests.post(
+            settings.sentinelhub_process_url,
+            json=payload,
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=(10, 70),
+        )
+    except requests.RequestException as e:
+        raise SentinelHubError(f"Process API Copernicus non raggiungibile: {e}") from e
     if resp.status_code != 200:
         raise SentinelHubError(f"Richiesta Process API fallita: {resp.status_code} {resp.text[:500]}")
 

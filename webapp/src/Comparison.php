@@ -2,6 +2,20 @@
 
 final class Comparison
 {
+    /** Ultimo confronto dello studio salvato in libreria (null se nessuno):
+     * è quello che il "Riepilogo di studio" promette di condividere. Ogni
+     * esecuzione crea una riga, salvata o no: prendere semplicemente l'ultima
+     * pubblicava anche un confronto esplorativo mai salvato. */
+    public static function latestSaved(int $studyId): ?array
+    {
+        $stmt = Database::get()->prepare(
+            'SELECT * FROM comparisons WHERE study_id = :id AND is_saved_to_library = 1
+             ORDER BY created_at DESC, id DESC LIMIT 1'
+        );
+        $stmt->execute([':id' => $studyId]);
+        return $stmt->fetch() ?: null;
+    }
+
     public static function forStudy(int $studyId): array
     {
         $stmt = Database::get()->prepare(

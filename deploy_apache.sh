@@ -53,6 +53,11 @@ $MARKER_END
 EOF
 
 CHANGED=0
+# Coppie "file|backup" modificate in QUESTA esecuzione: in caso di errore si
+# ripristinano solo queste. Prima si ripristinava l'ultimo .bak di ogni file
+# dell'elenco, anche di quelli saltati ora — riportando un vhost non toccato
+# a un backup di un deploy precedente, con perdita delle modifiche successive.
+MODIFIED=()
 
 for f in "${FILES[@]}"; do
     if [ ! -f "$f" ]; then
@@ -75,6 +80,7 @@ for f in "${FILES[@]}"; do
     ' "$f" > "$f.tmp"
     mv "$f.tmp" "$f"
     echo "Aggiunto blocco OrbitalEye a $f"
+    MODIFIED+=("$f|$backup")
     CHANGED=1
 done
 
@@ -86,13 +92,12 @@ fi
 echo
 echo "Verifica sintassi Apache..."
 if ! apache2ctl configtest; then
-    echo "ERRORE: configurazione non valida. Ripristino i backup..."
-    for f in "${FILES[@]}"; do
-        latest_backup=$(ls -t "$f".bak.* 2>/dev/null | head -1 || true)
-        if [ -n "$latest_backup" ]; then
-            cp "$latest_backup" "$f"
-            echo "Ripristinato $f da $latest_backup"
-        fi
+    echo "ERRORE: configurazione non valida. Ripristino i file modificati in questa esecuzione..."
+    for entry in "${MODIFIED[@]}"; do
+        f="${entry%%|*}"
+        backup="${entry#*|}"
+        cp "$backup" "$f"
+        echo "Ripristinato $f da $backup"
     done
     exit 1
 fi

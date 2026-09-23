@@ -149,7 +149,7 @@ def apply_pipeline(img: np.ndarray, steps: list) -> np.ndarray:
         safe_params = {k: v for k, v in params.items() if k in accepted}
         try:
             out = fn(out, **safe_params)
-        except (cv2.error, TypeError, ValueError):
+        except (cv2.error, TypeError, ValueError, OverflowError):
             # Un singolo filtro con valori non utilizzabili non deve far
             # fallire l'intera elaborazione: si salta e si prosegue.
             continue
