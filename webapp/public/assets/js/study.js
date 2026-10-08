@@ -484,9 +484,61 @@
     // conteggio già mostrati nell'interfaccia), MAI coordinate — modificabile
     // dall'analista prima dell'invio.
     const cmpCaptionEl = $('#cmp-share-caption');
+    const prov = pairProvenance(result.captureAId, result.captureBId);
+    state.currentProvenance = prov;
     if (cmpCaptionEl) {
-      cmpCaptionEl.value = `Confronto satellitare — variazione rilevata: ${(s.changed_ratio * 100).toFixed(2)}% (${s.num_regions} regioni) — OrbitalEye`;
+      cmpCaptionEl.value = `Confronto satellitare — variazione rilevata: ${(s.changed_ratio * 100).toFixed(2)}% (${s.num_regions} regioni) — OrbitalEye`
+        + (prov.captionLines ? '\n' + prov.captionLines : '');
     }
+    const esriNotice = $('#cmp-esri-notice');
+    if (esriNotice) esriNotice.style.display = prov.isEsri ? '' : 'none';
+
+    // Due riprese della STESSA acquisizione (tipico con Esri, il cui mosaico
+    // cambia di rado: scaricare la stessa area in giorni diversi restituisce
+    // la stessa foto): qualunque "variazione" misurata viene da risoluzione,
+    // ritaglio o elaborazione, non da un cambiamento sul terreno — e va
+    // detto prima che venga letta o pubblicata come tale.
+    const sameWarn = $('#same-acquisition-warning');
+    if (sameWarn) {
+      const all = window.ORBITALEYE.imagery || {};
+      const a = all[result.captureAId], b = all[result.captureBId];
+      const same = a && b && a.date && a.date === b.date;
+      sameWarn.style.display = same ? '' : 'none';
+      if (same) {
+        sameWarn.textContent = '⚠ Le due riprese provengono dalla stessa acquisizione ('
+          + a.date.split('-').reverse().join('/') + '): le differenze rilevate sono dovute a risoluzione, '
+          + 'ritaglio o elaborazione, non a cambiamenti reali sul terreno.';
+      }
+    }
+  }
+
+  // Provenienza della coppia confrontata (date reali delle due immagini,
+  // attribuzione delle fonti), dai dati preparati lato server per ogni
+  // ripresa (ImageryAttribution): stesso formato di forCaptures() in PHP.
+  function pairProvenance(aId, bId) {
+    const all = window.ORBITALEYE.imagery || {};
+    const fmt = (iso) => (iso ? iso.split('-').reverse().join('/') : 'data non nota');
+    const parts = [];
+    const stripParts = [];
+    const credits = [];
+    const sentences = [];
+    let isEsri = false;
+    [['Prima', aId], ['Dopo', bId]].forEach(([name, id]) => {
+      const info = all[id];
+      if (!info) return;
+      isEsri = isEsri || !!info.is_esri;
+      parts.push(name + ': ' + (info.date_label || 'data non nota'));
+      stripParts.push(name + ' ' + fmt(info.date));
+      if (info.credit && !credits.includes(info.credit)) credits.push(info.credit);
+      if (info.credit_sentence && !sentences.includes(info.credit_sentence)) sentences.push(info.credit_sentence);
+    });
+    return {
+      isEsri,
+      strip: stripParts.concat(credits).join(' · '),
+      captionLines: parts.length
+        ? [parts.join('; ').replace(/^./, (c) => c.toUpperCase()) + '.'].concat(sentences).join('\n')
+        : '',
+    };
   }
 
   function renderRegionList(regions) {
@@ -1009,7 +1061,10 @@
   // regolazioni "live" da cuocere client-side): il server la risolve da
   // comparison_id/vista, nessun upload di bytes necessario per Telegram —
   // solo per il "copia negli appunti" serve scaricare i bytes nel browser.
-  function setupShareBlock({ prefix, getComparisonId, getViewUrl, getView, getStudyId }) {
+  function setupShareBlock({ prefix, getComparisonId, getViewUrl, getView, getStudyId, getProvenance }) {
+    const includeAttributionEl = $('#' + prefix + '-share-include-attribution');
+    const provenance = () => (getProvenance && getProvenance()) || { strip: '', isEsri: false };
+    const wantsAttribution = () => !!(includeAttributionEl && includeAttributionEl.checked);
     const captionEl = $('#' + prefix + '-share-caption');
     const statusEl = $('#' + prefix + '-share-status');
     const telegramBtn = $('#' + prefix + '-share-telegram-btn');
@@ -1022,13 +1077,25 @@
       if (!url) throw new Error('Nessuna immagine disponibile per questa vista (es. "Prima/Dopo (swipe)" non è un file salvato: scegli un\'altra vista).');
       const res = await fetch(url);
       if (!res.ok) throw new Error('Immagine non raggiungibile');
-      return res.blob();
+      const blob = await res.blob();
+      const strip = provenance().strip;
+      if (!wantsAttribution() || !strip) return blob;
+      // Stessa striscia che il server scrive sulle immagini inviate a Telegram.
+      const bitmap = await createImageBitmap(blob);
+      const c = document.createElement('canvas');
+      c.width = bitmap.width;
+      c.height = bitmap.height;
+      const ctx = c.getContext('2d');
+      ctx.drawImage(bitmap, 0, 0);
+      drawAttributionStrip(ctx, c.width, c.height, strip);
+      return new Promise((resolve) => c.toBlob(resolve, 'image/png'));
     }
 
     telegramBtn.addEventListener('click', async () => {
       if (telegramBtn.disabled) return; // evita invii duplicati su doppio click/tap
       const comparisonId = getComparisonId();
       if (!comparisonId) { statusEl.textContent = 'Nessun confronto disponibile.'; return; }
+      if (!confirmEsriPublishing(provenance().isEsri)) return;
       telegramBtn.disabled = true;
       statusEl.textContent = 'Invio in corso...';
       try {
@@ -1039,6 +1106,8 @@
         form.append('study_id', getStudyId());
         form.append('view', getView());
         form.append('caption', captionEl.value);
+        // L'immagine parte dal server: la striscia la scrive lui (share.php).
+        form.append('include_attribution', wantsAttribution() ? '1' : '0');
         const res = await fetch('api/share.php', { method: 'POST', body: form });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Errore');
@@ -1072,6 +1141,7 @@
 
     if (twitterBtn) {
       twitterBtn.addEventListener('click', () => {
+        if (!confirmEsriPublishing(provenance().isEsri)) return;
         const comparisonId = getComparisonId();
         const text = encodeURIComponent(captionEl.value);
         window.open('https://twitter.com/intent/tweet?text=' + text, '_blank');
@@ -1095,6 +1165,7 @@
     getComparisonId: () => state.currentComparison && state.currentComparison.comparisonId,
     getView: () => state.currentView,
     getViewUrl: () => state.currentComparison && state.currentComparison.urls[VIEW_FILES[state.currentView] || state.currentView],
+    getProvenance: () => state.currentProvenance,
     getStudyId: () => window.ORBITALEYE.studyId,
   });
 
@@ -1104,6 +1175,7 @@
     // libreria, non l'ultimo eseguito (che può essere un tentativo
     // esplorativo mai salvato).
     getComparisonId: () => window.ORBITALEYE.latestSavedComparisonId,
+    getProvenance: () => window.ORBITALEYE.summaryImagery,
     getView: () => 'overlay',
     getViewUrl: () => {
       const id = window.ORBITALEYE.latestSavedComparisonId;

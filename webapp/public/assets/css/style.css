@@ -508,6 +508,13 @@ label { display: flex; align-items: center; gap: 6px; font-size: 11px; color: va
 .alert { padding: 12px 14px; border-radius: var(--radius); margin-bottom: 16px; font-size: 13px; border: 1px solid; }
 .alert-error { border-color: var(--danger); color: var(--danger); background: rgba(255,59,87,0.08); }
 .alert-success { border-color: var(--green); color: var(--green); background: rgba(56,255,176,0.08); }
+.alert-warning { border-color: var(--amber); color: var(--text-primary); background: rgba(255,176,32,0.08); }
+.alert-warning a { color: var(--amber); }
+.esri-share-notice { font-size: 12px; line-height: 1.5; margin: 8px 0 10px; }
+/* Riga di provenienza dell'immagine (data reale, sensore, fonte). */
+.imagery-provenance { margin-top: 6px; font-size: 12px; color: var(--text-secondary); }
+.imagery-provenance strong { color: var(--text-primary); }
+.imagery-provenance .warn { color: var(--amber); }
 .alert-info { border-color: var(--cyan-dim); color: var(--cyan); background: rgba(0,255,242,0.06); }
 
 .empty-state { text-align: center; padding: 50px 20px; color: var(--text-muted); }

@@ -94,3 +94,50 @@ async function deleteEntity(type, id, redirectTo, confirmMessage) {
         window.location.reload();
     }
 }
+
+// ---------- Provenienza delle immagini condivise ----------
+// Striscia in basso con data reale dell'immagine e attribuzione della fonte
+// (testo preparato lato server da ImageryAttribution): chi vede l'immagine
+// pubblicata sa di quando è e da dove viene, e l'attribuzione richiesta dai
+// termini d'uso resta attaccata all'immagine anche quando viene inoltrata
+// senza didascalia. Usata dalla vista di analisi e dalla pagina studio.
+function drawAttributionStrip(ctx, w, h, text) {
+    if (!text || w < 40 || h < 20) return;
+    let fontPx = Math.max(10, Math.min(22, Math.round(w * 0.018)));
+    const pad = Math.round(fontPx * 0.5);
+    ctx.save();
+    const setFont = () => { ctx.font = fontPx + 'px "DejaVu Sans", Arial, sans-serif'; };
+    setFont();
+    // Riduce il carattere finché il testo entra nella larghezza disponibile.
+    while (fontPx > 8 && ctx.measureText(text).width > w - 2 * pad) {
+        fontPx -= 1;
+        setFont();
+    }
+    const stripH = fontPx + 2 * pad;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.62)';
+    ctx.fillRect(0, h - stripH, w, stripH);
+    ctx.fillStyle = '#ffffff';
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'right';
+    ctx.fillText(text, w - pad, h - stripH / 2, w - 2 * pad);
+    ctx.restore();
+}
+
+// Conferma prima di PUBBLICARE (Telegram, X) un'immagine Esri: i termini
+// d'uso Esri chiedono un permesso preventivo per gli usi diversi da quelli
+// elencati, e la pubblicazione su canali pubblici non vi rientra
+// chiaramente. Una volta per pagina; la scelta resta dell'analista. Lo
+// stesso avviso è sempre visibile accanto ai pulsanti.
+let esriPublishConfirmed = false;
+function confirmEsriPublishing(isEsri) {
+    if (!isEsri || esriPublishConfirmed) return true;
+    const ok = confirm(
+        'Questa immagine proviene da Esri World Imagery.\n\n'
+        + 'I termini d\'uso Esri consentono uso personale o interno, rapporti per clienti e '
+        + 'materiale promozionale proprio; per ogni altro uso, come la pubblicazione su canali '
+        + 'pubblici, chiedono un permesso preventivo.\n\n'
+        + 'Procedere comunque con la pubblicazione?'
+    );
+    esriPublishConfirmed = ok;
+    return ok;
+}

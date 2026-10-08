@@ -219,16 +219,36 @@ final class CaptureFetcher
             }
             self::syncRealSize($result);
 
+            // Data REALE delle immagini (non del download): metadati ufficiali
+            // Esri sull'area effettivamente scaricata, alla scala della ripresa.
+            $metaBbox = (abs($rotation) >= 0.01) ? $bbox : ($result['bbox'] ?? $bbox);
+            $imagery = null;
+            $imageryError = null;
+            try {
+                $areaBbox = (abs($rotation) >= 0.01) ? $actualFetchedBbox : $metaBbox;
+                $mpp = Capture::resolveMpp([
+                    'meta_json' => json_encode(['bbox' => $metaBbox]),
+                    'width' => $result['width'], 'height' => $result['height'],
+                ]);
+                $imagery = EsriImageryMetadata::query($areaBbox, (float) ($mpp['mpp_x'] ?? 0));
+            } catch (Throwable $e) {
+                // Non deve far fallire il download: la data si può recuperare
+                // in seguito (cli/refresh_esri_metadata.php o dalla vista di analisi).
+                $imageryError = $e->getMessage();
+            }
+
             $captureId = Capture::create(
                 $studyId,
-                'Esri World Imagery — scaricata il ' . date('d/m/Y'),
+                ImageryAttribution::esriCaptureLabel($imagery),
                 'esri',
-                null,
+                $imagery['dominant_date'] ?? null,
                 $result['relative_path'],
                 $result['width'],
                 $result['height'],
                 array_filter([
-                    'bbox' => (abs($rotation) >= 0.01) ? $bbox : ($result['bbox'] ?? $bbox),
+                    'bbox' => $metaBbox,
+                    'esri_imagery' => $imagery,
+                    'esri_imagery_error' => $imageryError,
                     'source' => 'esri-world-imagery', 'fetched_at' => date('c'),
                     'rotation' => abs($rotation) >= 0.01 ? $rotation : null,
                     'rotation_model' => abs($rotation) >= 0.01 ? ImageRotateCrop::ROTATION_MODEL : null,

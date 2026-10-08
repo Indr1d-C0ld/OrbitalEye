@@ -62,6 +62,12 @@ $captureDate = trim($_POST['capture_date'] ?? '') ?: null;
 // specialmente per un ritaglio molto più piccolo dell'area intera (vedi
 // Capture::resolveMpp).
 $meta = ['original_filename' => $_FILES['image']['name']];
+// Fonte dichiarata dall'analista per un'immagine caricata a mano: è ciò che
+// verrà citato nelle didascalie e sull'immagine quando la si condivide.
+$attribution = trim(mb_substr((string) ($_POST['attribution'] ?? ''), 0, 200));
+if ($attribution !== '') {
+    $meta['attribution'] = $attribution;
+}
 $sourceCaptureId = (int) ($_POST['source_capture_id'] ?? 0);
 if ($sourceCaptureId) {
     $sourceCapture = Capture::find($sourceCaptureId);
@@ -86,6 +92,22 @@ if ($sourceCaptureId) {
         // Area e rotazione della sorgente (o del ritaglio): senza, la copia
         // salvata perdeva la rotazione e le sue misure risultavano sbagliate.
         $meta += Capture::geoMetaForDerived($sourceCapture, $crop);
+
+        // Ritaglio di una ripresa Esri: le acquisizioni del SOLO frammento.
+        // In un mosaico possono differire da quella prevalente dell'intera
+        // ripresa (es. un piazzale fotografato in una data diversa dal resto
+        // della base). In caso di errore resta valida l'informazione della
+        // sorgente, a cui si risale comunque (vedi ImageryAttribution).
+        if ($crop && !empty($meta['bbox']) && !empty($meta['mpp_x'])
+            && ImageryAttribution::forCapture($sourceCapture)['is_esri']
+        ) {
+            try {
+                $meta['esri_imagery'] = EsriImageryMetadata::query($meta['bbox'], (float) $meta['mpp_x']);
+                $captureDate = $meta['esri_imagery']['dominant_date'];
+            } catch (Throwable $e) {
+                // si usa la provenienza della sorgente
+            }
+        }
 
         // Stessa data di acquisizione della sorgente, se non indicata: la
         // copia di una ripresa è un'elaborazione, non una nuova acquisizione.

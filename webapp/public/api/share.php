@@ -71,7 +71,7 @@ function resolve_share_image(string $kind, ?int $refId, string $view): array
         if ($bytes === false) {
             throw new RuntimeException('Immagine caricata non leggibile');
         }
-        return [$bytes, 'ripresa.' . $allowed[$mime], $mime];
+        return [$bytes, 'ripresa.' . $allowed[$mime], $mime, null];
     }
 
     $comparisonId = $refId;
@@ -101,7 +101,7 @@ function resolve_share_image(string $kind, ?int $refId, string $view): array
         throw new RuntimeException('File immagine non trovato su disco');
     }
     $mime = (new finfo(FILEINFO_MIME_TYPE))->file($absPath) ?: 'image/jpeg';
-    return [$bytes, basename($relPath), $mime];
+    return [$bytes, basename($relPath), $mime, $comparison];
 }
 
 // Twitter/X: nessun invio server-side in questa piattaforma (l'immagine
@@ -115,9 +115,25 @@ if ($platform === 'twitter') {
 }
 
 try {
-    [$imageBytes, $filename, $mimeType] = resolve_share_image($kind, $refId, $view);
+    [$imageBytes, $filename, $mimeType, $sharedComparison] = resolve_share_image($kind, $refId, $view);
 } catch (RuntimeException $e) {
     respond_json(['error' => $e->getMessage()], 404);
+}
+
+// Confronti e riepiloghi partono dal server (per una ripresa l'immagine
+// arriva dal browser, che ha già scritto la striscia se richiesto): qui si
+// aggiunge la striscia con le date reali delle due immagini e
+// l'attribuzione delle fonti, se l'analista l'ha lasciata attiva.
+if ($sharedComparison && ($_POST['include_attribution'] ?? '1') === '1') {
+    $provenance = ImageryAttribution::forCaptures(array_filter([
+        'Prima' => Capture::find((int) $sharedComparison['capture_a_id']),
+        'Dopo' => Capture::find((int) $sharedComparison['capture_b_id']),
+    ]));
+    $burned = ImageryAttribution::burnStrip($imageBytes, $provenance['strip']);
+    if ($burned) {
+        [$imageBytes, $mimeType] = $burned;
+        $filename = preg_replace('/\.\w+$/', '', $filename) . '.jpg';
+    }
 }
 
 try {

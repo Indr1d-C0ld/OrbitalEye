@@ -1546,10 +1546,7 @@
     // Il frammento in anteprima è quello che le azioni useranno davvero: se
     // "includi livello" è già spuntato, va mostrato con il livello (prima si
     // vedeva il frammento pulito mentre copia/salva/condividi usavano l'altro).
-    const includeNow = $('#an-crop-include-overlay-layer');
-    const previewBlob = includeNow && includeNow.checked
-      ? buildCropBlob()
-      : new Promise((res) => cropCanvas.toBlob(res, 'image/png'));
+    const previewBlob = buildCropBlob();
     previewBlob.then((blob) => {
       if (!blob) return;
       if (lastCropBlobUrl) URL.revokeObjectURL(lastCropBlobUrl);
@@ -1574,44 +1571,61 @@
   // frammento, cioè lo stesso rettangolo sorgente già usato per il
   // frammento "pulito" — così i due restano sempre perfettamente allineati.
   // Nessuna maniglia di modifica: non è contenuto, solo un aiuto dal vivo.
-  function buildCropBlob() {
+  // opts.publish: il frammento va verso l'esterno (copia, download,
+  // condivisione) e riceve, se richiesto, la striscia con data e fonte. Mai
+  // per il salvataggio come nuova ripresa: lì il testo diventerebbe parte
+  // dei pixel analizzati.
+  function buildCropBlob(opts = {}) {
+    const publish = opts.publish !== false;
     return new Promise((resolve) => {
       if (!lastCropCanvas) { resolve(null); return; }
-      const includeEl = $('#an-crop-include-overlay-layer');
-      if (!includeEl || !includeEl.checked || !lastCropNativeRect) {
+      const includeLayerEl = $('#an-crop-include-overlay-layer');
+      const includeLayer = !!(includeLayerEl && includeLayerEl.checked && lastCropNativeRect);
+      const attributionEl = $('#an-crop-include-attribution');
+      const includeAttribution = publish && !!(attributionEl && attributionEl.checked);
+      if (!includeLayer && !includeAttribution) {
         lastCropCanvas.toBlob(resolve, 'image/png');
         return;
       }
-      const { sx, sy, sw, sh } = lastCropNativeRect;
-      const fullLayer = document.createElement('canvas');
-      fullLayer.width = imgRight.naturalWidth;
-      fullLayer.height = imgRight.naturalHeight;
-      // Annotazioni e misurazioni si ritagliano dal livello a piena
-      // risoluzione; la barra di scala no: sull'immagine intera sta in basso
-      // a sinistra, e nel frammento compariva solo se il ritaglio includeva
-      // proprio quell'angolo. Viene ridisegnata sul frammento, alla stessa
-      // scala e con lo stesso aspetto.
-      drawOverlayLayer(fullLayer.getContext('2d'), fullLayer.width, fullLayer.height, false, { scaleBar: false });
       const finalCanvas = document.createElement('canvas');
       finalCanvas.width = lastCropCanvas.width;
       finalCanvas.height = lastCropCanvas.height;
       const fctx = finalCanvas.getContext('2d');
       fctx.drawImage(lastCropCanvas, 0, 0);
-      fctx.drawImage(fullLayer, sx, sy, sw, sh, 0, 0, finalCanvas.width, finalCanvas.height);
-      drawScaleBar(fctx, finalCanvas.width, finalCanvas.height, false, {
-        nativePerTarget: sw / finalCanvas.width,
-        unit: imgRight.naturalWidth / canvas.width,
-      });
+      if (includeLayer) {
+        const { sx, sy, sw, sh } = lastCropNativeRect;
+        const fullLayer = document.createElement('canvas');
+        fullLayer.width = imgRight.naturalWidth;
+        fullLayer.height = imgRight.naturalHeight;
+        // Annotazioni e misurazioni si ritagliano dal livello a piena
+        // risoluzione; la barra di scala no: sull'immagine intera sta in basso
+        // a sinistra, e nel frammento compariva solo se il ritaglio includeva
+        // proprio quell'angolo. Viene ridisegnata sul frammento, alla stessa
+        // scala e con lo stesso aspetto.
+        drawOverlayLayer(fullLayer.getContext('2d'), fullLayer.width, fullLayer.height, false, { scaleBar: false });
+        fctx.drawImage(fullLayer, sx, sy, sw, sh, 0, 0, finalCanvas.width, finalCanvas.height);
+        drawScaleBar(fctx, finalCanvas.width, finalCanvas.height, false, {
+          nativePerTarget: sw / finalCanvas.width,
+          unit: imgRight.naturalWidth / canvas.width,
+        });
+      }
+      if (includeAttribution) drawAttributionStrip(fctx, finalCanvas.width, finalCanvas.height, imageryStrip);
       finalCanvas.toBlob(resolve, 'image/png');
     });
   }
+
+  // Funzioni comuni in common.js (drawAttributionStrip, confirmEsriPublishing),
+  // qui con il testo e la fonte di questa ripresa.
+  const imageryStrip = (CFG.imagery && CFG.imagery.strip) || '';
+  const imageryIsEsri = !!(CFG.imagery && CFG.imagery.isEsri);
 
   // Aggiorna anche l'anteprima del frammento quando si spunta/sspunta la
   // checkbox, così quello che si vede combacia sempre con quello che le
   // azioni sotto (copia/scarica/salva/condividi) useranno davvero.
   const cropIncludeOverlayEl = $('#an-crop-include-overlay-layer');
-  if (cropIncludeOverlayEl) {
-    cropIncludeOverlayEl.addEventListener('change', async () => {
+  const cropIncludeAttributionEl = $('#an-crop-include-attribution');
+  [cropIncludeOverlayEl, cropIncludeAttributionEl].filter(Boolean).forEach((el) => {
+    el.addEventListener('change', async () => {
       if (!lastCropCanvas) return;
       const blob = await buildCropBlob();
       if (!blob) return;
@@ -1620,7 +1634,7 @@
       lastCropBlob = blob;
       $('#an-crop-preview').src = lastCropBlobUrl;
     });
-  }
+  });
 
   $('#an-crop-download-btn').addEventListener('click', async () => {
     const blob = await buildCropBlob();
@@ -1705,7 +1719,7 @@
     cropSaveBtn.disabled = true;
     status.textContent = 'Salvataggio in corso...';
     try {
-      const blob = await buildCropBlob();
+      const blob = await buildCropBlob({ publish: false });
       if (!blob) throw new Error('impossibile generare l\'immagine');
       const form = new FormData();
       form.append('study_id', CFG.studyId);
@@ -1743,6 +1757,7 @@
   cropShareTelegramBtn.addEventListener('click', async () => {
     if (cropShareTelegramBtn.disabled) return; // evita invii duplicati su doppio click/tap
     if (!lastCropBlob) return;
+    if (!confirmEsriPublishing(imageryIsEsri)) return;
     const status = $('#an-crop-share-status');
     cropShareTelegramBtn.disabled = true;
     status.textContent = 'Invio in corso...';
@@ -1768,6 +1783,7 @@
   });
 
   cropShareTwitterBtn.addEventListener('click', () => {
+    if (!confirmEsriPublishing(imageryIsEsri)) return;
     // Stesso schema del pannello "Condividi" qui sotto: l'intent di X non
     // supporta l'allegato di un'immagine via URL, solo testo — l'analista
     // incolla/trascina lui il ritaglio (pulsante "Copia negli appunti" qui
@@ -1793,7 +1809,12 @@
   const shareStatusEl = $('#an-share-status');
 
   function shareCanvasBlob() {
-    return new Promise((resolve) => renderAdjustedCanvas().toBlob(resolve, 'image/jpeg', 0.92));
+    const shareCanvas = renderAdjustedCanvas();
+    const includeEl = $('#an-share-include-attribution');
+    if (includeEl && includeEl.checked) {
+      drawAttributionStrip(shareCanvas.getContext('2d'), shareCanvas.width, shareCanvas.height, imageryStrip);
+    }
+    return new Promise((resolve) => shareCanvas.toBlob(resolve, 'image/jpeg', 0.92));
   }
 
   const shareTelegramBtn = $('#an-share-telegram-btn');
@@ -1801,6 +1822,7 @@
 
   shareTelegramBtn.addEventListener('click', async () => {
     if (shareTelegramBtn.disabled) return; // evita invii duplicati su doppio click/tap
+    if (!confirmEsriPublishing(imageryIsEsri)) return;
     shareTelegramBtn.disabled = true;
     shareStatusEl.textContent = 'Preparazione immagine e invio in corso...';
     try {
@@ -1844,6 +1866,7 @@
   });
 
   $('#an-share-twitter-btn').addEventListener('click', () => {
+    if (!confirmEsriPublishing(imageryIsEsri)) return;
     // L'intent di composizione X non supporta l'allegato di un'immagine via
     // URL, solo testo: l'analista incolla/trascina lui l'immagine (vedi
     // pulsante "Copia negli appunti" qui sopra) — l'invio a un servizio

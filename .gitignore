@@ -26,3 +26,6 @@ storage/config/*
 .DS_Store
 *.swp
 *.bak.*
+
+# === Log degli script da riga di comando (dati operativi) ===
+webapp/cli/logs/

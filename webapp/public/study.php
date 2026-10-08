@@ -20,6 +20,31 @@ $defaults = AppSettings::all();
 // (vedi api/share.php), quindi ha senso solo se ne esiste almeno uno.
 $latestComparison = Comparison::latestSaved($studyId);
 $studySummaryCaption = null;
+
+// Provenienza di ogni ripresa (data reale dell'immagine, attribuzione della
+// fonte — vedi ImageryAttribution): mostrata nelle miniature e usata dal
+// browser per comporre didascalia e striscia della coppia confrontata.
+$imageryById = [];
+foreach ($captures as $c) {
+    $info = ImageryAttribution::forCapture($c);
+    $lines = explode("\n", $info['caption_line']);
+    $imageryById[(int) $c['id']] = [
+        'date' => $info['date'],
+        'date_label' => $info['date_label'],
+        'credit' => $info['credit'],
+        // Ultima riga della didascalia = frase di attribuzione richiesta
+        // dalla fonte (la prima riga contiene la data, già nei date_label).
+        'credit_sentence' => count($lines) > 1 ? end($lines) : ($info['kind'] === 'custom' ? $info['caption_line'] : ''),
+        'is_esri' => $info['is_esri'],
+    ];
+}
+$summaryImagery = null;
+if ($latestComparison) {
+    $summaryImagery = ImageryAttribution::forCaptures([
+        'Prima' => Capture::find((int) $latestComparison['capture_a_id']),
+        'Dopo' => Capture::find((int) $latestComparison['capture_b_id']),
+    ]);
+}
 if ($latestComparison) {
     $latestStats = json_decode($latestComparison['stats_json'] ?? '', true) ?: [];
     $changedPct = isset($latestStats['changed_ratio']) ? round($latestStats['changed_ratio'] * 100, 2) : null;
@@ -29,7 +54,7 @@ if ($latestComparison) {
         . ' — ' . count($captures) . ' riprese, ' . count($comparisons) . ' confronti'
         . ($changedPct !== null ? " — ultima variazione rilevata: {$changedPct}%" : '')
         . ' — OrbitalEye'
-    );
+    ) . ($summaryImagery && $summaryImagery['caption_line'] !== '' ? "\n" . $summaryImagery['caption_line'] : '');
 }
 
 $pageTitle = $study['title'];
@@ -56,7 +81,12 @@ require __DIR__ . '/partials/nav.php';
   <?php if ($latestComparison): ?>
     <div style="margin-top:14px; padding-top:14px; border-top:1px solid var(--line);">
       <label style="display:flex; align-items:center; gap:6px;">Riepilogo di studio <span class="info-tip" tabindex="0" data-tip="Condivide l'ultimo confronto salvato di questo studio (immagine overlay) con una didascalia che riassume conteggi e ultima variazione rilevata. Anteprima e didascalia sono sempre modificabili prima dell'invio.">?</span></label>
-      <textarea id="study-share-caption" rows="2" style="width:100%; margin-top:6px;"><?= e($studySummaryCaption) ?></textarea>
+      <textarea id="study-share-caption" rows="4" style="width:100%; margin-top:6px;"><?= e($studySummaryCaption) ?></textarea>
+      <label class="checkbox-row" style="margin:6px 0;">
+        <input type="checkbox" id="study-share-include-attribution" checked>
+        Scrivi data e fonte sull'immagine
+      </label>
+      <?php $esriNoticeVisible = $summaryImagery && $summaryImagery['is_esri']; require __DIR__ . '/partials/esri_share_notice.php'; ?>
       <div class="tag-row" style="margin-top:8px;">
         <button type="button" class="btn btn-primary btn-sm" id="study-share-telegram-btn">📤 Invia su Telegram</button>
         <button type="button" class="btn btn-sm" id="study-share-copy-btn">📋 Copia immagine negli appunti</button>
@@ -92,6 +122,10 @@ require __DIR__ . '/partials/nav.php';
             <label>Data ripresa</label>
             <input type="date" name="capture_date">
           </div>
+        </div>
+        <div class="field">
+          <label>Fonte / attribuzione <span class="info-tip" tabindex="0" data-tip="Chi ha prodotto l'immagine e con quale licenza (es. &quot;Regione Toscana, ortofoto 2024, CC BY 4.0&quot;). Verrà citata nelle didascalie e sull'immagine quando la condividi. Facoltativo.">?</span></label>
+          <input type="text" name="attribution" maxlength="200" placeholder="es. Regione Toscana — ortofoto 2024 (CC BY 4.0)">
         </div>
         <button class="btn btn-primary" type="submit">Carica</button>
         <span class="hint" id="upload-status"></span>
@@ -261,7 +295,10 @@ require __DIR__ . '/partials/nav.php';
           <img src="<?= e(storage_url($c['relative_path'])) ?>" alt="">
           <div class="meta">
             <div class="lbl"><?= e($c['label'] ?: ('Ripresa #' . $c['id'])) ?></div>
-            <div><?= format_date_it($c['capture_date']) ?> · <?= e($c['source']) ?></div>
+            <?php $ci = $imageryById[(int) $c['id']] ?? null; ?>
+            <div title="<?= e($ci && $ci['date_label'] ? ucfirst($ci['date_label']) : 'Data dell\'immagine non nota') ?>">
+              📅 <?= $ci && $ci['date'] ? format_date_it($ci['date']) : format_date_it($c['capture_date']) ?> · <?= e($c['source']) ?>
+            </div>
             <div style="display:flex; gap:4px; margin-top:6px;">
               <a class="btn btn-sm" style="flex:1; text-align:center;" href="export_capture.php?id=<?= (int)$c['id'] ?>" onclick="event.stopPropagation();" title="Scarica il file immagine originale">⬇ Scarica</a>
               <button type="button" class="btn btn-sm btn-danger" style="flex:1;"
@@ -593,6 +630,7 @@ require __DIR__ . '/partials/nav.php';
     </div>
   </div>
 
+  <div class="alert alert-warning" id="same-acquisition-warning" style="display:none; margin-top:12px;"></div>
   <div class="grid grid-4" id="result-stats" style="margin:16px 0;"></div>
 
   <div class="viewer-tabs">
@@ -607,7 +645,12 @@ require __DIR__ . '/partials/nav.php';
 
   <div style="margin:12px 0; padding:12px; border:1px solid var(--line); border-radius:4px;">
     <label style="display:flex; align-items:center; gap:6px;">Condividi la vista corrente <span class="info-tip" tabindex="0" data-tip="Condivide l'immagine attualmente selezionata sopra (overlay/heatmap/maschera/contorni/originali — non disponibile per 'Prima/Dopo (swipe)', che non è un'immagine salvata). Anteprima e didascalia sono sempre modificabili prima dell'invio, mai una pubblicazione automatica.">?</span></label>
-    <textarea id="cmp-share-caption" rows="2" style="width:100%; margin-top:6px;"></textarea>
+    <textarea id="cmp-share-caption" rows="4" style="width:100%; margin-top:6px;"></textarea>
+    <label class="checkbox-row" style="margin:6px 0;">
+      <input type="checkbox" id="cmp-share-include-attribution" checked>
+      Scrivi data e fonte sull'immagine <span class="info-tip" tabindex="0" data-tip="Striscia in basso con le date reali delle due immagini e l'attribuzione delle fonti (richiesta dai termini d'uso). Vale per Telegram e per la copia negli appunti.">?</span>
+    </label>
+    <div id="cmp-esri-notice" style="display:none;"><?php $esriNoticeVisible = true; require __DIR__ . '/partials/esri_share_notice.php'; ?></div>
     <div class="tag-row" style="margin-top:8px;">
       <button type="button" class="btn btn-primary btn-sm" id="cmp-share-telegram-btn">📤 Invia su Telegram</button>
       <button type="button" class="btn btn-sm" id="cmp-share-copy-btn">📋 Copia immagine negli appunti</button>
@@ -701,6 +744,9 @@ window.ORBITALEYE = {
   // Ultimo confronto SALVATO in libreria: è quello del "Riepilogo di studio"
   // (lo stesso che il server condivide su Telegram, vedi api/share.php).
   latestSavedComparisonId: <?= $latestComparison ? (int) $latestComparison['id'] : 'null' ?>,
+  // Provenienza per ripresa e del riepilogo (vedi sopra e ImageryAttribution).
+  imagery: <?= json_encode((object) $imageryById) ?>,
+  summaryImagery: <?= json_encode($summaryImagery ? ['strip' => $summaryImagery['strip'], 'isEsri' => $summaryImagery['is_esri']] : null) ?>,
   mediaBase: 'media.php?path='
 };
 </script>

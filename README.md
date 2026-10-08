@@ -37,6 +37,7 @@ Il confronto non è una semplice sovrapposizione: le due immagini vengono prima 
 **Acquisizione riprese**
 - Caricamento manuale di immagini da qualunque fonte tu sia autorizzato a usare offline
 - Fetch automatico da **Copernicus/Sentinel-2** (storico, ~10m/pixel, con coppia Rosso+NIR scaricata a parte per gli indici spettrali) e **Esri World Imagery** (risoluzione più alta, ultima disponibile; retry automatico a risoluzione ridotta contro il limite di complessità del servizio) tramite le rispettive API ufficiali
+- **Data reale delle immagini Esri**: il mosaico World Imagery è composto da acquisizioni di epoche diverse e aggiornato di rado, quindi la data del download non dice nulla su quando è stata scattata la foto. Per ogni ripresa vengono letti dai metadati ufficiali Esri data, sensore (WorldView-2/3, Legion…), risoluzione nativa e fornitore di ogni acquisizione che copre l'area, con la quota di area di ciascuna; la data prevalente diventa la data della ripresa. Le riprese più vecchie si datano com'erano il giorno del download grazie all'archivio storico Wayback
 - Selettore d'area interattivo su mappa (Leaflet, incluso nel progetto) con mappa stradale Esri World Street Map, basemap satellitare opzionale e **ricerca luogo** per nome (Nominatim/OpenStreetMap, solo su richiesta esplicita)
 - Possibilità di **ruotare l'area** prima dello scaricamento: la rotazione avviene nelle proporzioni reali del terreno, quindi la ripresa salvata coincide esattamente con il poligono mostrato sulla mappa, a qualunque latitudine
 - **Scaricamento pianificato**: controllo periodico di un'area/fonte, scarto automatico dei duplicati (soglia configurabile) e **alert** all'arrivo di una ripresa diversa; pagina di gestione centralizzata di tutte le pianificazioni con badge d'errore nel menu
@@ -70,6 +71,7 @@ Il confronto non è una semplice sovrapposizione: le due immagini vengono prima 
 - Annotazioni e misurazioni persistenti, disegnabili direttamente sulle immagini
 - Libreria degli studi salvati, con ricerca
 - **Condivisione** manuale di ripresa/confronto/riepilogo studio su Telegram (bot) o X/Twitter (finestra di composizione), con registro di controllo — nessuna pubblicazione automatica, mai agganciata al motore di scaricamento
+- **Provenienza in ogni pubblicazione**: data reale dell'immagine, sensore e attribuzione richiesta dalla fonte (Esri, Copernicus o quella dichiarata al caricamento) nella didascalia e, a scelta, in una striscia sull'immagine stessa; avviso sui termini d'uso Esri accanto ai pulsanti di condivisione; segnalazione quando si confrontano due riprese della stessa acquisizione
 - **Export georeferenziato KML/GeoJSON** di annotazioni e misurazioni (per Google Earth / QGIS), esatto anche per riprese ruotate, ritagli e copie derivate
 - Export per singola immagine, per confronto (ZIP con immagini + report HTML/JSON) o per l'intera libreria
 - Tooltip esplicativi su ogni parametro/filtro
@@ -107,6 +109,12 @@ Le tile satellitari di **Google Maps/Earth non sono scaricabili in blocco** per 
 - **[Esri World Imagery](https://developers.arcgis.com)** — tramite l'operazione REST ufficiale `/export` del MapServer pubblico, risoluzione spesso più alta (sub-metrica in molte aree, varia per zona) ma solo il composito "più recente disponibile". Funziona anche senza API key per uso leggero; per un uso sostenuto è consigliato un account ArcGIS Developer gratuito.
 
 Per immagini a risoluzione ancora più alta puoi sempre usare il **caricamento manuale**, con qualunque fonte tu sia legalmente autorizzato a usare offline (dataset pubblici come USGS/NAIP per gli USA, riprese aeree proprie, immagini acquistate da provider commerciali con licenza per uso offline, ecc.).
+
+### Pubblicare le immagini: termini d'uso e attribuzione
+
+- **Copernicus Sentinel**: dati liberi e aperti per qualunque uso lecito, compresa la pubblicazione; richiesta la dicitura *"Contains modified Copernicus Sentinel data [anno]"* per immagini elaborate ([Sentinel Data Legal Notice](https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice)). OrbitalEye la inserisce automaticamente.
+- **Esri World Imagery**: i [termini d'uso delle immagini statiche](https://doc.arcgis.com/en/arcgis-online/reference/static-maps.htm) consentono uso personale o interno, rapporti per clienti, materiale promozionale proprio, pubblicazioni accademiche e opere governative; per ogni altro uso — come la pubblicazione su canali pubblici — chiedono un permesso preventivo ([richiesta](https://www.esri.com/en-us/legal/copyright-inquiry)). OrbitalEye inserisce l'attribuzione richiesta e mostra questo avviso prima di ogni pubblicazione, ma la valutazione resta a chi pubblica.
+- **Immagini caricate a mano**: il campo "Fonte / attribuzione" del caricamento viene riportato nelle didascalie e sull'immagine.
 
 Il selettore mappa integrato usa tile **Esri World Street Map** per la navigazione (i tile OSM anonimi vengono spesso limitati per uso non banale) e, opzionalmente, tile **Esri World Imagery** come basemap satellitare per il solo riconoscimento visivo dell'area — in entrambi i casi solo visualizzazione interattiva, senza alcun download/archiviazione delle tile. La **ricerca luogo** interroga [Nominatim](https://nominatim.org/) (OpenStreetMap) solo quando l'analista preme Invio o la lente, mai mentre digita, nel rispetto della sua policy d'uso. La libreria Leaflet è inclusa nel progetto e servita localmente: aprire una mappa non comunica nulla a CDN di terze parti.
 
@@ -227,6 +235,7 @@ Nella vista di analisi ripresa singola sono disponibili anche **misurazioni** di
 ### Condivisione ed export
 
 - **Condivisione** (Telegram / X) di una ripresa, di un confronto o del riepilogo di uno studio: gesto sempre manuale e previewabile, con didascalia modificabile e registro di controllo. Nessun contenuto viene mai pubblicato automaticamente.
+- **Data e fonte**: la didascalia proposta riporta la data reale dell'immagine (non quella del download) e l'attribuzione richiesta dalla fonte; l'opzione "Scrivi data e fonte sull'immagine" aggiunge una striscia in basso, così l'informazione resta attaccata all'immagine anche quando viene inoltrata. La striscia non viene mai scritta nelle riprese salvate in archivio (resterebbe nei pixel analizzati).
 - **Export georeferenziato KML / GeoJSON** di annotazioni e misurazioni, pronto per Google Earth / QGIS. La conversione in coordinate geografiche è esatta anche per le riprese ruotate e per ritagli e copie derivate (che conservano l'area geografica della sorgente); solo per un'immagine caricata a mano senza alcun riferimento viene usata, con un avviso esplicito, l'area dello studio.
 - **Singola immagine**: download diretto con nome file descrittivo.
 - **Confronto**: ZIP con le due riprese originali, le immagini di risultato, un report HTML autonomo (apribile offline, con tutti i parametri/statistiche/regioni/annotazioni) e gli stessi dati in JSON.
@@ -248,6 +257,18 @@ anche la **manutenzione dello storage**: anteprime e confronti mai salvati
 vengono rimossi dopo 48 ore. Un'esecuzione alla volta (lock), e le
 pianificazioni rispettano la cadenza impostata anche se il giro precedente è
 terminato qualche secondo dopo l'orario del cron.
+
+Per le riprese Esri archiviate prima che la data reale venisse letta al
+download (o se il servizio metadati non aveva risposto):
+
+```bash
+php webapp/cli/refresh_esri_metadata.php            # solo quelle senza metadati
+php webapp/cli/refresh_esri_metadata.php --dry-run  # mostra cosa cambierebbe
+php webapp/cli/refresh_esri_metadata.php --all      # tutte
+```
+
+Le etichette generate automaticamente vengono aggiornate con la data
+dell'immagine; quelle scritte a mano non vengono toccate.
 
 ## Sicurezza
 

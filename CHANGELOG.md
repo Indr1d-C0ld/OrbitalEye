@@ -4,6 +4,104 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-10-08 — Integrità del materiale pubblicato: data reale delle immagini Esri, attribuzione delle fonti, avviso sui termini d'uso
+
+Prima parte del piano di evoluzione. Il mosaico Esri World Imagery è
+composto da acquisizioni di epoche diverse e viene aggiornato di rado:
+la data del download non dice quando è stata scattata la foto. Sul
+deployment reale, riprese "scaricate a settembre 2026" risultano scattate
+tra il 2022 e il 2025. Due di queste confrontate tra loro possono essere
+la *stessa* acquisizione, e il "cambiamento" è solo rumore. Inoltre le
+immagini condivise non riportavano né la data reale né l'attribuzione
+richiesta dalle fonti.
+
+### Data reale, sensore e risoluzione delle immagini Esri
+
+- **[webapp/src/EsriImageryMetadata.php](webapp/src/EsriImageryMetadata.php)** (nuovo) —
+  interroga il servizio metadati ufficiale di World Imagery (layer
+  "Resolution Metadata" scelto in base alla scala della ripresa, con
+  ripiego sui livelli più grossolani se a quella scala non ci sono dati
+  e un nuovo tentativo sui falsi "Layer not found" del servizio).
+  Restituisce ogni acquisizione che copre l'area: data, sensore
+  (WorldView-2/3, Legion, GeoEye…), risoluzione nativa, fornitore e
+  quota di area coperta. La quota è calcolata ritagliando i poligoni
+  sull'area (Sutherland–Hodgman) e misurandone l'area. La data prevalente
+  diventa la data della ripresa. `queryAsOf()` data una ripresa scaricata
+  in passato usando l'archivio storico **Wayback**: interroga le due
+  versioni del mosaico prima e dopo il download. Se coincidono la data è
+  certa, altrimenti viene segnata come incerta con l'alternativa.
+  L'elenco dei layer e delle versioni Wayback resta in cache in
+  `app_settings`.
+- **[webapp/src/CaptureFetcher.php](webapp/src/CaptureFetcher.php)** — ogni
+  nuovo scaricamento Esri legge i metadati (sul riquadro realmente
+  scaricato, anche per le aree ruotate) e salva data reale, etichetta
+  ("Esri World Imagery — immagine del gg/mm/aaaa") e dettagli in
+  `meta.esri_imagery`. Se il servizio metadati non risponde la ripresa
+  viene salvata lo stesso e l'errore registrato.
+- **[webapp/public/api/upload_capture.php](webapp/public/api/upload_capture.php)** —
+  un ritaglio di una ripresa Esri riceve i metadati del proprio riquadro,
+  non quelli dell'intera ripresa. Nuovo campo facoltativo `attribution`
+  (max 200 caratteri) per le immagini caricate a mano.
+- **[webapp/cli/refresh_esri_metadata.php](webapp/cli/refresh_esri_metadata.php)** (nuovo) —
+  recupero per le riprese già archiviate (`--all`, `--id=N`, `--dry-run`),
+  datate com'erano il giorno del download. Aggiorna solo le etichette
+  generate automaticamente, mai quelle scritte a mano.
+
+### Attribuzione delle fonti e provenienza
+
+- **[webapp/src/ImageryAttribution.php](webapp/src/ImageryAttribution.php)** (nuovo) —
+  un solo punto che ricava fonte, data reale e testo di attribuzione di
+  una ripresa, risalendo la catena delle copie (ritagli, versioni
+  migliorate) fino all'originale. Gestisce Esri (dicitura di copyright
+  richiesta), Copernicus ("Contains modified Copernicus Sentinel data
+  [anno]") e la fonte dichiarata al caricamento. Fornisce la riga per la
+  didascalia, la striscia per l'immagine (anche per una coppia Prima/Dopo)
+  e la scrittura della striscia lato server (GD, DejaVu Sans).
+- **[webapp/public/analyze_capture.php](webapp/public/analyze_capture.php)**,
+  **[webapp/public/assets/js/analyze.js](webapp/public/assets/js/analyze.js)**,
+  **[webapp/public/assets/js/common.js](webapp/public/assets/js/common.js)** —
+  sotto il titolo della vista di analisi: data reale, sensore,
+  risoluzione nativa e data del download. Le didascalie proposte
+  includono data e attribuzione. Nuova opzione "Scrivi data e fonte
+  sull'immagine", attiva di default, per la ripresa intera e per il
+  ritaglio; l'anteprima del ritaglio la mostra. La striscia non viene mai
+  scritta nei ritagli salvati come nuove riprese, perché finirebbe nei
+  pixel analizzati. `buildCropBlob()` separa ora livello annotazioni e
+  striscia.
+- **[webapp/public/study.php](webapp/public/study.php)**,
+  **[webapp/public/assets/js/study.js](webapp/public/assets/js/study.js)**,
+  **[webapp/public/api/share.php](webapp/public/api/share.php)** — le
+  miniature mostrano la data reale. Le didascalie di confronto e di
+  riepilogo riportano le date reali di Prima e Dopo e le fonti. La
+  striscia viene scritta anche sulle immagini dei confronti, lato server
+  per Telegram e lato browser per la copia verso X. Se le due riprese
+  confrontate risultano la stessa acquisizione compare un avviso: le
+  differenze rilevate sarebbero solo rumore.
+
+### Avviso sui termini d'uso Esri
+
+- **[webapp/public/partials/esri_share_notice.php](webapp/public/partials/esri_share_notice.php)** (nuovo),
+  **[webapp/public/assets/css/style.css](webapp/public/assets/css/style.css)** —
+  accanto ai pulsanti di condivisione di un'immagine Esri compare un
+  riquadro con il riassunto dei termini. Le immagini statiche sono
+  consentite per uso personale o interno, rapporti, pubblicazioni
+  accademiche e simili; per la pubblicazione su canali pubblici Esri
+  chiede un permesso preventivo. Il riquadro ha i link ai termini e alla
+  richiesta di autorizzazione. Prima della prima pubblicazione della
+  pagina viene chiesta una conferma esplicita
+  (`confirmEsriPublishing()`).
+
+### Repository
+
+- **README.md** — documentate data reale delle immagini, provenienza nelle
+  condivisioni, termini d'uso e attribuzione delle fonti, script di
+  recupero.
+- **.gitignore** — esclusa `webapp/cli/logs/` (dati operativi).
+- La cartella `webapp/cli/` non veniva sincronizzata: lo script dello
+  scaricamento pianificato (`run_scheduled_downloads.php`, già documentato
+  nel README) mancava dal repo. Ora sono inclusi entrambi gli script, mai
+  i log.
+
 ## 2026-09-23 — Secondo audit completo: correttezza analitica, geometria, robustezza e frontend
 
 Revisione dell'intera base di codice (~13.200 righe) in quattro aree

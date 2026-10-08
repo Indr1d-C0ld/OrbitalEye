@@ -51,12 +51,16 @@ $rotationModel = $geoRef['rotation_model'] ?? (is_array($captureMeta) ? ($captur
 // Didascalia di default per la condivisione (Telegram/X): dati generici
 // non sensibili, MAI coordinate esatte — se l'analista le vuole includere
 // le aggiunge lui a mano, editando il campo prima dell'invio.
-// L'etichetta della ripresa è già descrittiva di suo (es. "Sentinel-2
-// 2026-06-01 → 2026-08-30" o "Esri World Imagery — scaricata il..."):
-// aggiungere anche fonte/data qui la rendeva ridondante o, per Esri (data
-// di acquisizione reale non nota), esplicitamente vuota ("data non
-// disponibile") in coda a una frase che la data la conteneva già.
-$shareDefaultCaption = ($capture['label'] ?: ('Ripresa #' . $capture['id'])) . ' — OrbitalEye';
+// Provenienza dell'immagine: data reale (non del download), sensore e
+// attribuzione richiesta dalla fonte — vedi ImageryAttribution. Il titolo
+// dello studio (il luogo) apre la didascalia, la provenienza la chiude;
+// l'analista la completa con ciò che ha identificato.
+$imagery = ImageryAttribution::forCapture($capture);
+$fetchedAt = is_array($captureMeta) && !empty($captureMeta['fetched_at']) ? substr((string) $captureMeta['fetched_at'], 0, 10) : null;
+$provenanceTail = $imagery['caption_line'] !== '' ? "\n" . $imagery['caption_line'] : '';
+$shareDefaultCaption = $study['title'] . ' — OrbitalEye' . $provenanceTail;
+$cropShareDefaultCaption = 'Ritaglio — ' . $study['title'] . ' — OrbitalEye' . $provenanceTail;
+$esriNoticeVisible = $imagery['is_esri'];
 
 $pageTitle = 'Analisi — ' . ($capture['label'] ?: ('Ripresa #' . $capture['id']));
 $activeNav = 'dashboard';
@@ -71,7 +75,14 @@ require __DIR__ . '/partials/nav.php';
   <h2>🔬 Analisi ripresa singola</h2>
   <div class="hint">
     <?= e($capture['label'] ?: ('Ripresa #' . $capture['id'])) ?>
-    &nbsp;·&nbsp; <?= format_date_it($capture['capture_date']) ?> · <?= e($capture['source']) ?>
+  </div>
+  <div class="imagery-provenance">
+    📅 <?php if ($imagery['date_label'] !== ''): ?><strong><?= e(ucfirst($imagery['date_label'])) ?></strong><?php else: ?><span class="warn">Data dell'immagine non nota</span><?php endif; ?>
+    <?php if ($imagery['detail'] !== ''): ?> · <?= e($imagery['detail']) ?><?php endif; ?>
+    <?php if ($fetchedAt): ?> · scaricata il <?= e(format_date_it($fetchedAt)) ?><?php endif; ?>
+    <?php if ($imagery['kind'] === 'esri' && $imagery['date'] === null): ?>
+      · <span class="warn">metadati Esri non disponibili: recuperali con <code>cli/refresh_esri_metadata.php --id=<?= (int) $capture['id'] ?></code></span>
+    <?php endif; ?>
   </div>
 </div>
 
@@ -345,6 +356,10 @@ require __DIR__ . '/partials/nav.php';
       <input type="checkbox" id="an-crop-include-overlay-layer">
       <label style="margin:0;">Includi annotazioni/misurazioni/scala nel frammento <span class="info-tip" tabindex="0" data-tip="Incorpora nei pixel del frammento il livello con annotazioni, misurazioni ed eventuale barra di scala, allineato all'area ritagliata. Vale per tutte le azioni qui sotto (copia, scarica, apri motori/assistenti, salva, condividi). Sempre disattivato di default: una scelta esplicita — non include mai le maniglie di modifica.">?</span></label>
     </div>
+    <div class="checkbox-row" style="margin-bottom:10px;">
+      <input type="checkbox" id="an-crop-include-attribution" checked>
+      <label for="an-crop-include-attribution" style="margin:0;">Scrivi data e fonte sul frammento <span class="info-tip" tabindex="0" data-tip="Striscia in basso con la data reale dell'immagine e l'attribuzione della fonte (richiesta dai termini d'uso) — per copia, download e condivisione. Toglila se il frammento ti serve per una ricerca inversa (Lens o assistenti), dove il testo potrebbe disturbare. Non viene mai scritta nel ritaglio salvato come ripresa.">?</span></label>
+    </div>
     <div class="grid grid-2">
       <div>
         <h3>Frammento ritagliato</h3>
@@ -388,8 +403,9 @@ require __DIR__ . '/partials/nav.php';
         <h3>Condividi ritaglio <span class="info-tip" tabindex="0" data-tip="Invia il frammento su Telegram, oppure apri la finestra di composizione X — per incollare l'immagine su X usa 'Copia negli appunti' qui sopra. Nessuna pubblicazione automatica, il ritaglio non deve essere salvato prima per poter essere condiviso.">?</span></h3>
         <div class="field">
           <label>Didascalia</label>
-          <textarea id="an-crop-share-caption" rows="2" style="width:100%;"><?= e('Ritaglio da ' . ($capture['label'] ?: ('ripresa #' . $capture['id'])) . ' — OrbitalEye') ?></textarea>
+          <textarea id="an-crop-share-caption" rows="4" style="width:100%;"><?= e($cropShareDefaultCaption) ?></textarea>
         </div>
+        <?php require __DIR__ . '/partials/esri_share_notice.php'; ?>
         <div class="tag-row">
           <button type="button" class="btn btn-primary btn-sm" id="an-crop-share-telegram-btn">📤 Invia su Telegram</button>
           <button type="button" class="btn btn-sm" id="an-crop-share-twitter-btn">🐦 Apri su X</button>
@@ -404,8 +420,13 @@ require __DIR__ . '/partials/nav.php';
   <h2>Condividi <span class="info-tip" tabindex="0" data-tip="Invia la copia di lavoro (con le regolazioni correnti già applicate) su Telegram, oppure apri la finestra di composizione X e incolla/trascina l'immagine a mano. Anteprima e didascalia sono sempre modificabili prima dell'invio: nessuna pubblicazione automatica.">?</span></h2>
   <div class="field">
     <label>Didascalia</label>
-    <textarea id="an-share-caption" rows="2" style="width:100%;"><?= e($shareDefaultCaption) ?></textarea>
+    <textarea id="an-share-caption" rows="4" style="width:100%;"><?= e($shareDefaultCaption) ?></textarea>
   </div>
+  <label class="checkbox-row" style="margin:6px 0;">
+    <input type="checkbox" id="an-share-include-attribution" checked>
+    Scrivi data e fonte sull'immagine <span class="info-tip" tabindex="0" data-tip="Aggiunge in basso una striscia con la data reale dell'immagine, il sensore e l'attribuzione della fonte (richiesta dai termini d'uso). Vale per Telegram e per la copia negli appunti.">?</span>
+  </label>
+  <?php require __DIR__ . '/partials/esri_share_notice.php'; ?>
   <div class="tag-row">
     <button type="button" class="btn btn-primary btn-sm" id="an-share-telegram-btn">📤 Invia su Telegram</button>
     <button type="button" class="btn btn-sm" id="an-share-copy-btn">📋 Copia immagine negli appunti</button>
@@ -416,6 +437,13 @@ require __DIR__ . '/partials/nav.php';
 
 <script>
 window.ORBITALEYE_ANALYZE = {
+  // Provenienza dell'immagine per la striscia da incorporare nelle immagini
+  // condivise, e per l'avviso Esri prima della pubblicazione.
+  imagery: <?= json_encode([
+      'strip' => $imagery['strip'],
+      'isEsri' => $imagery['is_esri'],
+      'termsUrl' => ImageryAttribution::ESRI_TERMS_URL,
+  ]) ?>,
   studyId: <?= (int)$study['id'] ?>,
   captureId: <?= (int)$capture['id'] ?>,
   imageUrl: <?= json_encode(storage_url($capture['relative_path'])) ?>,
