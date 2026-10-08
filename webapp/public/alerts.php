@@ -23,7 +23,7 @@ require __DIR__ . '/partials/nav.php';
 
 <div class="panel">
   <div style="display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:wrap;">
-    <div class="hint">Notifiche generate dagli scaricamenti automatici pianificati (attivabili dalla pagina di uno studio, sezioni Sentinel Hub/Esri): appena arriva una ripresa diversa dalla precedente, compare qui. Le riprese identiche alla precedente vengono scartate automaticamente, senza generare alert.</div>
+    <div class="hint">Notifiche generate dagli scaricamenti automatici pianificati (attivabili dalla pagina di uno studio, sezioni Copernicus/Esri): compare qui ogni nuovo passaggio Sentinel utilizzabile e ogni aggiornamento delle immagini Esri dell'area, con la variazione rilevata rispetto alla ripresa precedente. Quando la fonte non ha nulla di nuovo non si scarica niente.</div>
     <?php if (!empty($alerts)): ?>
       <form method="post" style="margin:0;"><input type="hidden" name="mark_all_read" value="1"><button type="submit" class="btn btn-sm">✓ Segna tutti come letti</button></form>
     <?php endif; ?>
@@ -35,7 +35,7 @@ require __DIR__ . '/partials/nav.php';
     <div class="empty-state">
       <div class="glyph">🔔</div>
       <div>Nessun alert.</div>
-      <div class="hint">Attiva uno scaricamento automatico pianificato dalla pagina di uno studio (sezione Sentinel Hub o Esri) per iniziare a ricevere notifiche quando arriva una ripresa diversa dalla precedente.</div>
+      <div class="hint">Attiva uno scaricamento automatico pianificato dalla pagina di uno studio (sezione Copernicus o Esri) per iniziare a ricevere notifiche quando arriva un'immagine nuova.</div>
     </div>
   </div>
 <?php else: ?>

@@ -36,11 +36,13 @@ Il confronto non è una semplice sovrapposizione: le due immagini vengono prima 
 
 **Acquisizione riprese**
 - Caricamento manuale di immagini da qualunque fonte tu sia autorizzato a usare offline
-- Fetch automatico da **Copernicus/Sentinel-2** (storico, ~10m/pixel, con coppia Rosso+NIR scaricata a parte per gli indici spettrali) e **Esri World Imagery** (risoluzione più alta, ultima disponibile; retry automatico a risoluzione ridotta contro il limite di complessità del servizio) tramite le rispettive API ufficiali
+- Fetch automatico da **Copernicus** — **Sentinel-2** ottico (~10 m/pixel, con coppia Rosso+NIR scaricata a parte per gli indici spettrali) e **Sentinel-1** radar SAR (vede di notte e attraverso le nuvole) — e da **Esri World Imagery** (risoluzione spesso sub-metrica; retry automatico a risoluzione ridotta contro il limite di complessità del servizio) tramite le rispettive API ufficiali
+- **Ogni ripresa Copernicus è un singolo passaggio con data e ora certe**: "Cerca passaggi" elenca tutti i passaggi del periodo sull'area con satellite e orbita e, per Sentinel-2, la **nuvolosità sulla sola area di interesse** (non sull'intero tassello di 110 km, che può dire 60% con l'area sgombra o 5% con l'area coperta) e la quota di area coperta. Senza scelta, si scarica il passaggio più recente entro la soglia di nuvole
+- **Archivio storico Esri (Wayback)**: le versioni del mosaico World Imagery pubblicate dal 2014 in cui l'immagine dell'area è davvero diversa, raggruppate per acquisizione e ciascuna con la data reale dello scatto — su una base aerea tipica una decina di immagini sub-metriche dal 2011 a oggi, già allineate pixel per pixel con le riprese Esri correnti della stessa area
 - **Data reale delle immagini Esri**: il mosaico World Imagery è composto da acquisizioni di epoche diverse e aggiornato di rado, quindi la data del download non dice nulla su quando è stata scattata la foto. Per ogni ripresa vengono letti dai metadati ufficiali Esri data, sensore (WorldView-2/3, Legion…), risoluzione nativa e fornitore di ogni acquisizione che copre l'area, con la quota di area di ciascuna; la data prevalente diventa la data della ripresa. Le riprese più vecchie si datano com'erano il giorno del download grazie all'archivio storico Wayback
 - Selettore d'area interattivo su mappa (Leaflet, incluso nel progetto) con mappa stradale Esri World Street Map, basemap satellitare opzionale e **ricerca luogo** per nome (Nominatim/OpenStreetMap, solo su richiesta esplicita)
 - Possibilità di **ruotare l'area** prima dello scaricamento: la rotazione avviene nelle proporzioni reali del terreno, quindi la ripresa salvata coincide esattamente con il poligono mostrato sulla mappa, a qualunque latitudine
-- **Scaricamento pianificato**: controllo periodico di un'area/fonte, scarto automatico dei duplicati (soglia configurabile) e **alert** all'arrivo di una ripresa diversa; pagina di gestione centralizzata di tutte le pianificazioni con badge d'errore nel menu
+- **Scaricamento pianificato guidato dai nuovi dati**: si scarica solo quando la fonte ha qualcosa di nuovo — un passaggio Sentinel-2 successivo all'ultimo con nuvole sull'area entro la soglia, un passaggio Sentinel-1 della stessa orbita, oppure un aggiornamento delle immagini Esri dell'area (riconosciuto dai metadati, senza scaricare) — con **alert** che riporta le date e la variazione rispetto alla ripresa precedente; pagina di gestione centralizzata di tutte le pianificazioni con badge d'errore nel menu
 
 **Analisi e change detection**
 - Allineamento automatico (feature matching ORB/RANSAC + rifinitura sub-pixel ECC) o **manuale** tramite editor di punti di controllo. Quando l'allineamento non è affidabile il motore lo dichiara (metodo "none") invece di forzare un risultato, e punti di controllo coincidenti o allineati vengono rifiutati con una spiegazione
@@ -51,7 +53,7 @@ Il confronto non è una semplice sovrapposizione: le due immagini vengono prima 
 - Viste multiple: overlay differenze, heatmap, contorni (edge detection), maschera binaria, slider prima/dopo
 - Statistiche: superficie variata (%), numero di regioni e — quando la scala reale è nota — **aree in m²/km²** (totale variato, regione più estesa, area di ogni regione)
 - Regioni di cambiamento rilevate automaticamente, numerate, cliccabili (zoom automatico sulla regione) e convertibili in annotazioni con un click
-- **Indici spettrali** per le riprese Sentinel Hub con banda NIR: NDVI (vegetazione), NDWI (acqua), falso colore infrarosso. La banda NIR è scaricata senza saturazione, così l'NDVI della vegetazione densa non viene compresso
+- **Indici spettrali** per le riprese Sentinel-2 con banda NIR: NDVI (vegetazione), NDWI (acqua), falso colore infrarosso. La banda NIR è scaricata senza saturazione, così l'NDVI della vegetazione densa non viene compresso
 - Le zone senza dati delle riprese (trasparenza / `dataMask` Sentinel) sono escluse dal calcolo del cambiamento
 
 **Vista di analisi ripresa singola**
@@ -86,7 +88,7 @@ Il confronto non è una semplice sovrapposizione: le due immagini vengono prima 
 orbitaleye/
 ├── python-service/       Motore di analisi immagini (FastAPI + OpenCV/NumPy)
 │   └── app/
-│       ├── core/          registrazione, diff, enhancement, client Sentinel Hub/Esri
+│       ├── core/          registrazione, diff, enhancement, client Copernicus/Esri/Wayback
 │       └── routers/        /fetch/*, /analysis/compare, /analysis/enhance
 ├── webapp/                 Frontend PHP (autenticazione, libreria, annotazioni, DB SQLite)
 │   ├── public/               document root del webserver
@@ -105,8 +107,9 @@ Il webapp PHP e il servizio Python girano sulla stessa macchina e comunicano in 
 
 Le tile satellitari di **Google Maps/Earth non sono scaricabili in blocco** per analisi offline: i relativi Termini di Servizio vietano l'estrazione e l'archiviazione massiva delle tile al di fuori del visualizzatore ufficiale (lo stesso vale, in generale, per lo scraping di tile XYZ grezze da qualunque provider di basemap tramite strumenti di terze parti pensati per aggirare questi limiti). Per questo il fetch automatico di OrbitalEye usa esclusivamente fonti che espongono un **punto di integrazione ufficiale** pensato per richieste programmatiche:
 
-- **[Copernicus Data Space Ecosystem](https://dataspace.copernicus.eu)** (Sentinel-2, ESA/UE) — gratuito, ~10m/pixel, rivisitazione ~5 giorni, intervallo di date storico selezionabile. Richiede un client OAuth gratuito.
-- **[Esri World Imagery](https://developers.arcgis.com)** — tramite l'operazione REST ufficiale `/export` del MapServer pubblico, risoluzione spesso più alta (sub-metrica in molte aree, varia per zona) ma solo il composito "più recente disponibile". Funziona anche senza API key per uso leggero; per un uso sostenuto è consigliato un account ArcGIS Developer gratuito.
+- **[Copernicus Data Space Ecosystem](https://dataspace.copernicus.eu)** (ESA/UE) — gratuito, richiede un client OAuth gratuito. **Sentinel-2** L2A (ottico, ~10 m/pixel, un passaggio ogni 2–5 giorni, archivio dal 2015) e **Sentinel-1** GRD (radar, ~10 m/pixel, calibrato, ortorettificato sul DEM Copernicus, filtro anti-speckle; archivio dal 2014). Si usano le API Catalog (elenco dei passaggi), Statistical (nuvole sull'area) e Process (scaricamento), tutte con lo stesso client; le ricerche consumano poche unità di elaborazione del piano gratuito.
+- **[Esri World Imagery](https://developers.arcgis.com)** — immagine attuale tramite l'operazione REST ufficiale `/export` del MapServer pubblico, risoluzione spesso sub-metrica (varia per zona). Funziona anche senza API key per uso leggero; per un uso sostenuto è consigliato un account ArcGIS Developer gratuito.
+- **[Esri World Imagery Wayback](https://livingatlas.arcgis.com/wayback/)** — versioni storiche del mosaico, dal servizio WMTS che Esri documenta per l'uso in client GIS di terze parti (es. QGIS): per una ripresa si scaricano solo i pochi tasselli che coprono l'area, come fa un client GIS quando esporta una mappa. Valgono gli stessi termini d'uso di World Imagery (vedi sotto).
 
 Per immagini a risoluzione ancora più alta puoi sempre usare il **caricamento manuale**, con qualunque fonte tu sia legalmente autorizzato a usare offline (dataset pubblici come USGS/NAIP per gli USA, riprese aeree proprie, immagini acquistate da provider commerciali con licenza per uso offline, ecc.).
 
@@ -210,7 +213,7 @@ Apri il sito: verrai reindirizzato a `setup.php` per creare l'account operatore 
 
 1. **Impostazioni** → inserisci le credenziali Sentinel Hub/Esri (opzionali) e i parametri di analisi predefiniti.
 2. **Nuovo Studio** → crea uno studio per un'area di interesse, disegnandola sulla mappa integrata.
-3. Nella pagina dello studio: carica manualmente due riprese, oppure scaricale da Sentinel Hub/Esri per due periodi diversi, selezionale come **A (prima)** e **B (dopo)**, regola soglia/filtri (o usa un preset di sensibilità) ed esegui il confronto.
+3. Nella pagina dello studio: carica manualmente due riprese, oppure scaricale da Copernicus (scegli due passaggi dall'elenco) o da Esri (immagine attuale e versioni storiche), selezionale come **A (prima)** e **B (dopo)**, regola soglia/filtri (o usa un preset di sensibilità) ed esegui il confronto.
 4. Esplora i risultati: overlay, heatmap, contorni, maschera, slider prima/dopo. Clicca una regione rilevata (nella lista o direttamente sull'immagine) per ingrandirla, o trasformala in un'annotazione con un click.
 5. Salva i confronti interessanti in **Libreria** ed esportali (ZIP con immagini + report) quando serve condividerli o archiviarli.
 
@@ -225,6 +228,13 @@ Apri il sito: verrai reindirizzato a `setup.php` per creare l'account operatore 
 5. **Pulizia** — apertura/chiusura morfologica + filtro per area minima del blob, per scartare rumore fotografico e micro-disallineamenti residui.
 6. **Report grafico** — overlay in falso colore con bounding box numerate e cliccabili, heatmap, contorni, maschera binaria, slider prima/dopo.
 7. **Statistiche** — superficie variata (%), numero di regioni e, quando la scala reale della ripresa è nota, aree in m²/km² (totale e per regione).
+
+### Scegliere le immagini da confrontare
+
+- **Sentinel-2** (sezione Copernicus): imposta il periodo e premi **Cerca passaggi**. Ogni riga è un passaggio con data e ora UTC, satellite, nuvole e copertura *sulla tua area*; scegli due passaggi sgombri e scaricali. A ~10 m per pixel servono aree di qualche chilometro.
+- **Sentinel-1** (radar): utile quando le nuvole coprono l'area per settimane o per osservare di notte. Piste e piazzali appaiono scuri, edifici e oggetti metallici — velivoli compresi — punti chiari. Per confrontare due riprese radar scegli passaggi **della stessa orbita** (stessa geometria di vista): da orbite diverse le strutture sono viste da lati opposti e quasi tutto risulterebbe "cambiato". La piattaforma lo segnala.
+- **Esri, versioni storiche**: **🕰 Versioni storiche** elenca le immagini diverse disponibili nell'archivio Wayback per l'area, con data reale, sensore e risoluzione; le versioni dell'archivio che contengono la stessa acquisizione sono raggruppate ("+N"). Le immagini storiche e quella attuale della stessa area sono già allineate pixel per pixel. Il confronto automatico tra immagini sub-metriche di anni e sensori diversi è sensibile a ombre, colori e vegetazione: usa soglie più alte e un'area minima più grande, o guarda le immagini affiancate con lo slider prima/dopo.
+- Se due riprese sono **la stessa acquisizione** (stesso passaggio, o la stessa immagine Esri scaricata due volte o in due versioni dell'archivio), il confronto lo dice: le differenze misurate vengono solo da risoluzione, ritaglio o elaborazione.
 
 ### Annotazioni, misurazioni e regioni
 
@@ -244,7 +254,7 @@ Nella vista di analisi ripresa singola sono disponibili anche **misurazioni** di
 ## Configurazione avanzata
 
 Dalla pagina **Impostazioni** puoi modificare in qualunque momento, senza toccare file:
-- Credenziali Sentinel Hub e token Esri (sincronizzate automaticamente col servizio Python)
+- Credenziali Copernicus (Sentinel Hub) e token Esri (sincronizzate automaticamente col servizio Python)
 - Bot Telegram per la condivisione (token + chat id; restano nel DB, mai in un file versionato)
 - Parametri di analisi predefiniti (metodo diff, soglia, area minima blob, kernel morfologico, opacità overlay)
 - Password dell'account
@@ -252,7 +262,10 @@ Dalla pagina **Impostazioni** puoi modificare in qualunque momento, senza toccar
 Lo **scaricamento pianificato** richiede una voce cron che invochi
 periodicamente `webapp/cli/run_scheduled_downloads.php` (es. ogni 6 ore); le
 pianificazioni si creano e si gestiscono dall'interfaccia (sezione
-scaricamento di uno studio e pagina **Pianificazioni**). Lo stesso cron esegue
+scaricamento di uno studio e pagina **Pianificazioni**). Ogni controllo
+verifica prima se la fonte ha qualcosa di nuovo (catalogo Copernicus,
+metadati Esri) e scarica solo in quel caso: un controllo senza novità costa
+una richiesta leggera e ha esito "niente di nuovo". Lo stesso cron esegue
 anche la **manutenzione dello storage**: anteprime e confronti mai salvati
 vengono rimossi dopo 48 ore. Un'esecuzione alla volta (lock), e le
 pianificazioni rispettano la cadenza impostata anche se il giro precedente è

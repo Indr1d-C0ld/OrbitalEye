@@ -137,50 +137,245 @@
     });
   }
 
-  // ---------- Fetch (Sentinel Hub / Esri) — stessa logica per entrambe le
+  // ---------- Fetch (Copernicus / Esri) — stessa logica per entrambe le
   // sezioni, ciascuna con il proprio form e i propri campi ----------
-  $$('.fetch-form').forEach((form) => {
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const status = form.querySelector('.fetch-status');
-      // Un download Sentinel/Esri dura diversi secondi: un secondo clic (o
-      // Invio) ne avviava un altro, con una ripresa duplicata e quota spesa.
-      const submitBtn = form.querySelector('button[type="submit"], input[type="submit"]');
-      if (form.dataset.busy === '1') return;
-      form.dataset.busy = '1';
-      if (submitBtn) submitBtn.disabled = true;
-      status.textContent = 'Richiesta al servizio di analisi in corso (può richiedere qualche secondo)...';
-      const fd = new FormData(form);
-      const payload = {
-        study_id: parseInt(fd.get('study_id'), 10),
-        source: fd.get('source'),
-        bbox: [fd.get('min_lon'), fd.get('min_lat'), fd.get('max_lon'), fd.get('max_lat')],
-      };
+  function areaPayload(form) {
+    const fd = new FormData(form);
+    const payload = {
+      study_id: parseInt(fd.get('study_id'), 10),
+      source: form.dataset.source,
+      bbox: [fd.get('min_lon'), fd.get('min_lat'), fd.get('max_lon'), fd.get('max_lat')],
+    };
+    // Rotazione area (vedi map-picker.js): 0/assente = comportamento
+    // invariato, nessuna area aggiuntiva scaricata né alcun ritaglio.
+    const rotationRaw = fd.has('rotation') ? parseFloat(fd.get('rotation')) : 0;
+    if (rotationRaw) payload.rotation = rotationRaw;
+    return payload;
+  }
+
+  /** Scarica una ripresa: dal periodo del form (passaggio migliore / immagine
+   * attuale) o, con `extra`, un passaggio o una versione storica precisi
+   * scelti dagli elenchi qui sotto. */
+  async function runFetch(form, extra) {
+    const status = form.querySelector('.fetch-status');
+    // Un download Sentinel/Esri dura diversi secondi: un secondo clic (o
+    // Invio) ne avviava un altro, con una ripresa duplicata e quota spesa.
+    if (form.dataset.busy === '1') return;
+    form.dataset.busy = '1';
+    const buttons = Array.from(form.querySelectorAll('button[type="submit"], .pass-dl-btn, .wayback-dl-btn'));
+    buttons.forEach((b) => (b.disabled = true));
+    status.textContent = 'Richiesta al servizio di analisi in corso (può richiedere qualche secondo)...';
+    const fd = new FormData(form);
+    const payload = areaPayload(form);
+    if (!extra) {
       if (fd.has('date_from')) payload.date_from = fd.get('date_from');
       if (fd.has('date_to')) payload.date_to = fd.get('date_to');
       if (fd.has('max_cloud_coverage')) payload.max_cloud_coverage = fd.get('max_cloud_coverage');
-      // Rotazione area (vedi map-picker.js): 0/assente = comportamento
-      // invariato, nessuna area aggiuntiva scaricata né alcun ritaglio.
-      const rotationRaw = fd.has('rotation') ? parseFloat(fd.get('rotation')) : 0;
-      if (rotationRaw) payload.rotation = rotationRaw;
+    }
+    Object.assign(payload, extra || {});
+    try {
+      const res = await fetch('api/fetch_capture.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Errore');
+      status.textContent = 'Ripresa scaricata. Ricarico la pagina...';
+      setTimeout(() => window.location.reload(), 400);
+    } catch (err) {
+      status.textContent = 'Errore: ' + err.message;
+      form.dataset.busy = '';
+      buttons.forEach((b) => (b.disabled = false));
+    }
+  }
 
-      try {
-        const res = await fetch('api/fetch_capture.php', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Errore');
-        status.textContent = 'Ripresa scaricata. Ricarico la pagina...';
-        setTimeout(() => window.location.reload(), 400);
-      } catch (err) {
-        status.textContent = 'Errore: ' + err.message;
-        form.dataset.busy = '';
-        if (submitBtn) submitBtn.disabled = false;
-      }
+  $$('.fetch-form').forEach((form) => {
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      runFetch(form, null);
     });
   });
+
+  const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const pct = (v) => (v === null || v === undefined ? '—' : Math.round(v * 100) + '%');
+  const itDate = (iso) => (iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4) : '—');
+  const itDateTime = (iso) => (iso ? itDate(iso) + ' ' + iso.slice(11, 16) : '—');
+
+  async function catalogRequest(body) {
+    const res = await fetch('api/imagery_catalog.php', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Errore');
+    return data;
+  }
+
+  // ---------- Copernicus: Sentinel-2 / Sentinel-1 e passaggi ----------
+  (function setupCopernicus() {
+    const form = $('#sentinelhub-form');
+    if (!form) return;
+    const listEl = form.querySelector('.pass-list');
+    const status = form.querySelector('.fetch-status');
+    const searchBtn = form.querySelector('.pass-search-btn');
+
+    let searchToken = 0; // prima di applyMission(), che lo usa già all'avvio
+    function applyMission() {
+      const mission = form.querySelector('input[name="mission"]:checked').value;
+      form.dataset.source = mission;
+      form.querySelector('input[name="source"]').value = mission;
+      const isS1 = mission === 'sentinel1';
+      form.querySelectorAll('.s2-only').forEach((el) => (el.style.display = isS1 ? 'none' : ''));
+      form.querySelectorAll('.s1-only').forEach((el) => (el.style.display = isS1 ? '' : 'none'));
+      listEl.innerHTML = '';
+      status.textContent = '';
+      searchToken++;
+      form.dispatchEvent(new CustomEvent('sourcechange'));
+    }
+    form.querySelectorAll('input[name="mission"]').forEach((r) => r.addEventListener('change', applyMission));
+    // Il browser può ripristinare la scelta del satellite dopo un ricaricamento:
+    // fonte e campi vanno allineati al radio selezionato anche all'avvio.
+    applyMission();
+
+    searchBtn.addEventListener('click', async () => {
+      const fd = new FormData(form);
+      const isS1 = form.dataset.source === 'sentinel1';
+      // Se nel frattempo cambia il satellite, i risultati di questa ricerca
+      // non vanno mostrati: i loro "Scarica" partirebbero con l'altra fonte.
+      const token = ++searchToken;
+      searchBtn.disabled = true;
+      status.textContent = 'Cerco i passaggi' + (isS1 ? '' : ' e calcolo le nuvole sull\'area') + '...';
+      listEl.innerHTML = '';
+      try {
+        const data = await catalogRequest({
+          action: isS1 ? 'sentinel1' : 'sentinel2',
+          bbox: areaPayload(form).bbox,
+          date_from: fd.get('date_from'),
+          date_to: fd.get('date_to'),
+        });
+        if (token !== searchToken || form.dataset.source !== (isS1 ? 'sentinel1' : 'sentinelhub')) return;
+        const passes = data.passes || [];
+        status.textContent = passes.length
+          ? passes.length + ' passaggi nel periodo.' + (data.stats_error ? ' Nuvole sull\'area non disponibili (' + data.stats_error + '): mostro quelle del tassello.' : '')
+          : 'Nessun passaggio sull\'area nel periodo.';
+        if (passes.length) renderPasses(passes, isS1, parseFloat(fd.get('max_cloud_coverage')) / 100);
+      } catch (err) {
+        status.textContent = 'Errore: ' + err.message;
+      } finally {
+        searchBtn.disabled = false;
+      }
+    });
+
+    function renderPasses(passes, isS1, maxCloud) {
+      const head = isS1
+        ? '<th>Data e ora (UTC)</th><th>Satellite</th><th>Orbita</th><th></th>'
+        : '<th>Data e ora (UTC)</th><th>Satellite</th><th>Nuvole sull\'area</th><th>Copertura</th><th></th>';
+      const rows = passes.map((p) => {
+        if (isS1) {
+          const dir = { ascending: 'ascendente', descending: 'discendente' }[p.orbit_state] || '';
+          return `<tr><td>${esc(itDateTime(p.datetime))}</td><td>${esc(p.platform)}</td>
+            <td>${esc(p.relative_orbit)} ${esc(dir)}</td>
+            <td><button type="button" class="btn btn-sm pass-dl-btn" data-dt="${esc(p.datetime)}">Scarica</button></td></tr>`;
+        }
+        const cloud = p.aoi_cloud ?? p.scene_cloud;
+        const cls = cloud === null || cloud === undefined ? '' : (cloud <= 0.1 ? 'badge-green' : cloud <= maxCloud ? 'badge-amber' : 'badge-magenta');
+        const partial = p.aoi_coverage !== null && p.aoi_coverage !== undefined && p.aoi_coverage < 0.95;
+        return `<tr><td>${esc(itDateTime(p.datetime))}</td><td>${esc(p.platform)}</td>
+          <td><span class="badge ${cls}" title="${p.aoi_cloud === null || p.aoi_cloud === undefined ? 'Nuvole del tassello intero' : 'Nuvole sulla tua area'}">${esc(pct(cloud))}</span></td>
+          <td>${partial ? '<span class="badge badge-amber" title="Il passaggio copre solo parte dell\'area: il resto sarà trasparente">' + esc(pct(p.aoi_coverage)) + '</span>' : esc(pct(p.aoi_coverage))}</td>
+          <td><button type="button" class="btn btn-sm pass-dl-btn" data-dt="${esc(p.datetime)}">Scarica</button></td></tr>`;
+      }).join('');
+      listEl.innerHTML = (isS1 ? '<div class="hint" style="margin-bottom:6px;">Per confrontare due riprese radar scegli passaggi della stessa orbita: stessa geometria di vista.</div>' : '')
+        + `<div class="table-responsive pass-table"><table><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>`;
+      listEl.querySelectorAll('.pass-dl-btn').forEach((btn) => {
+        btn.addEventListener('click', () => runFetch(form, { pass_datetime: btn.dataset.dt }));
+      });
+    }
+  })();
+
+  // ---------- Esri: versioni storiche (archivio Wayback) ----------
+  (function setupWayback() {
+    const form = $('#esri-form');
+    if (!form) return;
+    const btn = form.querySelector('.wayback-search-btn');
+    const listEl = form.querySelector('.wayback-list');
+    const status = form.querySelector('.fetch-status');
+
+    btn.addEventListener('click', async () => {
+      const bbox = areaPayload(form).bbox;
+      btn.disabled = true;
+      status.textContent = 'Cerco nell\'archivio Wayback le versioni con un\'immagine diversa (può richiedere una ventina di secondi)...';
+      listEl.innerHTML = '';
+      try {
+        const data = await catalogRequest({ action: 'wayback', bbox });
+        const versions = data.versions || [];
+        status.textContent = versions.length
+          ? versions.length + ' versioni dell\'archivio con tasselli diversi: leggo la data reale di ciascuna...'
+          : 'Nessuna versione storica trovata per quest\'area.';
+        if (!versions.length) return;
+        listEl.innerHTML = `<div class="table-responsive pass-table"><table><thead><tr>
+            <th>Versione archivio</th><th>Immagine del</th><th>Dettagli</th><th></th>
+          </tr></thead><tbody>${versions.map((v) => `<tr data-release="${esc(v.release)}">
+            <td>${esc(itDate(v.date))}</td><td class="wb-date hint">…</td><td class="wb-detail hint"></td>
+            <td><button type="button" class="btn btn-sm wayback-dl-btn" data-release="${esc(v.release)}">Scarica</button></td>
+          </tr>`).join('')}</tbody></table></div>`;
+        listEl.querySelectorAll('.wayback-dl-btn').forEach((b) => {
+          b.addEventListener('click', () => runFetch(form, { wayback_release: parseInt(b.dataset.release, 10) }));
+        });
+        // Date reali: una richiesta per versione, al massimo 4 alla volta.
+        const queue = versions.slice();
+        const signatures = {};
+        const worker = async () => {
+          while (queue.length) {
+            const v = queue.shift();
+            const row = listEl.querySelector(`tr[data-release="${CSS.escape(String(v.release))}"]`);
+            try {
+              const info = await catalogRequest({ action: 'wayback_imagery', bbox, release: v.release });
+              signatures[v.release] = info.signature || null;
+              row.querySelector('.wb-date').textContent = info.date_min === info.date_max
+                ? itDate(info.dominant_date)
+                : itDate(info.date_min) + ' – ' + itDate(info.date_max);
+              row.querySelector('.wb-date').classList.remove('hint');
+              row.querySelector('.wb-detail').textContent = info.detail || '';
+            } catch (err) {
+              row.querySelector('.wb-date').textContent = 'non disponibile';
+            }
+          }
+        };
+        await Promise.all([worker(), worker(), worker(), worker()]);
+
+        // Versioni consecutive con la stessa acquisizione (rielaborata, o col
+        // fornitore rinominato): una riga sola, la versione più recente.
+        let kept = null;
+        let groups = 0;
+        versions.forEach((v) => {
+          const row = listEl.querySelector(`tr[data-release="${CSS.escape(String(v.release))}"]`);
+          const sig = signatures[v.release];
+          if (kept && sig && sig === signatures[kept.release]) {
+            row.style.display = 'none';
+            kept.same.push(itDate(v.date));
+            return;
+          }
+          if (kept && kept.same.length) {
+            kept.row.querySelector('td').title = 'Stessa immagine anche nelle versioni del ' + kept.same.join(', ');
+            kept.row.querySelector('td').textContent += ' (+' + kept.same.length + ')';
+          }
+          kept = { release: v.release, row, same: [] };
+          groups++;
+        });
+        if (kept && kept.same.length) {
+          kept.row.querySelector('td').title = 'Stessa immagine anche nelle versioni del ' + kept.same.join(', ');
+          kept.row.querySelector('td').textContent += ' (+' + kept.same.length + ')';
+        }
+        status.textContent = groups + ' immagini diverse nell\'archivio al centro dell\'area, dalla più recente'
+          + (groups < versions.length ? ' (' + versions.length + ' versioni: quelle con la stessa acquisizione sono raggruppate, "+N" sulla prima).' : '.');
+      } catch (err) {
+        status.textContent = 'Errore: ' + err.message;
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  })();
 
   // ---------- Scaricamento automatico pianificato (vedi ScheduledDownload.php
   // + cli/run_scheduled_downloads.php) — stessa area/form di sopra, un
@@ -190,22 +385,26 @@
     const panel = form.querySelector('.schedule-panel');
     if (!panel) return;
     const toggle = panel.querySelector('.schedule-toggle');
-    const fields = panel.querySelector('.schedule-fields');
     const saveBtn = panel.querySelector('.schedule-save-btn');
     const status = panel.querySelector('.schedule-status');
     const listEl = panel.querySelector('.schedule-list');
-    const source = form.dataset.source;
+    // La sezione Copernicus cambia fonte (Sentinel-2 / Sentinel-1): letta
+    // al momento dell'uso, non fissata qui.
+    const currentSource = () => form.dataset.source;
+    const sourceNames = { sentinelhub: 'Sentinel-2', sentinel1: 'Sentinel-1', esri: 'Esri' };
 
     toggle.addEventListener('change', () => {
-      fields.style.display = toggle.checked ? '' : 'none';
+      panel.querySelectorAll('.schedule-fields').forEach((el) => (el.style.display = toggle.checked ? '' : 'none'));
       saveBtn.style.display = toggle.checked ? '' : 'none';
     });
+    form.addEventListener('sourcechange', () => loadSchedules());
 
     function renderScheduleList(schedules) {
+      const source = currentSource();
       const mine = schedules.filter((s) => s.source === source);
       if (!mine.length) { listEl.innerHTML = ''; return; }
-      listEl.innerHTML = '<div class="hint" style="margin-bottom:6px;">Pianificazioni attive per quest\'area:</div>' + mine.map((s) => {
-        const lastResultLabel = { new: '✓ nuova ripresa', duplicate: '= scartata (duplicato)', error: '✕ errore' }[s.last_result] || 'in attesa del primo controllo';
+      listEl.innerHTML = '<div class="hint" style="margin-bottom:6px;">Pianificazioni ' + esc(sourceNames[source] || source) + ' per quest\'area:</div>' + mine.map((s) => {
+        const lastResultLabel = { new: '✓ nuova ripresa', duplicate: '= scartata (duplicato)', no_new: '= niente di nuovo', error: '✕ errore' }[s.last_result] || 'in attesa del primo controllo';
         const lastRun = s.last_run_at ? new Date(s.last_run_at.replace(' ', 'T') + 'Z').toLocaleString('it-IT') : 'mai eseguita';
         return `<div class="hint" style="display:flex; justify-content:space-between; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid var(--line);">
           <span>Ogni ${s.interval_days} giorni · ultimo controllo: ${lastRun} (${lastResultLabel})${s.is_active ? '' : ' · <b>disattivata</b>'}</span>
@@ -252,6 +451,8 @@
       const fd = new FormData(form);
       const intervalUnit = parseInt(panel.querySelector('.schedule-interval-unit').value, 10);
       const intervalValue = parseInt(panel.querySelector('.schedule-interval-value').value, 10) || 1;
+      const source = currentSource();
+      const thresholdInput = panel.querySelector('.schedule-threshold');
       const payload = {
         action: 'create',
         study_id: parseInt(fd.get('study_id'), 10),
@@ -259,19 +460,20 @@
         bbox: [fd.get('min_lon'), fd.get('min_lat'), fd.get('max_lon'), fd.get('max_lat')],
         interval_days: intervalValue * intervalUnit,
         // 0 è un valore valido ("tieni ogni ripresa, anche identica"): con
-        // "|| 0.5" diventava in silenzio 0.5%.
+        // "|| 0.5" diventava in silenzio 0.5%. Le pianificazioni Copernicus
+        // non la usano (ogni passaggio nuovo si tiene).
         duplicate_threshold: (() => {
-          const v = parseFloat(panel.querySelector('.schedule-threshold').value);
+          const v = thresholdInput ? parseFloat(thresholdInput.value) : NaN;
           return (Number.isFinite(v) ? v : 0.5) / 100;
         })(),
       };
       const rotationRaw = fd.has('rotation') ? parseFloat(fd.get('rotation')) : 0;
       if (rotationRaw) payload.rotation = rotationRaw;
-      if (source === 'sentinelhub') {
-        payload.max_cloud_coverage = fd.get('max_cloud_coverage');
+      if (source === 'sentinelhub' || source === 'sentinel1') {
         const windowInput = panel.querySelector('.schedule-window-days');
-        payload.date_window_days = windowInput ? (parseInt(windowInput.value, 10) || 90) : 90;
+        payload.date_window_days = windowInput ? (parseInt(windowInput.value, 10) || 30) : 30;
       }
+      if (source === 'sentinelhub') payload.max_cloud_coverage = fd.get('max_cloud_coverage');
 
       status.textContent = 'Attivo la pianificazione e scarico la prima ripresa di base (può richiedere qualche secondo)...';
       saveBtn.disabled = true;
@@ -283,7 +485,7 @@
         if (!res.ok) throw new Error(data.error || 'Errore');
         status.textContent = data.warning || 'Pianificazione attiva.';
         toggle.checked = false;
-        fields.style.display = 'none';
+        panel.querySelectorAll('.schedule-fields').forEach((el) => (el.style.display = 'none'));
         saveBtn.style.display = 'none';
         loadSchedules();
         if (!data.warning) setTimeout(() => window.location.reload(), 600);
@@ -502,12 +704,22 @@
     if (sameWarn) {
       const all = window.ORBITALEYE.imagery || {};
       const a = all[result.captureAId], b = all[result.captureBId];
-      const same = a && b && a.date && a.date === b.date;
-      sameWarn.style.display = same ? '' : 'none';
+      // Stessa acquisizione, non solo stessa data: due passaggi radar dello
+      // stesso giorno, o un'immagine Sentinel e una Esri con la stessa data,
+      // sono foto diverse.
+      const same = a && b && a.acquisition && a.acquisition === b.acquisition;
+      // Radar da orbite diverse: il satellite vede le strutture da un'altra
+      // direzione, e quasi tutto risulta "cambiato".
+      const otherGeometry = a && b && a.view_geometry && b.view_geometry && a.view_geometry !== b.view_geometry;
+      sameWarn.style.display = same || otherGeometry ? '' : 'none';
       if (same) {
         sameWarn.textContent = '⚠ Le due riprese provengono dalla stessa acquisizione ('
           + a.date.split('-').reverse().join('/') + '): le differenze rilevate sono dovute a risoluzione, '
           + 'ritaglio o elaborazione, non a cambiamenti reali sul terreno.';
+      } else if (otherGeometry) {
+        sameWarn.textContent = '⚠ Riprese radar da orbite diverse (' + a.view_geometry + ' / ' + b.view_geometry
+          + '): il satellite vede le strutture da direzioni diverse, quindi gran parte delle differenze è dovuta '
+          + 'alla geometria di vista e non a cambiamenti sul terreno. Confronta passaggi della stessa orbita.';
       }
     }
   }

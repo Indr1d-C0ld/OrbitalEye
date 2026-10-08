@@ -47,16 +47,16 @@ if ($method === 'POST') {
         respond_json(['error' => 'Studio non trovato'], 404);
     }
     $source = $body['source'] ?? '';
-    if (!in_array($source, ['sentinelhub', 'esri'], true)) {
+    if (!in_array($source, ['sentinelhub', 'sentinel1', 'esri'], true)) {
         respond_json(['error' => 'Fonte non valida'], 400);
     }
     $intervalDays = max(1, (int) ($body['interval_days'] ?? 1));
     $duplicateThreshold = max(0.0, min(1.0, (float) ($body['duplicate_threshold'] ?? 0.005)));
 
-    // Parametri "di ricetta" per il cron (vedi cli/run_scheduled_downloads.php):
-    // per Sentinel Hub NON si salvano date fisse ma una finestra scorrevole in
-    // giorni (date_window_days) — ogni esecuzione futura cerca "il composito
-    // migliore negli ultimi N giorni da oggi", non le stesse date già passate.
+    // Parametri "di ricetta" per il cron (vedi cli/run_scheduled_downloads.php).
+    // Per Sentinel NON si salvano date: ogni controllo cerca i passaggi
+    // successivi all'ultimo scaricato; date_window_days è solo il periodo in
+    // cui cercare il primo (e il limite se la ripresa precedente sparisce).
     $params = [
         'bbox' => $body['bbox'] ?? null,
         'rotation' => (float) ($body['rotation'] ?? 0),
@@ -66,9 +66,15 @@ if ($method === 'POST') {
     if (!is_array($params['bbox']) || count($params['bbox']) !== 4) {
         respond_json(['error' => 'Bounding box mancante o non valida'], 400);
     }
+    if ($source === 'sentinelhub' || $source === 'sentinel1') {
+        $params['date_window_days'] = max(1, min(365, (int) ($body['date_window_days'] ?? 30)));
+    }
     if ($source === 'sentinelhub') {
-        $params['max_cloud_coverage'] = (int) ($body['max_cloud_coverage'] ?? 20);
-        $params['date_window_days'] = max(1, (int) ($body['date_window_days'] ?? 90));
+        // Nuvole massime SULL'AREA (non sull'intero tassello), in %.
+        $params['max_cloud_coverage'] = max(0, min(100, (int) ($body['max_cloud_coverage'] ?? 20)));
+    }
+    if ($source === 'sentinel1' && isset($body['relative_orbit']) && $body['relative_orbit'] !== '') {
+        $params['relative_orbit'] = (int) $body['relative_orbit'];
     }
 
     $scheduleId = ScheduledDownload::create($studyId, $source, $params, $intervalDays, $duplicateThreshold);
@@ -86,7 +92,7 @@ if ($method === 'POST') {
             $fetchParams = $params;
             $fetchParams['study_id'] = $studyId;
             $fetchParams['source'] = $source;
-            if ($source === 'sentinelhub') {
+            if ($source === 'sentinelhub' || $source === 'sentinel1') {
                 $fetchParams['date_to'] = date('Y-m-d');
                 $fetchParams['date_from'] = date('Y-m-d', strtotime('-' . $params['date_window_days'] . ' days'));
             }

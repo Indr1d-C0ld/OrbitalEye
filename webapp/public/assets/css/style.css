@@ -706,3 +706,10 @@ code.k { color: var(--amber); }
 /* Pulsante con l'aspetto di un link (azioni POST come il logout). */
 .link-btn { background: none; border: none; padding: 0; color: var(--cyan); font: inherit; cursor: pointer; text-decoration: underline; }
 .link-btn:hover { color: var(--text-primary); }
+
+/* Elenchi di passaggi Copernicus e versioni Wayback (study.php): possono
+   essere centinaia di righe, scorrono in un riquadro. */
+.pass-table { max-height: 340px; overflow-y: auto; border: 1px solid var(--line); border-radius: var(--radius); }
+.pass-table table { min-width: 0; }
+.pass-table th { position: sticky; top: 0; background: var(--bg-panel-alt); z-index: 1; }
+.pass-table th, .pass-table td { padding: 6px 10px; }

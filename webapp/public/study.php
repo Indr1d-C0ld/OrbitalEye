@@ -36,6 +36,9 @@ foreach ($captures as $c) {
         // dalla fonte (la prima riga contiene la data, già nei date_label).
         'credit_sentence' => count($lines) > 1 ? end($lines) : ($info['kind'] === 'custom' ? $info['caption_line'] : ''),
         'is_esri' => $info['is_esri'],
+        // Stessa chiave = stessa foto (vedi ImageryAttribution::acquisitionKey).
+        'acquisition' => $info['acquisition_key'],
+        'view_geometry' => $info['view_geometry'],
     ];
 }
 $summaryImagery = null;
@@ -102,7 +105,7 @@ require __DIR__ . '/partials/nav.php';
     <h2>Acquisizione riprese</h2>
     <div class="viewer-tabs">
       <button type="button" class="tab-btn active" data-tab="tab-upload">Carica manualmente</button>
-      <button type="button" class="tab-btn" data-tab="tab-sentinelhub">Sentinel Hub</button>
+      <button type="button" class="tab-btn" data-tab="tab-sentinelhub">Copernicus (Sentinel)</button>
       <button type="button" class="tab-btn" data-tab="tab-esri">Esri World Imagery</button>
     </div>
 
@@ -163,23 +166,34 @@ require __DIR__ . '/partials/nav.php';
           <div class="field"><label>Max Lon</label><input type="text" id="sh-max-lon" name="max_lon" value="<?= $study['bbox_json'] ? e((string)json_decode($study['bbox_json'],true)[2]) : '' ?>" required></div>
           <div class="field"><label>Max Lat</label><input type="text" id="sh-max-lat" name="max_lat" value="<?= $study['bbox_json'] ? e((string)json_decode($study['bbox_json'],true)[3]) : '' ?>" required></div>
         </div>
-        <div class="grid grid-2">
-          <div class="field"><label>Da data</label><input type="date" name="date_from" value="<?= e(date('Y-m-d', strtotime('-90 days'))) ?>" max="<?= e(date('Y-m-d')) ?>" required></div>
-          <div class="field"><label>A data</label><input type="date" name="date_to" value="<?= e(date('Y-m-d')) ?>" max="<?= e(date('Y-m-d')) ?>" required></div>
-        </div>
         <div class="field">
-          <label>Copertura nuvolosa max (%)</label>
-          <input type="number" name="max_cloud_coverage" value="20" min="0" max="100">
+          <label>Satellite <span class="info-tip" tabindex="0" data-tip="Sentinel-2 è un satellite ottico: fotografie a colori (e infrarosso per gli indici spettrali), ma solo di giorno e senza nuvole. Sentinel-1 è un radar: vede di notte e attraverso le nuvole; superfici lisce come piste e piazzali risultano scure, edifici e oggetti metallici (velivoli compresi) punti chiari. Entrambi a ~10 m per pixel: servono aree di qualche chilometro.">?</span></label>
+          <div class="mode-toggle" style="flex-wrap:wrap; gap:14px;">
+            <label class="checkbox-row"><input type="radio" name="mission" value="sentinelhub" checked> Sentinel-2 · ottico</label>
+            <label class="checkbox-row"><input type="radio" name="mission" value="sentinel1"> Sentinel-1 · radar</label>
+          </div>
         </div>
-        <button class="btn btn-primary" type="submit">Scarica composito Sentinel-2</button>
+        <div class="grid grid-3">
+          <div class="field"><label>Da data</label><input type="date" name="date_from" value="<?= e(date('Y-m-d', strtotime('-30 days'))) ?>" max="<?= e(date('Y-m-d')) ?>" required></div>
+          <div class="field"><label>A data</label><input type="date" name="date_to" value="<?= e(date('Y-m-d')) ?>" max="<?= e(date('Y-m-d')) ?>" required></div>
+          <div class="field s2-only">
+            <label>Nuvole max sull'area (%) <span class="info-tip" tabindex="0" data-tip="Calcolate sulla tua area, non sull'intero tassello di 110 km: un passaggio con il 60% di nuvole sul tassello può avere l'area perfettamente sgombra, e viceversa.">?</span></label>
+            <input type="number" name="max_cloud_coverage" value="20" min="0" max="100">
+          </div>
+        </div>
+        <div class="tag-row">
+          <button type="button" class="btn pass-search-btn">🔎 Cerca passaggi</button>
+          <button class="btn btn-primary" type="submit"><span class="s2-only">Scarica il passaggio migliore del periodo</span><span class="s1-only" style="display:none;">Scarica il passaggio più recente del periodo</span></button>
+        </div>
         <span class="hint fetch-status"></span>
+        <div class="pass-list" style="margin-top:10px;"></div>
 
         <div class="schedule-panel" style="margin-top:16px; padding-top:16px; border-top:1px solid var(--line);">
           <label class="checkbox-row" style="cursor:pointer;">
             <input type="checkbox" class="schedule-toggle">
             <span>↻ Scaricamento automatico pianificato per quest'area (controlla se è arrivata una ripresa diversa e ti avvisa — vedi 🔔 Alert)</span>
           </label>
-          <div class="schedule-fields grid grid-3" style="display:none; margin-top:10px;">
+          <div class="schedule-fields grid grid-2" style="display:none; margin-top:10px;">
             <div class="field">
               <label>Ogni</label>
               <div style="display:flex; gap:6px; align-items:center;">
@@ -191,24 +205,21 @@ require __DIR__ . '/partials/nav.php';
               </div>
             </div>
             <div class="field">
-              <label title="Finestra di ricerca del composito ad ogni controllo: 'ultimi N giorni da oggi', non date fisse.">Finestra ricerca composito</label>
+              <label title="Il primo passaggio si cerca in questo periodo; poi ogni controllo cerca solo i passaggi successivi all'ultimo scaricato.">Primo passaggio: ultimi</label>
               <div style="display:flex; gap:6px; align-items:center;">
-                <input type="number" class="schedule-window-days" value="90" min="1" style="width:70px;"> <span class="hint">giorni</span>
+                <input type="number" class="schedule-window-days" value="30" min="1" max="365" style="width:70px;"> <span class="hint">giorni</span>
               </div>
             </div>
-            <div class="field">
-              <label title="Percentuale di pixel cambiati sotto la quale una nuova ripresa è considerata identica alla precedente e viene scartata automaticamente.">Soglia duplicato</label>
-              <div style="display:flex; gap:6px; align-items:center;">
-                <input type="number" class="schedule-threshold" value="0.5" min="0" max="100" step="0.1" style="width:70px;"> <span class="hint">% variazione minima</span>
-              </div>
-            </div>
+          </div>
+          <div class="hint schedule-fields" style="display:none; margin-top:6px;">
+            Si scarica solo quando c'è un passaggio nuovo: per Sentinel-2 con nuvole sull'area entro la soglia qui sopra, per Sentinel-1 della stessa orbita del primo (stessa geometria di vista, confrontabile). Ogni nuova ripresa viene confrontata con la precedente e ti arriva un alert con la variazione rilevata.
           </div>
           <button type="button" class="btn btn-sm schedule-save-btn" style="display:none; margin-top:10px;">Attiva pianificazione</button>
           <span class="hint schedule-status"></span>
           <div class="schedule-list" style="margin-top:10px;"></div>
         </div>
       </form>
-      <div class="hint" style="margin-top:10px;">Copernicus/Sentinel-2: risoluzione ~10m/pixel, intervallo di date storico selezionabile. Richiede credenziali configurate in <a href="settings.php">Impostazioni</a>.</div>
+      <div class="hint" style="margin-top:10px;">Copernicus: un passaggio ogni 2–5 giorni per ciascun satellite, archivio dal 2015 (Sentinel-2) e dal 2014 (Sentinel-1). Ogni ripresa è un singolo passaggio con data e ora certe. Risoluzione ~10 m/pixel. Richiede credenziali configurate in <a href="settings.php">Impostazioni</a>.</div>
     </div>
 
     <div id="tab-esri" class="tab-pane" style="display:none;">
@@ -242,8 +253,12 @@ require __DIR__ . '/partials/nav.php';
           <div class="field"><label>Max Lon</label><input type="text" id="esri-max-lon" name="max_lon" value="<?= $study['bbox_json'] ? e((string)json_decode($study['bbox_json'],true)[2]) : '' ?>" required></div>
           <div class="field"><label>Max Lat</label><input type="text" id="esri-max-lat" name="max_lat" value="<?= $study['bbox_json'] ? e((string)json_decode($study['bbox_json'],true)[3]) : '' ?>" required></div>
         </div>
-        <button class="btn btn-primary" type="submit">Scarica da Esri World Imagery</button>
+        <div class="tag-row">
+          <button class="btn btn-primary" type="submit">Scarica l'immagine attuale</button>
+          <button type="button" class="btn wayback-search-btn" title="Le versioni del mosaico Esri pubblicate dal 2014 in cui l'immagine di quest'area è diversa, ciascuna con la data reale dell'acquisizione">🕰 Versioni storiche</button>
+        </div>
         <span class="hint fetch-status"></span>
+        <div class="wayback-list" style="margin-top:10px;"></div>
 
         <div class="schedule-panel" style="margin-top:16px; padding-top:16px; border-top:1px solid var(--line);">
           <label class="checkbox-row" style="cursor:pointer;">
@@ -273,7 +288,7 @@ require __DIR__ . '/partials/nav.php';
           <div class="schedule-list" style="margin-top:10px;"></div>
         </div>
       </form>
-      <div class="hint" style="margin-top:10px;">Esri World Imagery: risoluzione spesso più alta (sub-metrica in molte aree, varia per zona), ma solo il composito "più recente disponibile" — nessuna scelta di data. Funziona anche senza API key per uso leggero (impostabile in <a href="settings.php">Impostazioni</a> per uso sostenuto).</div>
+      <div class="hint" style="margin-top:10px;">Esri World Imagery: risoluzione spesso sub-metrica, ma un mosaico aggiornato di rado — la data reale dell'immagine viene letta dai metadati Esri e mostrata sulla ripresa. Le versioni storiche vengono dall'archivio Wayback di Esri (dal 2014). Funziona anche senza API key per uso leggero (impostabile in <a href="settings.php">Impostazioni</a> per uso sostenuto).</div>
     </div>
   </div>
 
@@ -297,7 +312,7 @@ require __DIR__ . '/partials/nav.php';
             <div class="lbl"><?= e($c['label'] ?: ('Ripresa #' . $c['id'])) ?></div>
             <?php $ci = $imageryById[(int) $c['id']] ?? null; ?>
             <div title="<?= e($ci && $ci['date_label'] ? ucfirst($ci['date_label']) : 'Data dell\'immagine non nota') ?>">
-              📅 <?= $ci && $ci['date'] ? format_date_it($ci['date']) : format_date_it($c['capture_date']) ?> · <?= e($c['source']) ?>
+              📅 <?= $ci && $ci['date'] ? format_date_it($ci['date']) : format_date_it($c['capture_date']) ?> · <?= e(Capture::sourceLabel($c)) ?>
             </div>
             <div style="display:flex; gap:4px; margin-top:6px;">
               <a class="btn btn-sm" style="flex:1; text-align:center;" href="export_capture.php?id=<?= (int)$c['id'] ?>" onclick="event.stopPropagation();" title="Scarica il file immagine originale">⬇ Scarica</a>

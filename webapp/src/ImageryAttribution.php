@@ -25,17 +25,64 @@ final class ImageryAttribution
 
     /**
      * @return array{kind:string, is_esri:bool, date:?string, date_label:string,
-     *   detail:string, strip:string, caption_line:string, credit:string}
+     *   detail:string, strip:string, caption_line:string, credit:string, acquisition_key:?string, view_geometry:?string}
      */
     public static function forCapture(array $capture): array
     {
         $origin = self::resolveOrigin($capture);
+        $info = self::build($origin);
+        $info['acquisition_key'] = self::acquisitionKey($origin);
+        // Geometria di vista di una ripresa radar: due riprese Sentinel-1 si
+        // confrontano solo a parità di orbita relativa.
+        $s1 = $origin['meta']['s1_pass'] ?? null;
+        $info['view_geometry'] = isset($s1['relative_orbit'])
+            ? trim('orbita ' . (int) $s1['relative_orbit'] . ' ' . (['ascending' => 'ascendente', 'descending' => 'discendente'][$s1['orbit_state'] ?? ''] ?? ''))
+            : null;
+        return $info;
+    }
+
+    /**
+     * Identificativo dell'acquisizione: due riprese con la stessa chiave sono
+     * la stessa foto (anche se ritagliate o elaborate diversamente). Null
+     * quando non si può stabilire — immagini caricate a mano, vecchi
+     * mosaici Sentinel di un intervallo — per non dichiarare a torto due
+     * riprese "uguali" solo perché portano la stessa data.
+     */
+    private static function acquisitionKey(array $origin): ?string
+    {
+        $meta = $origin['meta'];
+        if ($origin['kind'] === 'esri') {
+            // Tutte le acquisizioni dell'area, non solo la prevalente: con la
+            // stessa prevalente ma una parte dell'area aggiornata, le due
+            // riprese NON sono la stessa foto.
+            $sig = EsriImageryMetadata::signature($meta['esri_imagery'] ?? null);
+            return $sig !== '' ? 'esri:' . $sig : null;
+        }
+        if ($origin['kind'] === 'sentinel') {
+            if (!empty($meta['s2_pass']['datetime'])) {
+                return 's2:' . $meta['s2_pass']['datetime'];
+            }
+            if (!empty($meta['s1_pass']['datetime'])) {
+                return 's1:' . $meta['s1_pass']['datetime'];
+            }
+        }
+        return null;
+    }
+
+    private static function build(array $origin): array
+    {
         $meta = $origin['meta'];
 
         if ($origin['kind'] === 'esri') {
-            return self::esri($meta['esri_imagery'] ?? null);
+            return self::esri($meta['esri_imagery'] ?? null, $meta['wayback'] ?? null);
         }
         if ($origin['kind'] === 'sentinel') {
+            if (!empty($meta['s1_pass']) || ($origin['capture']['source'] ?? '') === 'sentinel1') {
+                return self::sentinel1($meta['s1_pass'] ?? null, $origin['capture']);
+            }
+            if (!empty($meta['s2_pass']['datetime'])) {
+                return self::sentinel2Pass($meta['s2_pass']);
+            }
             return self::sentinel($meta['date_from'] ?? null, $meta['date_to'] ?? null, $origin['capture']);
         }
         if ($origin['kind'] === 'custom') {
@@ -80,6 +127,23 @@ final class ImageryAttribution
                 $captionCredits[self::creditSentence($info)] = true;
             }
         }
+        // Più riprese Esri con fornitori diversi: un solo "© Esri" con tutti
+        // i fornitori, invece di "© Esri, Microsoft · © Esri, Vantor".
+        $esriProviders = [];
+        foreach (array_keys($credits) as $credit) {
+            // Solo la forma "© Esri, fornitore, ...": la dicitura senza
+            // metadati ("© Esri e licenzianti") resta intatta.
+            if (strpos($credit, '© Esri, ') === 0) {
+                unset($credits[$credit]);
+                foreach (array_slice(explode(', ', $credit), 1) as $provider) {
+                    $esriProviders[$provider] = true;
+                }
+                $credits['© Esri'] = true;
+            }
+        }
+        if (isset($credits['© Esri']) && $esriProviders) {
+            $credits = ['© Esri, ' . implode(', ', array_keys($esriProviders)) => true] + array_diff_key($credits, ['© Esri' => true]);
+        }
         $strip = implode(' · ', $stripParts);
         if ($credits) {
             $strip .= ' · ' . implode(' · ', array_keys($credits));
@@ -96,17 +160,22 @@ final class ImageryAttribution
     }
 
     /** Etichetta predefinita di una ripresa Esri: data dell'immagine, non
-     * del download (che resta nei metadati come fetched_at). */
-    public static function esriCaptureLabel(?array $imagery): string
+     * del download (che resta nei metadati come fetched_at). Per una
+     * versione storica ($waybackDate) l'etichetta dice da quale versione
+     * dell'archivio viene. */
+    public static function esriCaptureLabel(?array $imagery, ?string $waybackDate = null): string
     {
+        $prefix = $waybackDate
+            ? 'Esri Wayback (archivio del ' . self::it($waybackDate) . ')'
+            : 'Esri World Imagery';
         if (!$imagery || empty($imagery['acquisitions'])) {
-            return 'Esri World Imagery — data immagine non disponibile (scaricata il ' . date('d/m/Y') . ')';
+            return $prefix . ' — data immagine non disponibile (scaricata il ' . date('d/m/Y') . ')';
         }
         $min = $imagery['date_min'];
         $max = $imagery['date_max'];
         return $min === $max
-            ? 'Esri World Imagery — immagine del ' . self::it($min)
-            : 'Esri World Imagery — immagini dal ' . self::it($min) . ' al ' . self::it($max);
+            ? $prefix . ' — immagine del ' . self::it($min)
+            : $prefix . ' — immagini dal ' . self::it($min) . ' al ' . self::it($max);
     }
 
     /** Font per la striscia scritta lato server (pacchetto fonts-dejavu). */
@@ -172,7 +241,7 @@ final class ImageryAttribution
 
     // ------------------------------------------------------------------
 
-    private static function esri(?array $imagery): array
+    private static function esri(?array $imagery, ?array $wayback = null): array
     {
         $year = date('Y');
         $legal = 'Map image is the intellectual property of Esri and is used herein under license. '
@@ -185,12 +254,16 @@ final class ImageryAttribution
         }
         $acq = $imagery['acquisitions'];
         $dom = $acq[0];
+        // Nome del sensore ricalcolato dal codice: i dati salvati prima che un
+        // codice fosse noto (es. "WV03_VNIR") restano leggibili.
+        $dom['sensor_name'] = EsriImageryMetadata::sensorName($dom['sensor'] ?? '') ?: ($dom['sensor_name'] ?? '');
         $providers = array_values(array_unique(array_filter(array_map(fn($a) => $a['provider'] ?? '', $acq))));
         $credit = '© Esri' . ($providers ? ', ' . implode(', ', $providers) : '');
         $detail = trim(implode(' · ', array_filter([
             $dom['sensor_name'] ?? '',
             isset($dom['resolution_m']) ? str_replace('.', ',', rtrim(rtrim(sprintf('%.2f', $dom['resolution_m']), '0'), ',.')) . ' m' : '',
             $dom['provider'] ?? '',
+            !empty($wayback['release_date']) ? 'archivio Wayback, versione del ' . self::it($wayback['release_date']) : '',
         ])));
 
         $min = $imagery['date_min'] ?? $dom['date'];
@@ -241,6 +314,43 @@ final class ImageryAttribution
             $credit);
     }
 
+    /** Un singolo passaggio Sentinel-2: data e ora certe. */
+    private static function sentinel2Pass(array $pass): array
+    {
+        $date = substr($pass['datetime'], 0, 10);
+        $credit = 'Contains modified Copernicus Sentinel data ' . substr($date, 0, 4);
+        $when = ImageryCatalog::label($pass['datetime']);
+        $detail = implode(' · ', array_filter([
+            $pass['platform'] ?? 'Sentinel-2',
+            'L2A · 10 m',
+            isset($pass['relative_orbit']) ? 'orbita ' . (int) $pass['relative_orbit'] : '',
+            isset($pass['aoi_cloud']) ? 'nuvole sull\'area ' . round($pass['aoi_cloud'] * 100) . '%' : '',
+        ]));
+        return self::result('sentinel', false, $date, 'Sentinel-2 del ' . $when, $detail,
+            'Sentinel-2 ' . self::it($date),
+            'Sentinel-2 del ' . $when . ' (' . $detail . ").\n" . $credit . '.',
+            $credit);
+    }
+
+    /** Un passaggio Sentinel-1 (radar). */
+    private static function sentinel1(?array $pass, array $capture): array
+    {
+        $datetime = $pass['datetime'] ?? null;
+        $date = $datetime ? substr($datetime, 0, 10) : ($capture['capture_date'] ?? null);
+        $credit = 'Contains modified Copernicus Sentinel data ' . ($date ? substr($date, 0, 4) : date('Y'));
+        $when = $datetime ? ImageryCatalog::label($datetime) : self::it($date);
+        $state = ['ascending' => 'ascendente', 'descending' => 'discendente'][$pass['orbit_state'] ?? ''] ?? '';
+        $detail = implode(' · ', array_filter([
+            $pass['platform'] ?? 'Sentinel-1',
+            'radar SAR, polarizzazione VV · 10 m',
+            isset($pass['relative_orbit']) ? trim('orbita ' . (int) $pass['relative_orbit'] . ' ' . $state) : '',
+        ]));
+        return self::result('sentinel', false, $date, 'Sentinel-1 del ' . $when, $detail,
+            'Sentinel-1 SAR ' . self::it($date),
+            'Sentinel-1 (radar) del ' . $when . ' (' . $detail . ").\n" . $credit . '.',
+            $credit);
+    }
+
     /** Segue la catena delle riprese derivate fino a quella che porta
      * l'informazione di provenienza. */
     private static function resolveOrigin(array $capture): array
@@ -254,7 +364,7 @@ final class ImageryAttribution
             if (!empty($meta['esri_imagery']) || ($current['source'] ?? '') === 'esri') {
                 return ['kind' => 'esri', 'meta' => $meta, 'capture' => $current];
             }
-            if (($current['source'] ?? '') === 'sentinelhub') {
+            if (in_array($current['source'] ?? '', ['sentinelhub', 'sentinel1'], true)) {
                 return ['kind' => 'sentinel', 'meta' => $meta, 'capture' => $current];
             }
             if (!empty($meta['attribution'])) {

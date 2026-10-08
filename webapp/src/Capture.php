@@ -11,6 +11,22 @@ final class Capture
         return $stmt->fetchAll();
     }
 
+    /** Nome leggibile della fonte di una ripresa (miniature, elenchi). */
+    public static function sourceLabel(array $capture): string
+    {
+        $meta = json_decode($capture['meta_json'] ?? '', true);
+        if (!empty($meta['wayback'])) {
+            return 'Esri Wayback';
+        }
+        return [
+            'esri' => 'Esri',
+            'sentinelhub' => 'Sentinel-2',
+            'sentinel1' => 'Sentinel-1 SAR',
+            'upload' => 'caricata',
+            'processed' => 'elaborata',
+        ][$capture['source'] ?? ''] ?? (string) ($capture['source'] ?? '');
+    }
+
     public static function find(int $id): ?array
     {
         $stmt = Database::get()->prepare('SELECT * FROM captures WHERE id = :id');

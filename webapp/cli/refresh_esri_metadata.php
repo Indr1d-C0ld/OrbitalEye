@@ -23,7 +23,7 @@ $dryRun = isset($opts['dry-run']);
 $onlyId = isset($opts['id']) ? (int) $opts['id'] : null;
 
 $rows = Database::get()->query('SELECT * FROM captures ORDER BY id')->fetchAll();
-$autoLabel = '/^Esri World Imagery — (scaricata il \d{2}\/\d{2}\/\d{4}|data immagine non disponibile.*|immagine del \d{2}\/\d{2}\/\d{4}|immagini dal .*)$/u';
+$autoLabel = '/^Esri (World Imagery|Wayback \(archivio del \d{2}\/\d{2}\/\d{4}\)) — (scaricata il \d{2}\/\d{2}\/\d{4}|data immagine non disponibile.*|immagine del \d{2}\/\d{2}\/\d{4}|immagini dal .*)$/u';
 
 $done = 0;
 foreach ($rows as $c) {
@@ -52,11 +52,16 @@ foreach ($rows as $c) {
     // download (archivio Wayback), non com'è oggi — nel frattempo Esri può
     // aver aggiornato l'area e la data corrente non descriverebbe l'immagine
     // che si ha in archivio.
+    // Una versione storica (Wayback) si data con i metadati di QUELLA
+    // versione, indipendentemente dal giorno del download.
     $fetchedAt = !empty($meta['fetched_at']) ? substr((string) $meta['fetched_at'], 0, 10) : null;
+    $waybackRelease = (int) ($meta['wayback']['release'] ?? 0);
     try {
-        $imagery = $fetchedAt
-            ? EsriImageryMetadata::queryAsOf($area, (float) $mpp['mpp_x'], $fetchedAt)
-            : EsriImageryMetadata::query($area, (float) $mpp['mpp_x']);
+        $imagery = $waybackRelease
+            ? EsriWayback::imageryFor($waybackRelease, $area, (float) $mpp['mpp_x'])
+            : ($fetchedAt
+                ? EsriImageryMetadata::queryAsOf($area, (float) $mpp['mpp_x'], $fetchedAt)
+                : EsriImageryMetadata::query($area, (float) $mpp['mpp_x']));
     } catch (Throwable $e) {
         echo "#{$c['id']}: ERRORE — {$e->getMessage()}\n";
         continue;
@@ -64,7 +69,7 @@ foreach ($rows as $c) {
 
     $newLabel = $c['label'];
     if ($c['label'] === null || $c['label'] === '' || preg_match($autoLabel, $c['label'])) {
-        $newLabel = ImageryAttribution::esriCaptureLabel($imagery);
+        $newLabel = ImageryAttribution::esriCaptureLabel($imagery, $meta['wayback']['release_date'] ?? null);
     }
     $certainty = !isset($imagery['certain']) ? '' : ($imagery['certain']
         ? ' [certa: uguale nelle istantanee ' . implode(' e ', $imagery['bracket']) . ']'

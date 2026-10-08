@@ -9,8 +9,8 @@ $activeNav = 'schedules';
 require __DIR__ . '/partials/head.php';
 require __DIR__ . '/partials/nav.php';
 
-$sourceLabel = ['sentinelhub' => 'Sentinel Hub', 'esri' => 'Esri World Imagery'];
-$resultLabel = ['new' => '✓ nuova ripresa', 'duplicate' => '= scartata (duplicato)', 'error' => '✕ errore'];
+$sourceLabel = ['sentinelhub' => 'Sentinel-2', 'sentinel1' => 'Sentinel-1 SAR', 'esri' => 'Esri World Imagery'];
+$resultLabel = ['new' => '✓ nuova ripresa', 'duplicate' => '= scartata (duplicato)', 'no_new' => '= niente di nuovo', 'error' => '✕ errore'];
 ?>
 
 <div class="panel">
@@ -22,7 +22,7 @@ $resultLabel = ['new' => '✓ nuova ripresa', 'duplicate' => '= scartata (duplic
     <div class="empty-state">
       <div class="glyph">⏱</div>
       <div>Nessuna pianificazione attiva.</div>
-      <div class="hint">Attiva uno scaricamento automatico pianificato dalla pagina di uno studio (sezione Sentinel Hub o Esri) per iniziare.</div>
+      <div class="hint">Attiva uno scaricamento automatico pianificato dalla pagina di uno studio (sezione Copernicus o Esri) per iniziare.</div>
     </div>
   </div>
 <?php else: ?>
@@ -39,7 +39,7 @@ $resultLabel = ['new' => '✓ nuova ripresa', 'duplicate' => '= scartata (duplic
             <td><a href="study.php?id=<?= (int)$s['study_id'] ?>"><?= e($s['study_title']) ?></a></td>
             <td><?= e($sourceLabel[$s['source']] ?? $s['source']) ?></td>
             <td>ogni <?= (int)$s['interval_days'] ?> giorni</td>
-            <td><?= e(number_format((float)$s['duplicate_threshold'] * 100, 2)) ?>%</td>
+            <td><?php if ($s['source'] === 'esri'): ?><?= e(number_format((float)$s['duplicate_threshold'] * 100, 2)) ?>%<?php else: ?><span class="hint" title="Ogni passaggio nuovo si tiene">—</span><?php endif; ?></td>
             <td class="hint"><?= $s['last_run_at'] ? format_datetime_it($s['last_run_at']) : 'mai eseguita' ?></td>
             <td>
               <?= e($resultLabel[$s['last_result']] ?? 'in attesa del primo controllo') ?>

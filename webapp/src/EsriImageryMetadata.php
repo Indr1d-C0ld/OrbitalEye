@@ -47,12 +47,21 @@ final class EsriImageryMetadata
         'GE01' => 'GeoEye-1', 'QB02' => 'QuickBird-2', 'IK02' => 'IKONOS',
         'LG01' => 'WorldView Legion', 'LG02' => 'WorldView Legion', 'LG03' => 'WorldView Legion',
         'LG04' => 'WorldView Legion', 'LG05' => 'WorldView Legion', 'LG06' => 'WorldView Legion',
+        'PNEO' => 'Pléiades Neo', 'PHR1A' => 'Pléiades 1A', 'PHR1B' => 'Pléiades 1B', 'SPOT6' => 'SPOT 6', 'SPOT7' => 'SPOT 7',
+        // Fotocamere aeree UltraCam (es. il programma Global Ortho di Microsoft).
+        'UC-G' => 'UltraCam G (aerea)', 'UCE' => 'UltraCam Eagle (aerea)', 'UCXp' => 'UltraCam Xp (aerea)', 'UCX' => 'UltraCam X (aerea)',
     ];
 
     public static function sensorName(?string $code): string
     {
         $code = trim((string) $code);
-        return self::SENSOR_NAMES[$code] ?? $code;
+        if (isset(self::SENSOR_NAMES[$code])) {
+            return self::SENSOR_NAMES[$code];
+        }
+        // Varianti per banda nelle versioni più vecchie dell'archivio
+        // (WV03_VNIR, WV02_PAN...).
+        $base = preg_replace('/_(VNIR|PAN|MS|SWIR)$/i', '', $code);
+        return self::SENSOR_NAMES[$base] ?? $code;
     }
 
     /**
@@ -132,16 +141,11 @@ final class EsriImageryMetadata
         }
         $before = self::query($bbox, $mpp, $around['before']['url']);
         $after = self::query($bbox, $mpp, $around['after']['url'] ?? null);
-        $signature = function (array $r): string {
-            $keys = array_map(fn($a) => $a['date'] . '|' . $a['sensor'], $r['acquisitions']);
-            sort($keys);
-            return implode(',', $keys);
-        };
 
         $result = $before;
         $result['as_of'] = $isoDate;
         $result['bracket'] = [$around['before']['date'], $around['after']['date'] ?? 'corrente'];
-        $result['certain'] = $signature($before) === $signature($after);
+        $result['certain'] = self::signature($before) === self::signature($after);
         if (!$result['certain']) {
             $result['alternative'] = [
                 'dominant_date' => $after['dominant_date'],
@@ -165,30 +169,31 @@ final class EsriImageryMetadata
      */
     public static function waybackAround(string $isoDate): array
     {
-        $cacheKey = '_esri_wayback_releases';
-        $cached = json_decode((string) AppSettings::get($cacheKey), true);
-        if (!is_array($cached) || ($cached['fetched_at'] ?? 0) < time() - 86400 || empty($cached['releases'])) {
-            $config = self::getJson(self::WAYBACK_CONFIG);
-            $releases = [];
-            foreach ($config as $r) {
-                if (!empty($r['metadataLayerUrl']) && preg_match('/(\d{4}-\d{2}-\d{2})/', (string) ($r['itemTitle'] ?? ''), $m)) {
-                    $releases[] = ['date' => $m[1], 'url' => rtrim((string) $r['metadataLayerUrl'], '/')];
-                }
-            }
-            usort($releases, fn($a, $b) => strcmp($a['date'], $b['date']));
-            $cached = ['fetched_at' => time(), 'releases' => $releases];
-            AppSettings::set($cacheKey, json_encode($cached));
-        }
         $before = null;
         $after = null;
-        foreach ($cached['releases'] as $r) {
-            if ($r['date'] <= $isoDate) {
-                $before = $r;
-            } elseif ($after === null) {
-                $after = $r;
+        // releases() va dalla più recente: la prima anteriore o uguale è
+        // "before", l'ultima vista prima di lei è "after".
+        foreach (EsriWayback::releases() as $r) {
+            if ($r['metadata_url'] === '') {
+                continue;
             }
+            $entry = ['date' => $r['date'], 'url' => $r['metadata_url']];
+            if ($r['date'] <= $isoDate) {
+                $before = $entry;
+                break;
+            }
+            $after = $entry;
         }
         return ['before' => $before, 'after' => $after];
+    }
+
+    /** Impronta delle acquisizioni di un risultato di query(): due letture
+     * con la stessa impronta descrivono le stesse immagini. */
+    public static function signature(?array $imagery): string
+    {
+        $keys = array_map(fn($a) => ($a['date'] ?? '') . '|' . ($a['sensor'] ?? ''), $imagery['acquisitions'] ?? []);
+        sort($keys);
+        return implode(',', $keys);
     }
 
     /** Livelli di metadati (dalla scala della ripresa verso quelle più
@@ -247,7 +252,9 @@ final class EsriImageryMetadata
             'inSR' => 4326,
             'outSR' => 4326,
             'spatialRel' => 'esriSpatialRelIntersects',
-            'outFields' => 'SRC_DATE,SRC_RES,SRC_DESC,NICE_NAME,NICE_DESC,ReleaseName',
+            // Tutti i campi: le versioni più vecchie dell'archivio Wayback non
+            // hanno ReleaseName, e chiederlo per nome faceva fallire la query.
+            'outFields' => '*',
             'returnGeometry' => 'true',
             'maxAllowableOffset' => sprintf('%.8F', max($simplify, 1e-7)),
             'geometryPrecision' => 7,

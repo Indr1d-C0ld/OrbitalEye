@@ -4,6 +4,199 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-10-08 (2) — Fonti con una dimensione temporale vera: passaggi Sentinel-2, radar Sentinel-1, archivio storico Esri, pianificazioni guidate dai nuovi dati
+
+Seconda parte del piano di evoluzione. Il motore di confronto era ben
+costruito ma non riceveva dati che cambiano: Esri World Imagery è un
+mosaico aggiornato di rado (sul deployment reale 64 controlli pianificati
+su 64 hanno dato "nessun cambiamento") e Sentinel-2 veniva scaricato come
+mosaico "meno nuvoloso di un intervallo", che mescolava giorni diversi e
+prendeva come data la fine dell'intervallo.
+
+### Sentinel-2: un passaggio, una data
+
+- **[python-service/app/core/sentinelhub_client.py](python-service/app/core/sentinelhub_client.py)** —
+  nuove `search_sentinel2()` / `search_sentinel1()`. Il catalogo STAC
+  (con paginazione) restituisce i prodotti, che vengono raggruppati per
+  passaggio (tasselli adiacenti, prodotti consecutivi entro ±3 minuti).
+  Per ogni passaggio: data e ora UTC, satellite, orbita relativa e
+  nuvolosità del tassello. La Statistical API calcola **nuvole e copertura
+  sulla sola area di interesse** (classi SCL 3/8/9/10 a ~20 m). Quella del
+  tassello riguarda 110 km: su Sigonella diceva 20% il 30/09 con l'area
+  coperta al 94%, e 28% il 03/10 con l'area quasi sgombra (8%). Le
+  statistiche sono **per passaggio**, non per mosaico giornaliero: con due
+  passaggi nello stesso giorno (aree nella sovrapposizione fra orbite) il
+  mosaico riempiva i pixel scoperti di uno con l'altro, e nuvole e
+  copertura risultavano di entrambi. Né il filtro temporale dei dati né la
+  mosaicatura per orbita lo evitano (quest'ultima raggruppa per giorno):
+  l'evalscript lavora per tassello e tiene solo quelli del primo o
+  dell'ultimo passaggio del giorno. Bastano due richieste per qualunque
+  periodo: un anno di dati in ~9 s, contro 47 s con una richiesta per
+  giorno. Le richieste rifiutate per limite di frequenza (429) vengono
+  ritentate. Il catalogo segnala un errore invece di troncare in silenzio
+  oltre i 3000 prodotti.
+  `fetch_true_color()`/`fetch_red_nir()` accettano `pass_datetime` e
+  scaricano solo quel passaggio. Le chiamate HTTP passano da un'unica
+  `_post()` che traduce gli errori in messaggi leggibili.
+- **[webapp/src/ImageryCatalog.php](webapp/src/ImageryCatalog.php)** (nuovo) —
+  ricerca dei passaggi dal PHP e scelta del migliore: per Sentinel-2 il più
+  recente con nuvole sull'area entro la soglia e area coperta almeno al
+  95%; per Sentinel-1 il più recente, della stessa orbita se indicata.
+  Se le statistiche non rispondono si ripiega sulla nuvolosità del tassello.
+- **[webapp/src/CaptureFetcher.php](webapp/src/CaptureFetcher.php)** —
+  ogni ripresa Copernicus è un passaggio. Con `pass_datetime` si scarica
+  quello; con un periodo si scarica il migliore del periodo. Se nessun
+  passaggio rispetta la soglia, il messaggio dice quanti ce n'erano.
+  Etichetta "Sentinel-2 — 08/10/2026 10:00 UTC (nuvole sull'area 0%)",
+  data della ripresa = giorno del passaggio, dettagli in `meta.s2_pass` /
+  `meta.s1_pass`.
+
+### Sentinel-1 radar
+
+- **sentinelhub_client.py** — `fetch_sentinel1()`: GRD in modalità IW,
+  calibrazione gamma0 sul terreno, ortorettifica sul DEM Copernicus, filtro
+  anti-speckle Lee 3×3. Il risultato è la retrodiffusione VV in decibel in
+  scala di grigi (-22..+4 dB). Tra le rese provate è la più leggibile:
+  piste e piazzali scuri, edifici e velivoli punti chiari. Un falso colore
+  VV/VH/rapporto era dominato dalla vegetazione.
+- **[python-service/app/routers/fetch.py](python-service/app/routers/fetch.py)** —
+  nuovi `/fetch/sentinel1`, `/fetch/wayback`, `/fetch/catalog/sentinel2`,
+  `/fetch/catalog/sentinel1`. `/fetch/sentinelhub` accetta
+  `pass_datetime`.
+- Nuova fonte `sentinel1` in CaptureFetcher, nelle pianificazioni e nelle
+  attribuzioni (stessa dicitura Copernicus). Si elencano solo i passaggi a
+  doppia polarizzazione VV+VH, quelli che il download sa elaborare: un
+  passaggio in sola HH sarebbe stato scaricato come immagine vuota.
+- Un passaggio che il catalogo non conosce per quell'area e fonte viene
+  rifiutato, invece di salvare un'immagine vuota con una data precisa.
+
+### Archivio storico Esri (Wayback)
+
+- **[webapp/src/EsriWayback.php](webapp/src/EsriWayback.php)** (nuovo) —
+  elenco delle versioni del mosaico pubblicate dal 2014 (cache di un
+  giorno). `versionsAt()` trova quelle in cui l'immagine dell'area è
+  davvero diversa con il metodo dell'applicazione Wayback di Esri: il
+  "tilemap" indica per ogni tassello la versione in cui è stato pubblicato
+  l'ultima volta, e si risale di versione in versione. Su Sigonella 197
+  versioni si riducono a 19. `imageryFor()` legge la data reale dai
+  metadati della singola versione (cache di 30 giorni).
+- **[python-service/app/core/wayback_client.py](python-service/app/core/wayback_client.py)** (nuovo) —
+  scarica i tasselli WMTS che coprono l'area (in parallelo, con nuovi
+  tentativi) al livello adatto alla risoluzione richiesta, scendendo di
+  livello se la versione non arriva così in dettaglio (quelle più vecchie
+  spesso si fermano al 17–18). Li ricampiona dalla proiezione Web Mercator
+  alla griglia lon/lat lineare delle riprese, con la stessa regola di
+  rapporto d'aspetto di `esri_client.py`: una versione storica e
+  un'immagine attuale della stessa area sono allineate pixel per pixel.
+  Se mancano tasselli ai bordi si scende di livello invece di lasciare
+  blocchi neri; un'area coperta meno del 90% viene rifiutata.
+  È il servizio WMTS che Esri documenta per i client GIS di terze parti.
+  Si scaricano solo i tasselli dell'area, e valgono gli stessi termini
+  d'uso di World Imagery (avviso alla pubblicazione invariato).
+- **CaptureFetcher.php** — `wayback_release` per la fonte Esri. Etichetta
+  "Esri Wayback (archivio del 14/03/2018) — immagine del 29/06/2017",
+  dettagli in `meta.wayback`.
+- **[webapp/src/EsriImageryMetadata.php](webapp/src/EsriImageryMetadata.php)** —
+  la query chiede tutti i campi (`outFields=*`): i metadati delle versioni
+  più vecchie non hanno `ReleaseName`, e chiederlo per nome faceva fallire
+  la lettura. Nuova `signature()` pubblica, cioè l'impronta delle
+  acquisizioni. `waybackAround()` usa l'elenco di `EsriWayback`, così la
+  cache è una sola. Nomi di sensori aggiunti: Pléiades, SPOT, fotocamere
+  aeree UltraCam e varianti per banda come `WV03_VNIR`.
+
+### Interfaccia
+
+- **[webapp/public/api/imagery_catalog.php](webapp/public/api/imagery_catalog.php)** (nuovo) —
+  azioni `sentinel2`, `sentinel1`, `wayback`, `wayback_imagery`. La
+  sessione viene chiusa subito, così le date delle versioni si caricano in
+  parallelo e il resto dell'interfaccia non resta in attesa.
+- **[webapp/public/study.php](webapp/public/study.php)**,
+  **[webapp/public/assets/js/study.js](webapp/public/assets/js/study.js)**,
+  **[webapp/public/assets/css/style.css](webapp/public/assets/css/style.css)**:
+  - La scheda "Copernicus (Sentinel)" sceglie fra Sentinel-2 e Sentinel-1.
+    **Cerca passaggi** apre una tabella con data, satellite, orbita, nuvole
+    e copertura sull'area (badge colorati, copertura parziale evidenziata)
+    e un "Scarica" per ogni riga.
+  - Nella scheda Esri, **🕰 Versioni storiche** elenca le versioni con
+    data reale, sensore e risoluzione. Le versioni consecutive con la
+    stessa acquisizione (solo rielaborate, o col fornitore rinominato
+    Maxar → Vantor) sono raggruppate in una riga con "+N": su Sigonella 19
+    versioni diventano 12 immagini, dal 2011 al 2024.
+  - L'avviso "stessa acquisizione" (punto 1) confrontava solo la data, e
+    due passaggi radar dello stesso giorno, o un'immagine Sentinel e una
+    Esri con la stessa data, risultavano a torto la stessa foto. Ora usa
+    un identificativo preciso (`ImageryAttribution::acquisitionKey`). Nuovo
+    avviso per due riprese radar da orbite diverse, che altrimenti
+    darebbero ~100% di "cambiamento" dovuto solo alla geometria di vista.
+  - Le miniature mostrano la fonte per nome (Sentinel-2, Sentinel-1 SAR,
+    Esri Wayback…) tramite `Capture::sourceLabel()`.
+- La scelta del satellite si allinea alla pagina anche dopo un
+  ricaricamento (il browser può ripristinare il radio "Sentinel-1" mentre
+  la fonte restava Sentinel-2). I risultati di una ricerca superata da un
+  cambio di satellite vengono scartati. La chiave "stessa acquisizione"
+  considera tutte le acquisizioni Esri dell'area, non solo la prevalente.
+  Le versioni Wayback senza servizio di metadati restano nella catena,
+  con la data "non disponibile".
+- **[webapp/src/ImageryAttribution.php](webapp/src/ImageryAttribution.php)** —
+  didascalie e strisce per passaggio Sentinel-2 (satellite, orbita, nuvole),
+  Sentinel-1 (orbita e direzione) e versioni Wayback. Più riprese Esri di
+  fornitori diversi danno un solo "© Esri, Microsoft, Vantor". Il nome del
+  sensore viene ricalcolato dal codice anche sui dati già salvati.
+
+### Pianificazioni guidate dai nuovi dati
+
+- **[webapp/cli/run_scheduled_downloads.php](webapp/cli/run_scheduled_downloads.php)** —
+  prima di scaricare si verifica se la fonte ha qualcosa di nuovo:
+  - Sentinel-2: un passaggio successivo all'ultimo scaricato, con nuvole
+    sull'area entro la soglia;
+  - Sentinel-1: un passaggio successivo della stessa orbita relativa;
+  - Esri: la data delle immagini dell'area, letta dai metadati con la
+    stessa area e scala del download precedente, diversa da quella
+    dell'ultima ripresa.
+
+  Se non c'è nulla l'esito è il nuovo `no_new` e non si scarica niente:
+  le 3 pianificazioni Esri del deployment ora chiudono in 1 secondo invece
+  di scaricare e scartare la stessa immagine ogni giorno. Una novità certa
+  si tiene sempre, e l'alert riporta le due date e la variazione rilevata.
+  Se i metadati Esri non sono leggibili si torna al confronto per pixel
+  con soglia di duplicato. Il passaggio letto dal catalogo arriva a
+  `CaptureFetcher` così com'è (nuovo parametro `$knownPass`): una seconda
+  ricerca fallita per un momento avrebbe lasciato la ripresa senza orbita,
+  e il controllo successivo avrebbe confrontato radar di orbite diverse.
+  Per le pianificazioni Sentinel create prima di questa versione la
+  finestra è limitata a 365 giorni (oltre 400 la ricerca veniva rifiutata a
+  ogni giro) e si cerca dopo la fine del vecchio mosaico.
+- **[webapp/public/api/schedule_download.php](webapp/public/api/schedule_download.php)**,
+  **[webapp/public/schedules.php](webapp/public/schedules.php)**,
+  **[webapp/public/alerts.php](webapp/public/alerts.php)**,
+  **[webapp/src/Capture.php](webapp/src/Capture.php)** — fonte `sentinel1`,
+  finestra del primo passaggio (default 30 giorni), esito "= niente di
+  nuovo", soglia di duplicato mostrata solo per Esri, testi aggiornati.
+- **[webapp/cli/refresh_esri_metadata.php](webapp/cli/refresh_esri_metadata.php)** —
+  le versioni storiche si datano con i metadati della loro versione, non
+  col giorno del download. Riconosce anche le etichette automatiche Wayback.
+
+### Verifica
+
+Revisione indipendente del diff completo: nessun crash o XSS, 12 punti
+su dati potenzialmente sbagliati in silenzio, corretti quelli descritti
+sopra. Ambiente isolato (seconda istanza del servizio di analisi, copia di
+DB e storage, token Telegram neutralizzato), con download reali:
+- ricerche Sentinel-2 e Sentinel-1;
+- passaggio migliore, passaggio scelto, assenza di passaggi sotto soglia,
+  valori non validi;
+- Sentinel-1 normale e ruotato;
+- Wayback 2011, 2018, 2019 e attuale, normale e ruotato, con livello di
+  zoom ripiegato dove manca il dettaglio;
+- pianificazioni: Esri invariato, Esri aggiornato (simulato), Sentinel-2 e
+  Sentinel-1 senza novità e con un passaggio nuovo, pianificazione Sentinel
+  creata con la versione precedente;
+- avvisi di stessa acquisizione e di orbita diversa nel confronto reale;
+- 14 pagine senza errori PHP.
+
+Le modifiche al servizio Python richiedono il riavvio di
+`orbitaleye-analysis`.
+
 ## 2026-10-08 — Integrità del materiale pubblicato: data reale delle immagini Esri, attribuzione delle fonti, avviso sui termini d'uso
 
 Prima parte del piano di evoluzione. Il mosaico Esri World Imagery è
