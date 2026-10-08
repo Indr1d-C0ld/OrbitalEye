@@ -746,6 +746,17 @@ require __DIR__ . '/partials/nav.php';
   <?php endif; ?>
 </div>
 
+<div class="panel" id="area-history-panel">
+  <h2>📈 Storico dell'area <span class="info-tip" tabindex="0" data-tip="Per ogni ripresa, nell'ordine della data reale dell'immagine: quanti aerei, elicotteri, navi e veicoli ha trovato il rilevamento automatico, e quali tipi di velivolo hai identificato nelle annotazioni (etichette che corrispondono a un tipo della tabella, es. 'P-8 Poseidon'). Il rilevamento richiede riprese dettagliate (fino a 2 m/pixel): le riprese Sentinel non sono adatte. I conteggi dipendono dalla soglia di confidenza e da cosa è visibile: sono indicativi, da verificare sulle immagini.">?</span></h2>
+  <div id="area-history-chart"></div>
+  <div class="tag-row" style="margin:8px 0;">
+    <button type="button" class="btn btn-sm" id="area-history-detect-all" title="Esegue il rilevamento automatico (confidenza 0,25) su ogni ripresa adatta che non l'ha ancora: una alla volta, può richiedere qualche minuto">🎯 Rileva sulle riprese mancanti</button>
+    <a class="btn btn-sm" href="api/area_history.php?study_id=<?= (int)$studyId ?>&amp;format=csv" title="Tabella per un foglio di calcolo">⬇ CSV</a>
+    <span class="hint" id="area-history-status"></span>
+  </div>
+  <div id="area-history-table"><div class="hint">Caricamento…</div></div>
+</div>
+
 <script>
 window.ORBITALEYE = {
   studyId: <?= (int)$studyId ?>,

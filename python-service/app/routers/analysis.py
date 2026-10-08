@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from ..config import settings
+from ..core import detect as detectmod
 from ..core import diff as diffmod
 from ..core import enhance as enhancemod
 from ..core import spectral as spectralmod
@@ -302,3 +303,41 @@ def spectral_view(req: SpectralViewRequest):
     save_image(out, out_path)
 
     return {"relative_path": f"processed/{out_id}.png"}
+
+
+class DetectRequest(BaseModel):
+    capture_path: str
+    # Metri/pixel della ripresa, se noti: servono solo all'ingrandimento
+    # facoltativo per gli oggetti piccoli.
+    mpp: float | None = Field(None, gt=0)
+    confidence: float = Field(0.25, ge=0.05, le=0.95)
+    small_objects: bool = False
+
+
+@router.get("/detect/status")
+def detect_status():
+    return {"available": detectmod.available(), "classes": [c[1] for c in detectmod.CLASSES]}
+
+
+@router.post("/detect")
+def detect(req: DetectRequest):
+    """Oggetti (aerei, elicotteri, navi, veicoli...) con riquadri orientati,
+    in pixel dell'immagine originale. Vedi core/detect.py."""
+    try:
+        src = safe_storage_path(req.capture_path)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Percorso non valido")
+    if not src.is_file():
+        raise HTTPException(status_code=404, detail="Immagine non trovata")
+    img, mask = load_image_with_mask(src)
+    if mask is not None:
+        img = img.copy()
+        img[mask == 0] = 114  # zone senza dati: grigio neutro, come il riempimento del modello
+    try:
+        result = detectmod.detect(img, req.mpp if req.small_objects else None, req.confidence)
+    except (detectmod.DetectorUnavailable, detectmod.DetectorBusy) as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    result["width"] = int(img.shape[1])
+    result["height"] = int(img.shape[0])
+    result["model"] = detectmod.MODEL_PATH.stem
+    return result

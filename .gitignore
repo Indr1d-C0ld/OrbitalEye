@@ -29,3 +29,6 @@ storage/config/*
 
 # === Log degli script da riga di comando (dati operativi) ===
 webapp/cli/logs/
+
+# Modello di rilevamento (37 MB, licenza propria): si installa con python-service/tools/fetch_detector_model.sh
+python-service/models/

@@ -139,6 +139,24 @@ CREATE TABLE IF NOT EXISTS shares (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Rilevamento automatico di oggetti su una ripresa (vedi src/Detection.php,
+-- python-service/app/core/detect.py): l'ultima esecuzione per ripresa, con
+-- l'elenco degli oggetti (classe, confidenza, riquadro orientato, misure in
+-- metri, tipi di velivolo compatibili) in result_json e i conteggi per
+-- classe in counts_json, da cui lo storico dell'area di uno studio.
+CREATE TABLE IF NOT EXISTS detections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    capture_id INTEGER NOT NULL REFERENCES captures(id) ON DELETE CASCADE,
+    study_id INTEGER NOT NULL REFERENCES studies(id) ON DELETE CASCADE,
+    model TEXT NOT NULL,
+    confidence REAL NOT NULL,
+    small_objects INTEGER NOT NULL DEFAULT 0,
+    mpp REAL,
+    result_json TEXT NOT NULL,
+    counts_json TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_captures_study ON captures(study_id);
 CREATE INDEX IF NOT EXISTS idx_comparisons_study ON comparisons(study_id);
 CREATE INDEX IF NOT EXISTS idx_annotations_study ON annotations(study_id);
@@ -148,3 +166,5 @@ CREATE INDEX IF NOT EXISTS idx_scheduled_downloads_active ON scheduled_downloads
 CREATE INDEX IF NOT EXISTS idx_alerts_study ON alerts(study_id);
 CREATE INDEX IF NOT EXISTS idx_alerts_unread ON alerts(is_read);
 CREATE INDEX IF NOT EXISTS idx_shares_study ON shares(study_id);
+CREATE INDEX IF NOT EXISTS idx_detections_capture ON detections(capture_id);
+CREATE INDEX IF NOT EXISTS idx_detections_study ON detections(study_id);

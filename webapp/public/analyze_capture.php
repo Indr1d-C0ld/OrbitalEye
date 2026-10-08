@@ -320,7 +320,7 @@ require __DIR__ . '/partials/nav.php';
 </div>
 
 <div class="panel">
-  <h2>Misurazioni <span class="info-tip" tabindex="0" data-tip="Stima calcolata dalle coordinate geografiche dell'area scaricata (o da una calibrazione manuale se non disponibili): assume una ripresa verticale (nadir) senza rilievo significativo — per oggetti alti o riprese oblique, la misura reale sul terreno può differire da quella apparente nell'immagine. Le misurazioni non vengono salvate: servono per la lettura immediata durante l'analisi.">?</span></h2>
+  <h2>Misurazioni <span class="info-tip" tabindex="0" data-tip="Stima calcolata dalle coordinate geografiche dell'area scaricata (o da una calibrazione manuale se non disponibili): assume una ripresa verticale (nadir) senza rilievo significativo — per oggetti alti o riprese oblique, la misura reale sul terreno può differire da quella apparente nell'immagine. Le misurazioni vengono salvate con la ripresa.">?</span></h2>
   <div class="hint" id="an-scale-status" style="margin-bottom:8px;"></div>
   <div class="checkbox-row field">
     <input type="checkbox" id="an-show-scale-bar">
@@ -346,6 +346,65 @@ require __DIR__ . '/partials/nav.php';
     <button type="button" class="btn btn-primary btn-sm" id="an-shadow-measure-btn">📐 Misura un'ombra</button>
     <span class="hint" id="an-shadow-status"></span>
   </div>
+
+  <div style="margin-top:14px; padding-top:12px; border-top:1px solid var(--line);">
+    <h3>Identifica velivolo dalle misure <span class="info-tip" tabindex="0" data-tip="Misura apertura alare (o diametro del rotore, per un elicottero) e lunghezza con lo strumento Misura, poi scegli qui quale misura è quale: la piattaforma propone i tipi compatibili da una tabella locale di 166 velivoli militari e civili (dimensioni dalle schede tecniche, link alla fonte per ciascuno). La compatibilità tiene conto della risoluzione della ripresa: un tipo compatibile non è un'identificazione, va confermato guardando forma delle ali, motori, impennaggi. Nessuna richiesta esterna.">?</span></h3>
+    <div class="grid grid-3" style="margin-bottom:8px;">
+      <div class="field">
+        <label>Apertura alare / rotore (m)</label>
+        <select id="an-id-span-sel"><option value="">— misura —</option></select>
+        <input type="text" inputmode="decimal" id="an-id-span" placeholder="es. 13,1" style="margin-top:4px;">
+      </div>
+      <div class="field">
+        <label>Lunghezza (m)</label>
+        <select id="an-id-length-sel"><option value="">— misura —</option></select>
+        <input type="text" inputmode="decimal" id="an-id-length" placeholder="es. 19,4" style="margin-top:4px;">
+      </div>
+      <div class="field">
+        <label>Cerca fra</label>
+        <select id="an-id-filter">
+          <option value="ala_fissa">Aerei (ala fissa)</option>
+          <option value="elicottero">Elicotteri</option>
+          <option value="">Tutti</option>
+          <?php foreach (AircraftCatalog::categories() as $cat): if ($cat === 'elicottero') continue; ?>
+            <option value="<?= e($cat) ?>">Solo <?= e($cat) ?></option>
+          <?php endforeach; ?>
+        </select>
+        <select id="an-id-wing" style="margin-top:4px;" title="Forma delle ali, come si vede sulla ripresa: separa tipi con dimensioni simili (un jet e un turboelica di 35 m)">
+          <option value="">Ali: qualunque forma</option>
+          <?php foreach (AircraftCatalog::wings() as $wg): ?>
+            <option value="<?= e($wg) ?>">Ali: <?= e($wg) ?></option>
+          <?php endforeach; ?>
+        </select>
+      </div>
+    </div>
+    <button type="button" class="btn btn-primary btn-sm" id="an-id-btn">🔎 Trova tipi compatibili</button>
+    <span class="hint" id="an-id-status"></span>
+    <div id="an-id-results" style="margin-top:8px;"></div>
+  </div>
+</div>
+
+<div class="panel" id="an-detect-panel">
+  <h2>🎯 Rilevamento automatico <span class="info-tip" tabindex="0" data-tip="Riconosce aerei, elicotteri, navi, veicoli e altri oggetti con un modello di intelligenza artificiale che gira sul tuo server (YOLO11s-OBB addestrato sul dataset DOTA): nessuna immagine lascia la piattaforma. Funziona su riprese dettagliate (fra circa 0,1 e 1–2 m/pixel, quindi Esri, non Sentinel). Per ogni velivolo misura il riquadro e propone i tipi compatibili. Il modello può sbagliare o mancare oggetti: i risultati sono da verificare. Licenze: modello AGPL-3.0 (Ultralytics), pesi addestrati su DOTA per uso di ricerca non commerciale.">?</span></h2>
+  <div class="grid grid-3" style="align-items:end;">
+    <div class="field">
+      <label>Confidenza minima <span class="val" id="an-detect-conf-out">0,25</span></label>
+      <input type="range" id="an-detect-conf" min="0.1" max="0.9" step="0.05" value="0.25">
+    </div>
+    <label class="checkbox-row" style="margin:0;" title="Ingrandisce l'immagine 2× prima del rilevamento quando è sopra 0,5 m/pixel: trova meglio caccia e veicoli, ma è fino a 3–4 volte più lento.">
+      <input type="checkbox" id="an-detect-small"> Cerca anche oggetti piccoli (più lento)
+    </label>
+    <label class="checkbox-row" style="margin:0;">
+      <input type="checkbox" id="an-detect-show" checked> Mostra sulla ripresa
+    </label>
+  </div>
+  <div class="tag-row" style="margin-top:8px;">
+    <button type="button" class="btn btn-primary btn-sm" id="an-detect-btn">🎯 Rileva oggetti</button>
+    <button type="button" class="btn btn-sm" id="an-detect-annotate-all" style="display:none;" title="Crea un'annotazione (poligono) per ogni aereo, elicottero e nave rilevati, con l'etichetta della classe o del tipo scelto">🏷 Salva velivoli e navi come annotazioni</button>
+  </div>
+  <span class="hint" id="an-detect-status"></span>
+  <div id="an-detect-summary" class="tag-row" style="margin-top:8px;"></div>
+  <div id="an-detect-list" style="margin-top:8px;"></div>
 </div>
 
 <div class="panel">
@@ -456,6 +515,12 @@ window.ORBITALEYE_ANALYZE = {
   // Data di acquisizione (per la stima altezza da ombra: pre-compila il
   // campo data; l'ora resta da inserire, non nota per Esri).
   captureDate: <?= json_encode($capture['capture_date'] ?? null) ?>,
+  // Metri/pixel medi con cui il server decide se il rilevamento automatico
+  // è possibile (vedi Detection::resolveMpp, fino a 2 m/pixel).
+  detectMpp: <?php $dm = Detection::resolveMpp($capture); echo $dm ? json_encode(($dm['mpp_x'] + $dm['mpp_y']) / 2) : 'null'; ?>,
+  // Data e ora esatte del passaggio, se note (Sentinel): l'ora pre-compila
+  // la stima dell'altezza da ombra.
+  captureDatetime: <?= json_encode($captureMeta['s2_pass']['datetime'] ?? $captureMeta['s1_pass']['datetime'] ?? null) ?>,
   // Bbox geografica grezza (per centro area -> lat/lon nella stima ombra).
   geoBbox: <?= $geoBbox ? json_encode(array_map('floatval', $geoBbox)) : 'null' ?>,
   // Angolo (gradi) applicato in fase di scaricamento se l'area era stata

@@ -377,6 +377,125 @@
     });
   })();
 
+  // ---------- Storico dell'area (vedi AreaHistory.php) ----------
+  (function setupAreaHistory() {
+    const panel = $('#area-history-panel');
+    if (!panel) return;
+    const tableEl = $('#area-history-table'), chartEl = $('#area-history-chart');
+    const status = $('#area-history-status'), detectAllBtn = $('#area-history-detect-all');
+    const studyId = window.ORBITALEYE.studyId;
+    let rows = [], classes = {};
+
+    function typesText(types) {
+      return Object.entries(types || {}).map(([t, n]) => (n > 1 ? `${t} ×${n}` : t)).join(', ');
+    }
+
+    function renderChart() {
+      const pts = rows.filter((r) => r.counts && r.date);
+      if (pts.length < 1) {
+        chartEl.innerHTML = '<div class="hint">Il grafico compare quando almeno una ripresa con data nota ha un rilevamento automatico.</div>';
+        return;
+      }
+      const W = 700, H = 170, L = 34, R = 10, T = 12, B = 28;
+      const t = (d) => Date.parse(d + 'T00:00:00Z');
+      const t0 = Math.min(...pts.map((p) => t(p.date))), t1 = Math.max(...pts.map((p) => t(p.date)));
+      const span = Math.max(t1 - t0, 30 * 86400000);
+      const x = (d) => L + (pts.length === 1 ? (W - L - R) / 2 : ((t(d) - t0) / span) * (W - L - R));
+      const maxV = Math.max(1, ...pts.map((p) => (p.counts.plane || 0) + (p.counts.helicopter || 0)));
+      const y = (v) => H - B - (v / maxV) * (H - T - B);
+      let svg = `<svg viewBox="0 0 ${W} ${H}" style="width:100%; max-width:${W}px; height:auto;" role="img" aria-label="Velivoli rilevati nel tempo">`;
+      svg += `<line x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}" stroke="var(--line-bright)"/>`;
+      [0, Math.ceil(maxV / 2), maxV].forEach((v) => {
+        svg += `<text x="${L - 6}" y="${y(v) + 3}" fill="var(--text-muted)" font-size="10" text-anchor="end">${v}</text>`
+          + `<line x1="${L}" y1="${y(v)}" x2="${W - R}" y2="${y(v)}" stroke="var(--line)" stroke-dasharray="2 3"/>`;
+      });
+      const years = new Set();
+      pts.forEach((p) => {
+        const px = x(p.date), planes = p.counts.plane || 0, helis = p.counts.helicopter || 0;
+        svg += `<rect x="${px - 5}" y="${y(planes)}" width="5" height="${y(0) - y(planes)}" fill="#ff4fd8"><title>${esc(p.date)}: ${planes} aerei</title></rect>`;
+        svg += `<rect x="${px}" y="${y(helis)}" width="5" height="${y(0) - y(helis)}" fill="#ffb020"><title>${esc(p.date)}: ${helis} elicotteri</title></rect>`;
+        years.add(p.date.slice(0, 4));
+      });
+      [...years].forEach((yr) => {
+        const d = Math.max(t0, Date.parse(yr + '-01-01T00:00:00Z'));
+        const px = pts.length === 1 ? x(pts[0].date) : L + ((d - t0) / span) * (W - L - R);
+        svg += `<text x="${px}" y="${H - 10}" fill="var(--text-muted)" font-size="10" text-anchor="middle">${yr}</text>`;
+      });
+      svg += '</svg><div class="hint"><span style="color:#ff4fd8;">■</span> aerei &nbsp; <span style="color:#ffb020;">■</span> elicotteri — per data reale dell\'immagine</div>';
+      chartEl.innerHTML = svg;
+    }
+
+    function renderTable() {
+      if (!rows.length) { tableEl.innerHTML = '<div class="empty-state">Nessuna ripresa in questo studio.</div>'; return; }
+      const cls = Object.keys(classes);
+      tableEl.innerHTML = '<div class="table-responsive"><table><thead><tr><th>Immagine del</th><th>Ripresa</th>'
+        + cls.map((k) => `<th>${esc(classes[k])}</th>`).join('') + '<th>Tipi identificati</th><th></th></tr></thead><tbody>'
+        + rows.map((r) => {
+          const cells = r.counts ? cls.map((k) => `<td>${r.counts[k]}</td>`).join('')
+            : `<td colspan="${cls.length}" class="hint">${r.detectable ? 'non ancora rilevato' : 'risoluzione insufficiente (' + String(r.mpp).replace('.', ',') + ' m/pixel)'}</td>`;
+          const action = r.detectable
+            ? `<button type="button" class="btn btn-sm hist-detect-btn" data-id="${r.capture_id}" title="${r.counts ? 'Ripeti il rilevamento' : 'Esegui il rilevamento automatico'}">${r.counts ? '↻' : '🎯'}</button>`
+            : '';
+          return `<tr><td>${r.date ? esc(r.date.split('-').reverse().join('/')) : '—'}</td>
+            <td><a href="analyze_capture.php?id=${r.capture_id}" title="Apri nella vista di analisi">${esc(r.label)}</a> <span class="hint">${esc(r.source)}</span></td>
+            ${cells}<td>${esc(typesText(r.types)) || '<span class="hint">—</span>'}</td><td>${action}</td></tr>`;
+        }).join('') + '</tbody></table></div>';
+      tableEl.querySelectorAll('.hist-detect-btn').forEach((b) => b.addEventListener('click', async () => {
+        b.disabled = true;
+        status.textContent = 'Rilevamento in corso…';
+        const err = await detectOne(+b.dataset.id);
+        status.textContent = err ? 'Errore: ' + err : 'Fatto.';
+        await load();
+      }));
+      const missing = rows.filter((r) => r.detectable && !r.counts).length;
+      detectAllBtn.style.display = missing ? '' : 'none';
+      detectAllBtn.textContent = '🎯 Rileva sulle riprese mancanti (' + missing + ')';
+    }
+
+    async function detectOne(captureId) {
+      try {
+        const res = await fetch('api/detect.php', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ capture_id: captureId, confidence: 0.25 }),
+        });
+        const data = await res.json();
+        return res.ok ? null : (data.error || 'Errore');
+      } catch (e) {
+        return e.message;
+      }
+    }
+
+    async function load() {
+      try {
+        const res = await fetch('api/area_history.php?study_id=' + encodeURIComponent(studyId));
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Errore');
+        rows = data.rows || [];
+        classes = data.classes || {};
+        renderTable();
+        renderChart();
+      } catch (e) {
+        tableEl.innerHTML = '<div class="hint">Storico non disponibile: ' + esc(e.message) + '</div>';
+      }
+    }
+
+    detectAllBtn.addEventListener('click', async () => {
+      const todo = rows.filter((r) => r.detectable && !r.counts);
+      if (!todo.length || detectAllBtn.disabled) return;
+      detectAllBtn.disabled = true;
+      let errors = 0;
+      for (let i = 0; i < todo.length; i++) {
+        status.textContent = `Rilevamento ${i + 1} di ${todo.length} (${todo[i].label})…`;
+        if (await detectOne(todo[i].capture_id)) errors++;
+      }
+      status.textContent = 'Completato' + (errors ? `, ${errors} non riusciti` : '') + '.';
+      detectAllBtn.disabled = false;
+      await load();
+    });
+
+    load();
+  })();
+
   // ---------- Scaricamento automatico pianificato (vedi ScheduledDownload.php
   // + cli/run_scheduled_downloads.php) — stessa area/form di sopra, un
   // pannello indipendente per attivare il controllo periodico e vedere le

@@ -4,6 +4,157 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-10-08 (3) — Strumenti di identificazione: velivoli dalle misure, rilevamento automatico, storico dell'area
+
+Terza parte del piano di evoluzione. L'uso reale della piattaforma è
+l'identificazione di velivoli sulle basi, fatta finora a occhio. Ora la
+piattaforma misura, propone i tipi compatibili e conta nel tempo.
+
+### Identificazione dalle misure
+
+- **[webapp/src/aircraft_types.json](webapp/src/aircraft_types.json)** (nuovo) —
+  166 tipi militari e civili frequenti nelle basi: caccia, addestratori,
+  bombardieri, trasporti e aerocisterne, sorveglianza, executive, linea,
+  droni, elicotteri. Per ogni tipo: apertura alare, lunghezza, rotore per
+  gli elicotteri, forma delle ali e voce di riferimento.
+  - Le dimensioni sono estratte in automatico dalle schede tecniche
+    ("Aircraft specs") delle voci Wikipedia, non scritte a memoria.
+  - 17 valori sono inseriti a mano e marcati "manuale": voci senza scheda
+    standard, come le varianti di linea, e varianti molto diffuse come il
+    C-130J-30 e il 737-700/C-40.
+  - Per i 6 velivoli a geometria variabile c'è anche l'apertura ad ali a
+    freccia, la configurazione tipica a terra.
+- **[webapp/src/AircraftCatalog.php](webapp/src/AircraftCatalog.php)** (nuovo) —
+  compatibilità con l'incertezza di misura: ±1,5 pixel per estremo alla
+  scala della ripresa, più il 4%.
+  - Per i riquadri del rilevamento automatico il confronto è asimmetrico:
+    il velivolo ci sta dentro, ma il riquadro include margine e spesso
+    l'ombra. Su Sigonella un'apertura vera di ~33 m dava un lato di 43,7 m.
+  - Le dimensioni attese sono quindi intorno all'87% del lato, con
+    tolleranza ampia verso il basso e stretta verso l'alto, e si provano
+    entrambi gli abbinamenti lato/apertura.
+  - Per gli elicotteri conta il diametro del rotore: la lunghezza nelle
+    schede a volte include i rotori e a volte no.
+  - Il filtro sulla forma delle ali (freccia, dritta, delta, geometria
+    variabile, tutt'ala) separa tipi di dimensioni simili.
+- **[webapp/public/api/aircraft_match.php](webapp/public/api/aircraft_match.php)** (nuovo),
+  **[webapp/public/analyze_capture.php](webapp/public/analyze_capture.php)**,
+  **[webapp/public/assets/js/analyze.js](webapp/public/assets/js/analyze.js)** —
+  nel pannello Misurazioni, "Identifica velivolo dalle misure".
+  - Tendine collegate all'elenco delle misure, preselezionate da etichette
+    come "apertura alare" o "lunghezza"; filtri per categoria e forma delle
+    ali (quest'ultimo disattivato per gli elicotteri).
+  - La scelta è un riferimento alla misura, non la sua posizione
+    nell'elenco: cancellandone una non punta a un'altra. Il valore si
+    rilegge a ogni ricerca, anche dopo uno spostamento degli estremi, e un
+    valore scritto a mano non viene sovrascritto.
+  - Tabella dei tipi compatibili con link alla scheda tecnica e
+    "🏷 Annota", che crea un'annotazione intorno alle misure con il nome
+    del tipo e un punto di domanda.
+  - Corretto il suggerimento del pannello Misurazioni, che diceva ancora
+    "le misurazioni non vengono salvate".
+  - La stima dell'altezza dall'ombra prende l'ora esatta del passaggio
+    Sentinel, invece del 10:00 fisso.
+
+### Rilevamento automatico
+
+- **[python-service/app/core/detect.py](python-service/app/core/detect.py)** (nuovo),
+  **[python-service/app/routers/analysis.py](python-service/app/routers/analysis.py)** —
+  YOLO11s-OBB, addestrato sul dataset DOTA v1 (15 classi: aerei,
+  elicotteri, navi, veicoli, serbatoi...), esportato in ONNX ed eseguito con
+  il modulo DNN di OpenCV già presente.
+  - Nessuna dipendenza nuova: i risultati coincidono con quelli di
+    Ultralytics sulla stessa immagine.
+  - Immagini grandi divise in tasselli da 1024 px con 384 px di
+    sovrapposizione: un oggetto fino a 384 px, come un C-17 a 0,15 m/pixel,
+    sta sempre per intero in un tassello.
+  - Doppioni eliminati per classe con NMS ruotato, poi i frammenti fra
+    classi diverse: un riquadro coperto per oltre il 60% da uno più sicuro
+    è un oggetto tagliato al bordo di un tassello, oppure lo stesso oggetto
+    classificato in due modi.
+  - "Oggetti piccoli" facoltativo: ingrandisce fino a 2× le immagini sopra
+    0,5 m/pixel. Su Grosseto a 1,6 m/pixel trova un aereo in più, ma è 2–3
+    volte più lento.
+  - Al massimo 25 tasselli per richiesta: oltre, l'ingrandimento si
+    riduce (a Grosseto 1,7× invece di 2×, 5 aerei trovati invece di 3); a
+    scala nativa l'immagine viene rifiutata.
+  - La rete viene caricata una volta. Se un altro rilevamento è in corso
+    si attende al massimo 20 s, poi si risponde "occupato" invece di
+    restare in coda oltre il timeout del PHP.
+  - Nuovi `/analysis/detect` e `/analysis/detect/status`.
+- **[python-service/tools/fetch_detector_model.sh](python-service/tools/fetch_detector_model.sh)** (nuovo) —
+  il modello (37 MB, AGPL-3.0, pesi DOTA per uso non commerciale) non è
+  nel repository. Lo script lo scarica dalle release ufficiali Ultralytics
+  e lo converte in un ambiente PyTorch temporaneo, poi cancellato.
+- **[webapp/schema.sql](webapp/schema.sql)**,
+  **[webapp/src/Detection.php](webapp/src/Detection.php)** (nuovo),
+  **[webapp/public/api/detect.php](webapp/public/api/detect.php)** (nuovo) —
+  tabella `detections`, che tiene l'ultima esecuzione per ripresa e si
+  elimina con la ripresa.
+  - Le riprese sopra 2 m/pixel (Sentinel, aree molto grandi) vengono
+    rifiutate con la spiegazione.
+  - Lati dei riquadri convertiti in metri per asse, tenendo conto
+    dell'angolo e di pixel non quadrati; poligoni in coordinate frazionarie.
+  - Tipi compatibili per ogni aereo ed elicottero.
+  - La sessione viene chiusa durante l'elaborazione.
+- **analyze_capture.php, analyze.js, style.css** — nuovo pannello
+  "🎯 Rilevamento automatico".
+  - Confidenza regolabile, conteggi per classe, riquadri tratteggiati sulla
+    ripresa (solo a video, mai negli export) e selezione di una riga.
+  - Tipi compatibili cliccabili come etichetta; salvataggio come
+    annotazioni poligonali, singolo o di tutti i velivoli e le navi. Il
+    poligono viene copiato, e gli oggetti già salvati vengono saltati:
+    niente doppioni che gonfino lo storico.
+  - "Oggetti piccoli" viene registrato solo se l'ingrandimento è stato
+    davvero applicato.
+  - Pulsante disattivato in anticipo sulle riprese troppo poco dettagliate.
+
+### Storico dell'area
+
+- **[webapp/src/AreaHistory.php](webapp/src/AreaHistory.php)** (nuovo),
+  **[webapp/public/api/area_history.php](webapp/public/api/area_history.php)** (nuovo),
+  **[webapp/public/study.php](webapp/public/study.php)**,
+  **[webapp/public/assets/js/study.js](webapp/public/assets/js/study.js)** —
+  nuovo pannello "📈 Storico dell'area": per ogni ripresa, nell'ordine
+  della data reale dell'immagine, conteggi di aerei, elicotteri, navi e
+  veicoli dall'ultimo rilevamento, e tipi identificati dalle etichette
+  delle annotazioni.
+  - Grafico SVG di aerei ed elicotteri nel tempo.
+  - "Rileva sulle riprese mancanti", una ripresa alla volta, con
+    avanzamento; le riprese non adatte sono indicate con la risoluzione.
+  - Export CSV con separatore ";", virgola decimale e BOM UTF-8 per i
+    fogli di calcolo italiani, ora locale. Le celle che inizierebbero con
+    = + - @ vengono neutralizzate, così un'etichetta non diventa una
+    formula all'apertura.
+  - Tipi riconosciuti nelle etichette per nome completo o sigla, come
+    parola intera e con una lettera di variante ammessa: "UH-60" è il
+    Black Hawk e non il bombardiere H-6, "F-22" non è l'F-2, "AH-64D" è
+    l'Apache.
+  - Stessa regola di scala del rilevamento (`Detection::resolveMpp`) per
+    storico, API e vista di analisi.
+
+### Verifica
+
+Revisione indipendente del diff: geometria dei riquadri, unità, assenza di
+XSS ed esclusione dei rilevamenti dagli export confermate. Corretti gli
+11 punti segnalati, descritti sopra. Prove in ambiente isolato:
+- rilevamento su riprese reali di Sigonella (7 aerei) e Grosseto;
+- rifiuto delle riprese a bassa risoluzione;
+- identificazione da misure, inclusi elicotteri e ali a freccia;
+- annotazioni, doppi clic e storico con rilevamento in serie;
+- CSV con etichetta pericolosa;
+- eliminazione a cascata;
+- 17 pagine e API senza errori.
+
+Richiede il riavvio del servizio di analisi e il modello installato.
+
+### Repository
+
+- `python-service/tools/` sincronizzata; `python-service/models/` esclusa
+  (`.gitignore` e controllo dei file sospetti dello script di sync).
+- README: identificazione, rilevamento, storico, installazione del modello,
+  licenze di modello, dataset e dati delle dimensioni.
+
 ## 2026-10-08 (2) — Fonti con una dimensione temporale vera: passaggi Sentinel-2, radar Sentinel-1, archivio storico Esri, pianificazioni guidate dai nuovi dati
 
 Seconda parte del piano di evoluzione. Il motore di confronto era ben

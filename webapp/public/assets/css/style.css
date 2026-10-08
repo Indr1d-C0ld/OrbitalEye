@@ -713,3 +713,6 @@ code.k { color: var(--amber); }
 .pass-table table { min-width: 0; }
 .pass-table th { position: sticky; top: 0; background: var(--bg-panel-alt); z-index: 1; }
 .pass-table th, .pass-table td { padding: 6px 10px; }
+
+/* Rilevamento automatico (analyze_capture.php): riga selezionata. */
+.det-row.active td { background: rgba(255,79,216,0.10); }

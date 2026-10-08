@@ -69,6 +69,11 @@ Il confronto non è una semplice sovrapposizione: le due immagini vengono prima 
 - Salva come nuova ripresa (cuoce le regolazioni nei pixel), con **ereditarietà di scala, area geografica, rotazione e data** dalla sorgente (misurazioni ed export corretti anche su ritagli e riprese migliorate)
 - Mini-anteprima flottante durante lo scroll (spostabile, ridimensionabile, ricordata); pannelli collassabili in tutta la piattaforma
 
+**Identificazione**
+- **Identificatore di velivoli dalle misure**: misuri apertura alare (o diametro del rotore) e lunghezza, e la piattaforma propone i tipi compatibili da una **tabella locale di 166 velivoli** militari e civili frequenti nelle basi (caccia, addestratori, bombardieri, trasporti e aerocisterne, sorveglianza, executive, linea, droni, elicotteri), con link alla scheda tecnica di ciascuno. La compatibilità tiene conto della risoluzione della ripresa; per i velivoli a geometria variabile si considera anche l'apertura ad ali a freccia, la configurazione tipica a terra; un filtro sulla **forma delle ali** (freccia, dritta, delta…) separa tipi di dimensioni simili. Tutto offline
+- **Rilevamento automatico** di aerei, elicotteri, navi, veicoli e altri oggetti con un modello di intelligenza artificiale che gira sul tuo server (YOLO11s-OBB, dataset DOTA): nessuna immagine lascia la piattaforma. Riquadri orientati disegnati sulla ripresa; per ogni velivolo, misure del riquadro e tipi compatibili; con un clic diventano annotazioni con il tipo scelto. Per riprese dettagliate (fino a 2 m/pixel)
+- **Storico dell'area**: per ogni ripresa di uno studio, nell'ordine della data reale dell'immagine, quanti aerei, elicotteri, navi e veicoli sono stati rilevati e quali tipi identificati, con grafico, rilevamento in serie e export CSV
+
 **Organizzazione e output**
 - Annotazioni e misurazioni persistenti, disegnabili direttamente sulle immagini
 - Libreria degli studi salvati, con ricerca
@@ -88,8 +93,10 @@ Il confronto non è una semplice sovrapposizione: le due immagini vengono prima 
 orbitaleye/
 ├── python-service/       Motore di analisi immagini (FastAPI + OpenCV/NumPy)
 │   └── app/
-│       ├── core/          registrazione, diff, enhancement, client Copernicus/Esri/Wayback
-│       └── routers/        /fetch/*, /analysis/compare, /analysis/enhance
+│       ├── core/          registrazione, diff, enhancement, rilevamento oggetti, client Copernicus/Esri/Wayback
+│       └── routers/        /fetch/*, /analysis/compare, /analysis/enhance, /analysis/detect
+│   ├── models/            modello di rilevamento (non versionato, vedi Installazione)
+│   └── tools/             script di installazione del modello
 ├── webapp/                 Frontend PHP (autenticazione, libreria, annotazioni, DB SQLite)
 │   ├── public/               document root del webserver
 │   ├── src/                   classi applicative
@@ -155,6 +162,14 @@ Ferma il processo (Ctrl+C) e apri `.env`: imposta almeno
 - `STORAGE_ROOT`: percorso assoluto della cartella `storage/` del progetto — deve combaciare con `storage_root` in `webapp/config/config.php`
 
 Le credenziali Sentinel Hub/Esri possono restare vuote qui: si impostano più comodamente dalla pagina **Impostazioni** del webapp una volta online.
+
+**Rilevamento automatico (facoltativo).** Il modello (37 MB) non è nel repository: per installarlo
+
+```bash
+bash python-service/tools/fetch_detector_model.sh
+```
+
+Lo script scarica YOLO11s-OBB dalle release ufficiali Ultralytics e lo converte in ONNX, eseguito poi con OpenCV senza dipendenze aggiuntive. La conversione usa PyTorch in un ambiente temporaneo (~300 MB scaricati, ~1,5 GB su disco) che lo script cancella alla fine. Senza il modello tutto il resto funziona; il pannello di rilevamento risponde che il modello non è installato.
 
 Per tenerlo sempre attivo è incluso un unit systemd già pronto (adatta `User=` e i percorsi al tuo ambiente prima di installarlo — vedi il commento nel file):
 
@@ -236,6 +251,12 @@ Apri il sito: verrai reindirizzato a `setup.php` per creare l'account operatore 
 - **Esri, versioni storiche**: **🕰 Versioni storiche** elenca le immagini diverse disponibili nell'archivio Wayback per l'area, con data reale, sensore e risoluzione; le versioni dell'archivio che contengono la stessa acquisizione sono raggruppate ("+N"). Le immagini storiche e quella attuale della stessa area sono già allineate pixel per pixel. Il confronto automatico tra immagini sub-metriche di anni e sensori diversi è sensibile a ombre, colori e vegetazione: usa soglie più alte e un'area minima più grande, o guarda le immagini affiancate con lo slider prima/dopo.
 - Se due riprese sono **la stessa acquisizione** (stesso passaggio, o la stessa immagine Esri scaricata due volte o in due versioni dell'archivio), il confronto lo dice: le differenze misurate vengono solo da risoluzione, ritaglio o elaborazione.
 
+### Identificare velivoli
+
+- **Dalle misure**: nella vista di analisi, con lo strumento Misura traccia l'apertura alare (da un'estremità all'altra delle ali; per un elicottero il diametro del rotore) e la lunghezza (dal muso alla coda). Etichettandole "apertura alare" e "lunghezza" vengono scelte da sole nel riquadro **Identifica velivolo dalle misure**. Scegli la forma delle ali che vedi sulla ripresa e premi **Trova tipi compatibili**. Con **🏷 Annota** il tipo scelto diventa un'annotazione intorno al velivolo, con un punto di domanda: è un'ipotesi da confermare guardando motori, impennaggi, forma della fusoliera.
+- **Automaticamente**: **🎯 Rileva oggetti** trova aerei, elicotteri, navi e veicoli. I lati dei riquadri sono un limite superiore delle dimensioni (includono margine e spesso l'ombra), e i tipi compatibili ne tengono conto. Scegli un tipo fra quelli proposti e salva come annotazioni. Il modello può sbagliare o mancare oggetti, soprattutto piccoli: l'opzione **Cerca anche oggetti piccoli** ingrandisce l'immagine prima del rilevamento ed è più lenta (su un processore desktop di qualche anno, da qualche secondo a un paio di minuti).
+- **Nel tempo**: il pannello **Storico dell'area** dello studio riassume, data per data, conteggi e tipi identificati; **Rileva sulle riprese mancanti** esegue il rilevamento su tutte le riprese adatte, e **CSV** esporta la tabella.
+
 ### Annotazioni, misurazioni e regioni
 
 Le annotazioni sono forme vettoriali disegnabili a mano — **rettangolo, polilinea, poligono** (vertici trascinabili) — su qualunque vista, con colore, etichetta e note. Sono persistenti e legate alla ripresa/confronto. Le regioni rilevate automaticamente diventano annotazioni con un click ("✎ Annota"), preservando le coordinate esatte del rilevamento.
@@ -305,8 +326,11 @@ Vedi [Architettura](#architettura) sopra per l'albero delle cartelle principali.
 - [Leaflet](https://leafletjs.com/) — selettore mappa interattivo (incluso in `webapp/public/assets/leaflet/`)
 - [Esri World Street Map](https://www.esri.com/) — tile di navigazione della mappa
 - [Nominatim](https://nominatim.org/) / [OpenStreetMap](https://www.openstreetmap.org/) — ricerca luogo
-- [Copernicus Data Space Ecosystem](https://dataspace.copernicus.eu/) — imagery Sentinel-2
-- [Esri World Imagery](https://www.esri.com/) — imagery satellitare ad alta risoluzione
+- [Copernicus Data Space Ecosystem](https://dataspace.copernicus.eu/) — imagery Sentinel-2 e Sentinel-1
+- [Esri World Imagery](https://www.esri.com/) e [World Imagery Wayback](https://livingatlas.arcgis.com/wayback/) — imagery satellitare ad alta risoluzione, attuale e storica
+- [Ultralytics YOLO11](https://docs.ultralytics.com/) — modello di rilevamento orientato (YOLO11s-OBB), licenza AGPL-3.0; non incluso, si installa con `python-service/tools/fetch_detector_model.sh`
+- [DOTA](https://captain-whu.github.io/DOTA/) — dataset di immagini aeree su cui è addestrato il modello: i pesi sono destinati a uso di ricerca, non commerciale
+- [Wikipedia](https://en.wikipedia.org/) — dimensioni dei velivoli nella tabella `webapp/src/aircraft_types.json`, tratte dalle schede tecniche delle voci indicate per ciascun tipo (testi CC BY-SA 4.0)
 
 ## Licenza
 

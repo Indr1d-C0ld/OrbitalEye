@@ -531,6 +531,12 @@
   let mppX = null, mppY = null, scaleSource = null; // scaleSource: 'geo' | 'manual' | null
   let showScaleBar = false; // barra grafica della scala, in un angolo, come su una cartina
   const measurements = [];
+  // Rilevamento automatico (vedi più sotto): oggetti in coordinate
+  // frazionarie, disegnati solo nella vista live (mai negli export: per
+  // incorporarli vanno salvati come annotazioni).
+  let detections = [];
+  let showDetections = true;
+  let selectedDetection = -1;
   const canvas = $('#an-annotate-canvas');
 
   // ---------- Colore corrente per nuove annotazioni/misurazioni ----------
@@ -931,11 +937,34 @@
         });
       }
     });
+    if (includeHandles && showDetections && detections.length) drawDetections(ctx, targetW, targetH, k);
     // includeHandles distingue perfettamente vista live (true) da
     // incorporazione in un export (false): la barra di scala lo riusa come
     // flag "live" per decidere se adattarsi allo zoom o restare a distanza
     // fissa sull'immagine intera.
     if (opts.scaleBar !== false) drawScaleBar(ctx, targetW, targetH, includeHandles);
+  }
+
+  const DETECTION_COLORS = { plane: '#ff4fd8', helicopter: '#ffb020', ship: '#38ffb0', 'large vehicle': '#7aa7ff', 'small vehicle': '#7aa7ff' };
+  function drawDetections(ctx, targetW, targetH, k) {
+    detections.forEach((d, i) => {
+      const col = DETECTION_COLORS[d.class] || '#c0c8d0';
+      const sel = i === selectedDetection;
+      const pts = d.polygon.map(([fx, fy]) => [fx * targetW, fy * targetH]);
+      ctx.strokeStyle = col;
+      ctx.lineWidth = (sel ? 3 : 1.5) * k;
+      ctx.setLineDash(sel ? [] : [5 * k, 3 * k]);
+      ctx.beginPath();
+      ctx.moveTo(pts[0][0], pts[0][1]);
+      for (let j = 1; j < pts.length; j++) ctx.lineTo(pts[j][0], pts[j][1]);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.font = (10 * k) + 'px "Share Tech Mono", monospace';
+      ctx.fillStyle = col;
+      const top = pts.reduce((a, b) => (b[1] < a[1] ? b : a));
+      ctx.fillText('#' + d.n, top[0] + 2 * k, top[1] - 3 * k);
+    });
   }
 
   function redrawAnnotations() {
@@ -1321,6 +1350,9 @@
   }
 
   function renderMeasurementList() {
+    // Tendine dell'identificazione velivolo (definite più sotto: all'avvio
+    // possono non esserci ancora).
+    if (window.refreshAircraftIdOptions) window.refreshAircraftIdOptions();
     const container = $('#an-measurement-list');
     if (!measurements.length) {
       container.innerHTML = '<div class="hint">Nessuna misurazione. Passa a modalità Misura e trascina sulla copia di lavoro.</div>';
@@ -1345,6 +1377,7 @@
         const prevLabel = labelInput.dataset.prevValue || '';
         m.label = labelInput.value;
         redrawAnnotations();
+        if (window.refreshAircraftIdOptions) window.refreshAircraftIdOptions();
         withMeasureId(m, (id) => updateAnnotationServer(id, measureCoordsFrac(m), m.label || null, null)).catch(() => {});
         pushUndo(() => {
           m.label = prevLabel;
@@ -1474,6 +1507,8 @@
   }
   if (shadowDateEl) {
     if (CFG.captureDate && /^\d{4}-\d{2}-\d{2}/.test(CFG.captureDate)) shadowDateEl.value = CFG.captureDate.slice(0, 10);
+    // Passaggio Sentinel: l'ora esatta è nota.
+    if (CFG.captureDatetime && /T(\d{2}:\d{2})/.test(CFG.captureDatetime)) shadowTimeEl.value = CFG.captureDatetime.match(/T(\d{2}:\d{2})/)[1];
     [shadowDateEl, shadowTimeEl].forEach((el) => el.addEventListener('input', refreshShadowElevLabel));
     refreshShadowElevLabel();
     $('#an-shadow-measure-btn').addEventListener('click', () => {
@@ -1517,6 +1552,266 @@
     }
     return { distanceM: null, dxPx, dyPx };
   }
+
+  // ---------- Identificazione velivolo dalle misure ----------
+  // Tabella locale lato server (AircraftCatalog): qui solo la scelta delle
+  // misure e la presentazione dei tipi compatibili.
+  const escHtml = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const fmtM = (v) => (v === null || v === undefined ? '—' : String(Math.round(v * 10) / 10).replace('.', ','));
+  const parseM = (v) => { const n = parseFloat(String(v || '').replace(',', '.')); return Number.isFinite(n) && n > 0 ? n : null; };
+  function meanMpp() { return mppX && mppY ? (mppX + mppY) / 2 : null; }
+
+  function candidatesTable(list, opts = {}) {
+    if (!list.length) return '<div class="hint">Nessun tipo compatibile nella tabella.</div>';
+    return '<div class="table-responsive pass-table"><table><thead><tr><th>Tipo</th><th>Categoria · ali</th><th>Dimensioni (m)</th><th>Compatibilità</th>'
+      + (opts.annotate ? '<th></th>' : '') + '</tr></thead><tbody>'
+      + list.map((c, i) => {
+        const dims = c.category === 'elicottero'
+          ? 'rotore ' + fmtM(c.rotor_m) + ' · lungh. ' + fmtM(c.length_m)
+          : fmtM(c.span_m) + (c.span_min_m ? ' (' + fmtM(c.span_min_m) + ' a freccia)' : '') + ' × ' + fmtM(c.length_m);
+        const pct = Math.round(c.compatibility * 100);
+        return `<tr><td><a href="${escHtml(c.wiki_url)}" target="_blank" rel="noopener noreferrer" title="Scheda tecnica (Wikipedia, si apre in una nuova scheda)">${escHtml(((c.maker || '') + ' ' + c.name).trim())} ↗</a>${c.note ? ' <span class="hint">(' + escHtml(c.note) + ')</span>' : ''}</td>
+          <td class="hint">${escHtml(c.category)}${c.wing && c.wing !== 'rotore' ? ' · ali ' + escHtml(c.wing) : ''}</td><td>${escHtml(dims)}</td>
+          <td><span class="badge ${pct >= 70 ? 'badge-green' : pct >= 30 ? 'badge-amber' : 'badge-magenta'}">${pct}%</span></td>
+          ${opts.annotate ? `<td><button type="button" class="btn btn-sm id-annotate-btn" data-i="${i}" title="Crea un'annotazione con il nome del tipo intorno alle misure scelte">🏷 Annota</button></td>` : ''}</tr>`;
+      }).join('') + '</tbody></table></div>';
+  }
+
+  (function setupAircraftId() {
+    const spanSel = $('#an-id-span-sel'), lenSel = $('#an-id-length-sel');
+    const spanIn = $('#an-id-span'), lenIn = $('#an-id-length');
+    const status = $('#an-id-status'), results = $('#an-id-results');
+    if (!spanSel) return;
+
+    // Le tendine seguono la lista delle misurazioni. La scelta è un
+    // riferimento alla misura (non la sua posizione: cancellandone una le
+    // altre scalano), e il valore si rilegge dalla misura a ogni ricerca
+    // (un estremo trascinato cambia la distanza). Un valore scritto a mano
+    // non viene mai sovrascritto; le misure etichettate "apertura"/"rotore" e
+    // "lunghezza" vengono proposte da sole finché non si sceglie altro.
+    const chosenM = { span: null, length: null };
+    const typed = { span: false, length: false };
+    const fields = [['span', spanSel, spanIn, /apert|rotor|span/i], ['length', lenSel, lenIn, /lungh|length/i]];
+    window.refreshAircraftIdOptions = function () {
+      fields.forEach(([key, sel, inp, re]) => {
+        if (chosenM[key] && !measurements.includes(chosenM[key])) {
+          chosenM[key] = null;
+          if (!typed[key]) inp.value = '';
+        }
+        if (!chosenM[key] && !typed[key]) chosenM[key] = measurements.find((m) => re.test(m.label || '')) || null;
+        sel.innerHTML = '<option value="">— misura —</option>' + measurements.map((m, i) =>
+          `<option value="${i}">#${i + 1} — ${escHtml(formatDistance(m.distanceM))}${m.label ? ' · ' + escHtml(m.label) : ''}</option>`).join('');
+        sel.value = chosenM[key] ? String(measurements.indexOf(chosenM[key])) : '';
+        if (chosenM[key]) inp.value = fmtM(chosenM[key].distanceM);
+      });
+    };
+    fields.forEach(([key, sel, inp]) => {
+      sel.addEventListener('change', () => {
+        chosenM[key] = sel.value === '' ? null : (measurements[+sel.value] || null);
+        typed[key] = false;
+        inp.value = chosenM[key] ? fmtM(chosenM[key].distanceM) : '';
+      });
+      inp.addEventListener('input', () => {
+        typed[key] = true;
+        chosenM[key] = null;
+        sel.value = '';
+      });
+    });
+    window.refreshAircraftIdOptions();
+
+    // Elicotteri: la forma delle ali non si applica.
+    const filterSel = $('#an-id-filter'), wingSel = $('#an-id-wing');
+    filterSel.addEventListener('change', () => { wingSel.disabled = filterSel.value === 'elicottero'; });
+
+    let lastCandidates = [];
+    $('#an-id-btn').addEventListener('click', async () => {
+      window.refreshAircraftIdOptions(); // distanze correnti delle misure scelte
+      const span = parseM(spanIn.value), length = parseM(lenIn.value);
+      if (!span && !length) { status.textContent = 'Indica almeno una misura.'; return; }
+      status.textContent = 'Cerco…';
+      const q = new URLSearchParams({ filter: filterSel.value });
+      if (filterSel.value !== 'elicottero' && wingSel.value) q.set('wing', wingSel.value);
+      if (span) q.set('span', span);
+      if (length) q.set('length', length);
+      if (meanMpp()) q.set('mpp', meanMpp());
+      try {
+        const res = await fetch('api/aircraft_match.php?' + q);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Errore');
+        lastCandidates = data.candidates || [];
+        status.textContent = lastCandidates.length
+          ? lastCandidates.length + ' tipi compatibili su ' + data.types + ', dal più compatibile. Da confermare guardando forma e dettagli.'
+          : 'Nessuno dei ' + data.types + ' tipi in tabella è compatibile con queste misure.';
+        results.innerHTML = candidatesTable(lastCandidates, { annotate: true });
+        results.querySelectorAll('.id-annotate-btn').forEach((b) => b.addEventListener('click', () => annotateFromMeasures(lastCandidates[+b.dataset.i])));
+      } catch (err) {
+        status.textContent = 'Errore: ' + err.message;
+      }
+    });
+
+    // Annotazione rettangolare che racchiude le misure scelte (il velivolo),
+    // con il nome del tipo: compare sulla ripresa e nello storico dell'area.
+    async function annotateFromMeasures(c) {
+      const used = [chosenM.span, chosenM.length].filter((m) => m && measurements.includes(m));
+      if (!used.length) { status.textContent = 'Per annotare scegli le misure dalle tendine (non solo i valori a mano).'; return; }
+      const xs = used.flatMap((m) => [m.x1, m.x2]), ys = used.flatMap((m) => [m.y1, m.y2]);
+      const pad = 4;
+      const x0 = Math.max(0, Math.min(...xs) - pad), y0 = Math.max(0, Math.min(...ys) - pad);
+      const x1 = Math.min(canvas.width, Math.max(...xs) + pad), y1 = Math.min(canvas.height, Math.max(...ys) + pad);
+      const coords = { x: x0 / canvas.width, y: y0 / canvas.height, w: (x1 - x0) / canvas.width, h: (y1 - y0) / canvas.height };
+      const label = c.name + '?';
+      try {
+        const id = await createAnnotationServer(coords, currentAnnotateColor, label, 'Tipo compatibile con le misure (' + Math.round(c.compatibility * 100) + '%), da confermare', 'rect');
+        const a = { id, shape_type: 'rect', coords, color: currentAnnotateColor, label, notes: null };
+        annotations.push(a);
+        redrawAnnotations();
+        renderAnnotationList();
+        status.textContent = 'Annotazione "' + label + '" creata.';
+      } catch (err) {
+        status.textContent = 'Errore: ' + err.message;
+      }
+    }
+  })();
+
+  // ---------- Rilevamento automatico ----------
+  (function setupDetection() {
+    const btn = $('#an-detect-btn');
+    if (!btn) return;
+    const status = $('#an-detect-status'), summary = $('#an-detect-summary'), list = $('#an-detect-list');
+    const confIn = $('#an-detect-conf'), confOut = $('#an-detect-conf-out');
+    const annotateAll = $('#an-detect-annotate-all');
+    confIn.addEventListener('input', () => { confOut.textContent = String(confIn.value).replace('.', ','); });
+    $('#an-detect-show').addEventListener('change', (e) => { showDetections = e.target.checked; redrawAnnotations(); });
+    const chosen = {}; // n -> nome del tipo scelto fra i compatibili
+
+    function labelFor(d) {
+      return chosen[d.n] ? chosen[d.n] + '?' : d.label;
+    }
+
+    function render(det) {
+      detections = (det && det.result && det.result.objects) || [];
+      selectedDetection = -1;
+      redrawAnnotations();
+      if (!det) { summary.innerHTML = ''; list.innerHTML = ''; annotateAll.style.display = 'none'; return; }
+      const counts = {};
+      detections.forEach((d) => { counts[d.label] = (counts[d.label] || 0) + 1; });
+      summary.innerHTML = Object.keys(counts).length
+        ? Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<span class="badge badge-cyan">${escHtml(k)}: ${v}</span>`).join(' ')
+        : '<span class="hint">Nessun oggetto sopra la soglia di confidenza.</span>';
+      const when = det.created_at ? new Date(det.created_at.replace(' ', 'T') + 'Z').toLocaleString('it-IT') : '';
+      status.textContent = 'Rilevamento del ' + when + ' · confidenza ≥ ' + String(det.confidence).replace('.', ',')
+        + (det.small_objects ? ' · oggetti piccoli' : '') + (det.result.mpp ? '' : ' · scala non nota: niente misure né tipi');
+      const relevant = detections.filter((d) => ['plane', 'helicopter', 'ship'].includes(d.class));
+      annotateAll.style.display = relevant.length ? '' : 'none';
+      list.innerHTML = detections.length ? '<div class="table-responsive pass-table"><table><thead><tr><th>#</th><th>Oggetto</th><th>Conf.</th><th>Misure (m)</th><th>Tipi compatibili</th><th></th></tr></thead><tbody>'
+        + detections.map((d, i) => {
+          const cands = (d.candidates || []).slice(0, 3);
+          const cHtml = cands.length
+            ? cands.map((c) => `<button type="button" class="btn btn-sm det-cand-btn${chosen[d.n] === c.name ? ' btn-primary' : ''}" data-n="${d.n}" data-name="${escHtml(c.name)}" title="${escHtml(((c.maker || '') + ' ' + c.name).trim())} — compatibilità ${Math.round(c.compatibility * 100)}%${c.note ? ' (' + escHtml(c.note) + ')' : ''}. Clic per usarlo come etichetta.">${escHtml(c.name)} ${Math.round(c.compatibility * 100)}%</button>`).join(' ')
+            : (['plane', 'helicopter'].includes(d.class) && d.size_m ? '<span class="hint">nessuno in tabella</span>' : '');
+          return `<tr data-i="${i}" class="det-row" style="cursor:pointer;"><td>${d.n}</td><td>${escHtml(d.label)}</td><td>${Math.round(d.confidence * 100)}%</td>
+            <td>${d.size_m ? fmtM(d.size_m[0]) + ' × ' + fmtM(d.size_m[1]) : '—'}</td><td>${cHtml}</td>
+            <td><button type="button" class="btn btn-sm det-annotate-btn" data-i="${i}" title="Salva questo oggetto come annotazione (poligono)">🏷</button></td></tr>`;
+        }).join('') + '</tbody></table></div>' : '';
+      list.querySelectorAll('.det-row').forEach((row) => row.addEventListener('click', () => {
+        selectedDetection = +row.dataset.i === selectedDetection ? -1 : +row.dataset.i;
+        list.querySelectorAll('.det-row').forEach((r) => r.classList.toggle('active', +r.dataset.i === selectedDetection));
+        redrawAnnotations();
+      }));
+      list.querySelectorAll('.det-cand-btn').forEach((b) => b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const n = +b.dataset.n;
+        chosen[n] = chosen[n] === b.dataset.name ? undefined : b.dataset.name;
+        render(det);
+      }));
+      list.querySelectorAll('.det-annotate-btn').forEach((b) => b.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        await saveAsAnnotations([detections[+b.dataset.i]]);
+      }));
+      annotateAll.onclick = () => saveAsAnnotations(relevant);
+    }
+
+    // Già salvato? Stesso poligono di un'annotazione esistente: un secondo
+    // clic (o "salva tutti" dopo un salvataggio singolo) non deve creare
+    // doppioni, che gonfierebbero i tipi contati nello storico dell'area.
+    function alreadySaved(d) {
+      const [x, y] = d.polygon[0];
+      return annotations.some((a) => a.shape_type === 'polygon' && a.coords && Array.isArray(a.coords.points)
+        && a.coords.points.length === d.polygon.length
+        && Math.abs(a.coords.points[0][0] - x) < 1e-6 && Math.abs(a.coords.points[0][1] - y) < 1e-6);
+    }
+    let saving = false;
+    async function saveAsAnnotations(items) {
+      if (saving) return;
+      saving = true;
+      annotateAll.disabled = true;
+      let ok = 0, skipped = 0;
+      for (const d of items) {
+        if (alreadySaved(d)) { skipped++; continue; }
+        // Copia: l'annotazione si modifica trascinandone i vertici, il
+        // riquadro rilevato no.
+        const coords = { points: d.polygon.map((pt) => pt.slice()) };
+        const color = DETECTION_COLORS[d.class] || currentAnnotateColor;
+        const label = labelFor(d);
+        const notes = 'Rilevamento automatico #' + d.n + ', confidenza ' + Math.round(d.confidence * 100) + '%'
+          + (d.size_m ? ', riquadro ' + fmtM(d.size_m[0]) + ' × ' + fmtM(d.size_m[1]) + ' m' : '');
+        try {
+          const id = await createAnnotationServer(coords, color, label, notes, 'polygon');
+          annotations.push({ id, shape_type: 'polygon', coords, color, label, notes });
+          ok++;
+        } catch (err) {
+          status.textContent = 'Errore: ' + err.message;
+          break;
+        }
+      }
+      saving = false;
+      annotateAll.disabled = false;
+      redrawAnnotations();
+      renderAnnotationList();
+      if (ok || skipped) {
+        status.textContent = (ok === 0 ? 'Nessuna nuova annotazione.' : ok === 1 ? 'Annotazione creata.' : ok + ' annotazioni create.')
+          + (skipped ? ' ' + (skipped === 1 ? 'Una era già salvata' : skipped + ' erano già salvate') + ', saltate.' : '');
+      }
+    }
+
+    btn.addEventListener('click', async () => {
+      if (btn.disabled) return;
+      btn.disabled = true;
+      const small = $('#an-detect-small').checked;
+      status.textContent = 'Rilevamento in corso sul server' + (small ? ' (oggetti piccoli: può richiedere un paio di minuti)' : ' (da qualche secondo a un minuto)') + '…';
+      try {
+        const res = await fetch('api/detect.php', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ capture_id: CFG.captureId, confidence: parseFloat(confIn.value), small_objects: small }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Errore');
+        Object.keys(chosen).forEach((k) => delete chosen[k]);
+        render(data.detection);
+        if (small && !data.detection.small_objects) {
+          status.textContent += ' · ingrandimento non applicato: a questa risoluzione (o senza scala nota) non serve';
+        }
+      } catch (err) {
+        status.textContent = 'Errore: ' + err.message;
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    // Stesso limite del server (Detection::MAX_MPP): il modello è addestrato
+    // su immagini fra ~0,1 e ~1 m/pixel.
+    if (CFG.detectMpp && CFG.detectMpp > 2) {
+      btn.disabled = true;
+      status.textContent = 'Risoluzione troppo bassa per il rilevamento ('
+        + String(Math.round(CFG.detectMpp * 10) / 10).replace('.', ',')
+        + ' m/pixel): serve una ripresa più dettagliata, fino a 2 m/pixel.';
+    }
+
+    fetch('api/detect.php?capture_id=' + encodeURIComponent(CFG.captureId))
+      .then((r) => r.json())
+      .then((data) => { if (data.detection) render(data.detection); })
+      .catch(() => {});
+  })();
 
   // ---------- Ritaglio per ricerca inversa per immagini ----------
   let lastCropBlobUrl = null;
