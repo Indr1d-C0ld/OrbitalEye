@@ -18,6 +18,12 @@ final class Config
         return self::$values;
     }
 
+    /** Configurazione esplicita, senza config.php: per i test (tests/run.php). */
+    public static function set(array $values): void
+    {
+        self::$values = $values;
+    }
+
     public static function storageRoot(): string
     {
         return rtrim(self::get()['storage_root'], '/');

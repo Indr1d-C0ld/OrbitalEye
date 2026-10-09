@@ -235,6 +235,31 @@ final class Capture
     }
 
     /**
+     * Inverso di fracToLonLat(): il punto [lon, lat] in frazioni
+     * dell'immagine (0..1 dentro l'immagine, fuori se il punto cade fuori).
+     * Usato per allineare due riprese dalle coordinate (ComparisonRunner).
+     */
+    public static function lonLatToFrac(array $geo, float $lon, float $lat): array
+    {
+        [$minLon, $minLat, $maxLon, $maxLat] = $geo['bbox'];
+        $rotation = (float) ($geo['rotation'] ?? 0);
+        if (abs($rotation) < 0.01) {
+            return [($lon - $minLon) / ($maxLon - $minLon), ($maxLat - $lat) / ($maxLat - $minLat)];
+        }
+        $cLon = ($minLon + $maxLon) / 2;
+        $cLat = ($minLat + $maxLat) / 2;
+        $k = ($geo['rotation_model'] ?? null) === ImageRotateCrop::ROTATION_MODEL
+            ? ImageRotateCrop::lonScale($cLat)
+            : 1.0;
+        $x = ($lon - $cLon) * $k;
+        $y = $cLat - $lat;
+        $t = deg2rad($rotation);
+        $ex = $x * cos($t) + $y * sin($t);
+        $ey = -$x * sin($t) + $y * cos($t);
+        return [$ex / (($maxLon - $minLon) * $k) + 0.5, $ey / ($maxLat - $minLat) + 0.5];
+    }
+
+    /**
      * Tutti i file su disco che appartengono a una ripresa: l'immagine
      * principale e, per le riprese Sentinel Hub, la coppia Rosso+NIR
      * scaricata a parte (usata da NDVI/NDWI/falso colore IR). Quest'ultima

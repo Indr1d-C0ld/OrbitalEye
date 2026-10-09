@@ -575,9 +575,10 @@ require __DIR__ . '/partials/nav.php';
         <label style="margin:0;">Allinea automaticamente le due riprese prima del confronto <span class="info-tip" tabindex="0" data-tip="Corregge piccoli disallineamenti tra le due riprese (rotazione, traslazione, scala) prima di confrontarle, tramite riconoscimento automatico dei punti in comune (motore ORB+ECC). Consigliato quasi sempre: senza allineamento, anche un piccolo scostamento nell'inquadratura genera falsi cambiamenti lungo tutti i bordi degli oggetti.">?</span></label>
       </div>
       <div class="field">
-        <label>Modalità di allineamento <span class="info-tip" tabindex="0" data-tip="Automatico: il motore (ORB+ECC) individua da solo i punti in comune tra le due riprese. Manuale: indichi tu stesso, a mano, coppie di punti corrispondenti nella stessa area reale — usalo quando il motore automatico non allinea correttamente (tipico tra fonti molto diverse tra loro, es. Esri World Imagery vs Sentinel Hub).">?</span></label>
+        <label>Modalità di allineamento <span class="info-tip" tabindex="0" data-tip="Automatico: se entrambe le riprese sono georiferite (scaricate da Copernicus o Esri, o derivate da queste) le allinea dalle coordinate geografiche, il metodo più affidabile fra fonti ed epoche diverse, e poi rifinisce confrontando le immagini; altrimenti cerca punti in comune nelle immagini (ORB+ECC). Solo dalle immagini: sempre il secondo metodo. Manuale: indichi tu coppie di punti corrispondenti — per le immagini caricate senza coordinate, quando il resto non basta.">?</span></label>
         <div class="tag-row">
           <button type="button" class="btn btn-sm align-mode-btn active" data-mode="auto">Automatico</button>
+          <button type="button" class="btn btn-sm align-mode-btn" data-mode="features">Solo dalle immagini</button>
           <button type="button" class="btn btn-sm align-mode-btn" data-mode="manual">Manuale (punti di controllo)</button>
         </div>
         <div id="manual-align-block" style="display:none; margin-top:8px;">

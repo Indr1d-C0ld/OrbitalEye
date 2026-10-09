@@ -238,3 +238,53 @@ async function sendPublication(form) {
   }
   return data.warning || 'Inviato su Telegram.';
 }
+
+// ---------- Lavori in background (vedi Job.php, api/jobs.php) ----------
+// Scaricamenti, confronti e rilevamenti girano sul server in un processo
+// separato: la pagina ne mostra l'avanzamento invece di restare ferma.
+
+function renderJobStatus(statusEl, job) {
+  if (!statusEl) return;
+  statusEl.textContent = '';
+  const bar = document.createElement('progress');
+  bar.className = 'job-progress';
+  bar.max = 100;
+  bar.value = job.progress || 0;
+  statusEl.appendChild(bar);
+  statusEl.appendChild(document.createTextNode(' ' + (job.message || 'In corso…')));
+}
+
+// Attende la fine di un lavoro già avviato; restituisce il risultato o
+// lancia un errore con il messaggio del server.
+async function waitJob(job, statusEl) {
+  let current = job;
+  let failures = 0;
+  for (;;) {
+    if (current.status === 'done') return current.result;
+    if (current.status === 'error') throw new Error(current.error || 'Lavoro non riuscito');
+    renderJobStatus(statusEl, current);
+    await new Promise((r) => setTimeout(r, 1000));
+    try {
+      const res = await fetch('api/jobs.php?id=' + encodeURIComponent(current.id));
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Errore');
+      current = data.job;
+      failures = 0;
+    } catch (err) {
+      // Qualche errore di rete passeggero non deve far perdere il lavoro,
+      // che intanto continua sul server.
+      if (++failures >= 10) throw new Error('impossibile seguire il lavoro: ' + err.message);
+    }
+  }
+}
+
+async function runJob(type, params, statusEl) {
+  const res = await fetch('api/jobs.php', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type, params }),
+  });
+  let data;
+  try { data = await res.json(); } catch (e) { throw new Error('il server non ha accettato il lavoro (HTTP ' + res.status + ')'); }
+  if (!res.ok) throw new Error(data.error || 'Errore');
+  return waitJob(data.job, statusEl);
+}

@@ -1780,12 +1780,8 @@
       const small = $('#an-detect-small').checked;
       status.textContent = 'Rilevamento in corso sul server' + (small ? ' (oggetti piccoli: può richiedere un paio di minuti)' : ' (da qualche secondo a un minuto)') + '…';
       try {
-        const res = await fetch('api/detect.php', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ capture_id: CFG.captureId, confidence: parseFloat(confIn.value), small_objects: small }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Errore');
+        // Lavoro in background, con avanzamento (vedi Job.php).
+        const data = await runJob('detect', { capture_id: CFG.captureId, confidence: parseFloat(confIn.value), small_objects: small, label: 'Rilevamento' }, status);
         Object.keys(chosen).forEach((k) => delete chosen[k]);
         render(data.detection);
         if (small && !data.detection.small_objects) {
@@ -1998,6 +1994,36 @@
   const cropSaveBtn = $('#an-crop-save-btn');
   const cropShareTelegramBtn = $('#an-crop-share-telegram-btn');
   const cropShareTwitterBtn = $('#an-crop-share-twitter-btn');
+
+  // Riscarica l'area del ritaglio alla risoluzione nativa (vedi DetailFetcher).
+  const cropDetailBtn = $('#an-crop-detail-btn');
+  if (cropDetailBtn) {
+    cropDetailBtn.addEventListener('click', async () => {
+      if (cropDetailBtn.disabled || !lastCropNativeRect) return;
+      const status = $('#an-crop-save-status');
+      const { sx, sy, sw, sh } = lastCropNativeRect;
+      const natW = imgRight.naturalWidth, natH = imgRight.naturalHeight;
+      cropDetailBtn.disabled = true;
+      try {
+        const result = await runJob('detail', {
+          capture_id: CFG.captureId,
+          crop: { x: sx / natW, y: sy / natH, w: sw / natW, h: sh / natH },
+          label: 'Dettaglio di un\'area',
+        }, status);
+        status.textContent = '';
+        const a = document.createElement('a');
+        a.href = 'analyze_capture.php?id=' + encodeURIComponent(result.capture_id);
+        a.textContent = 'Apri il dettaglio scaricato';
+        status.append('Scaricato a ' + String(result.meters_per_pixel).replace('.', ',') + ' m/pixel'
+          + (result.limited ? ' (la nativa è ' + String(result.native_meters_per_pixel).replace('.', ',')
+            + ' m: area troppo grande per scaricarla tutta a quella risoluzione)' : '') + '. ', a);
+      } catch (err) {
+        status.textContent = 'Errore: ' + err.message;
+      } finally {
+        cropDetailBtn.disabled = false;
+      }
+    });
+  }
 
   cropSaveBtn.addEventListener('click', async () => {
     if (cropSaveBtn.disabled) return; // evita salvataggi duplicati su doppio click/tap

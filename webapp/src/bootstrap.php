@@ -105,10 +105,18 @@ if (str_contains($_SERVER['REQUEST_URI'] ?? '', '/api/')) {
     });
 }
 
-try {
-    Config::get();
-} catch (Throwable $e) {
-    http_response_code(500);
-    echo '<pre>Errore di configurazione: ' . htmlspecialchars($e->getMessage()) . '</pre>';
-    exit;
+// I test (tests/run.php) forniscono la configurazione con Config::set()
+// subito dopo il bootstrap: niente config.php da verificare qui.
+if (!defined('ORBITALEYE_TESTS')) {
+    try {
+        Config::get();
+    } catch (Throwable $e) {
+        if (PHP_SAPI === 'cli') {
+            fwrite(STDERR, 'Errore di configurazione: ' . $e->getMessage() . "\n");
+            exit(1);
+        }
+        http_response_code(500);
+        echo '<pre>Errore di configurazione: ' . htmlspecialchars($e->getMessage()) . '</pre>';
+        exit;
+    }
 }

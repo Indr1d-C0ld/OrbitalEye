@@ -173,14 +173,10 @@
       if (fd.has('max_cloud_coverage')) payload.max_cloud_coverage = fd.get('max_cloud_coverage');
     }
     Object.assign(payload, extra || {});
+    payload.label = { sentinelhub: 'Scaricamento Sentinel-2', sentinel1: 'Scaricamento Sentinel-1', esri: payload.wayback_release ? 'Scaricamento Esri (archivio)' : 'Scaricamento Esri' }[payload.source] || 'Scaricamento';
     try {
-      const res = await fetch('api/fetch_capture.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Errore');
+      // Lavoro in background: la pagina mostra l'avanzamento (vedi Job.php).
+      await runJob('fetch', payload, status);
       status.textContent = 'Ripresa scaricata. Ricarico la pagina...';
       setTimeout(() => window.location.reload(), 400);
     } catch (err) {
@@ -377,6 +373,50 @@
     });
   })();
 
+  // ---------- Lavori in corso (vedi Job.php) ----------
+  // Riaprendo la pagina si ritrovano i lavori dello studio ancora in corso
+  // (scaricamenti, confronti, rilevamenti avviati prima): avanzamento e, a
+  // lavoro finito, un invito ad aggiornare la pagina per vederne il frutto.
+  (async function resumeJobs() {
+    let jobs = [];
+    try {
+      const res = await fetch('api/jobs.php?study_id=' + encodeURIComponent(window.ORBITALEYE.studyId));
+      jobs = (await res.json()).jobs || [];
+    } catch (e) { return; }
+    if (!jobs.length) return;
+    const box = document.createElement('div');
+    box.className = 'jobs-box';
+    box.innerHTML = '<strong>⏳ Lavori in corso</strong>';
+    const anchorEl = document.querySelector('.grid.grid-2');
+    if (!anchorEl) return;
+    anchorEl.parentNode.insertBefore(box, anchorEl);
+    let finished = 0;
+    jobs.forEach((job) => {
+      const row = document.createElement('div');
+      row.className = 'hint';
+      const label = document.createElement('span');
+      label.textContent = (job.label || job.type) + ': ';
+      const st = document.createElement('span');
+      row.append(label, st);
+      box.appendChild(row);
+      waitJob(job, st).then(() => {
+        st.textContent = 'completato.';
+      }).catch((err) => {
+        st.textContent = 'non riuscito — ' + err.message;
+      }).finally(() => {
+        if (++finished === jobs.length) {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'btn btn-sm';
+          btn.style.marginTop = '6px';
+          btn.textContent = '↻ Aggiorna la pagina';
+          btn.addEventListener('click', () => window.location.reload());
+          box.appendChild(btn);
+        }
+      });
+    });
+  })();
+
   // ---------- Storico dell'area (vedi AreaHistory.php) ----------
   (function setupAreaHistory() {
     const panel = $('#area-history-panel');
@@ -443,7 +483,7 @@
       tableEl.querySelectorAll('.hist-detect-btn').forEach((b) => b.addEventListener('click', async () => {
         b.disabled = true;
         status.textContent = 'Rilevamento in corso…';
-        const err = await detectOne(+b.dataset.id);
+        const err = await detectOne(+b.dataset.id, status);
         status.textContent = err ? 'Errore: ' + err : 'Fatto.';
         await load();
       }));
@@ -452,14 +492,10 @@
       detectAllBtn.textContent = '🎯 Rileva sulle riprese mancanti (' + missing + ')';
     }
 
-    async function detectOne(captureId) {
+    async function detectOne(captureId, statusEl) {
       try {
-        const res = await fetch('api/detect.php', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ capture_id: captureId, confidence: 0.25 }),
-        });
-        const data = await res.json();
-        return res.ok ? null : (data.error || 'Errore');
+        await runJob('detect', { capture_id: captureId, confidence: 0.25, label: 'Rilevamento' }, statusEl);
+        return null;
       } catch (e) {
         return e.message;
       }
@@ -485,8 +521,10 @@
       detectAllBtn.disabled = true;
       let errors = 0;
       for (let i = 0; i < todo.length; i++) {
-        status.textContent = `Rilevamento ${i + 1} di ${todo.length} (${todo[i].label})…`;
-        if (await detectOne(todo[i].capture_id)) errors++;
+        const step = document.createElement('span');
+        status.textContent = `Rilevamento ${i + 1} di ${todo.length} (${todo[i].label}): `;
+        status.appendChild(step);
+        if (await detectOne(todo[i].capture_id, step)) errors++;
       }
       status.textContent = 'Completato' + (errors ? `, ${errors} non riusciti` : '') + '.';
       detectAllBtn.disabled = false;
@@ -721,13 +759,8 @@
       };
 
       try {
-        const res = await fetch('api/compare.php', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Errore');
+        payload.label = 'Confronto';
+        const data = await runJob('compare', payload, status);
         status.textContent = 'Completato.';
         renderResult({
           comparisonId: data.comparison_id,
@@ -739,6 +772,7 @@
           stats: data.stats,
           regions: data.regions,
           urls: data.urls,
+          registration: data.registration,
         });
       } catch (err) {
         status.textContent = 'Errore: ' + err.message;
@@ -768,11 +802,31 @@
       stats: cmp.stats,
       regions: cmp.regions,
       urls,
+      registration: (() => { try { return JSON.parse(cmp.registration_json || 'null'); } catch (e) { return null; } })(),
     });
     refreshSelectionUI();
     $('#result-title').value = cmp.title || '';
     $('#results-panel').scrollIntoView({ behavior: 'smooth' });
   };
+
+  // Come sono state allineate le due riprese (vedi ComparisonRunner).
+  const ALIGN_LABELS = {
+    'geo': ['dalle coordinate', 'Allineate dalle coordinate geografiche delle due riprese.'],
+    'geo+ecc': ['coordinate + immagini', 'Allineate dalle coordinate geografiche, poi rifinite confrontando le immagini.'],
+    'orb+ecc': ['dalle immagini', 'Allineate cercando punti in comune nelle due immagini, con rifinitura.'],
+    'orb': ['dalle immagini', 'Allineate cercando punti in comune nelle due immagini.'],
+    'ecc-affine': ['dalle immagini (correlazione)', 'Allineate massimizzando la correlazione fra le due immagini: verifica a vista.'],
+    'manual-affine': ['punti manuali', 'Allineate con i punti di controllo indicati a mano.'],
+    'manual-homography': ['punti manuali', 'Allineate con i punti di controllo indicati a mano.'],
+    'none': ['non riuscito', 'Nessun allineamento affidabile trovato: le differenze possono dipendere dal disallineamento. Prova i punti di controllo.'],
+    'skipped': ['disattivato', 'Allineamento disattivato: le riprese sono confrontate così come sono.'],
+  };
+  function alignTile(reg) {
+    if (!reg || !reg.method) return '';
+    const [label, tip] = ALIGN_LABELS[reg.method] || [reg.method, ''];
+    const warn = reg.method === 'none' || reg.method === 'ecc-affine';
+    return `<div class="stat-tile" title="${esc(tip)}"><div class="value" style="font-size:16px;${warn ? ' color:var(--amber);' : ''}">${esc(label)}</div><div class="label">Allineamento</div></div>`;
+  }
 
   function renderResult(result) {
     state.currentComparison = result;
@@ -795,6 +849,7 @@
       <div class="stat-tile"><div class="value">${s.num_regions}</div><div class="label">Regioni rilevate</div></div>
       ${largestTile}
       ${changedTile}
+      ${alignTile(result.registration)}
     `;
 
     renderRegionList(result.regions);

@@ -6,6 +6,8 @@ python-service/.env
 webapp/data/*.sqlite
 webapp/data/*.sqlite-shm
 webapp/data/*.sqlite-wal
+# Uscita d'errore dei lavori in background (vedi webapp/src/Job.php)
+webapp/data/*.log
 
 # === Python ===
 python-service/venv/

@@ -716,3 +716,7 @@ code.k { color: var(--amber); }
 
 /* Rilevamento automatico (analyze_capture.php): riga selezionata. */
 .det-row.active td { background: rgba(255,79,216,0.10); }
+
+/* Avanzamento dei lavori in background (common.js, renderJobStatus). */
+.job-progress { width: 140px; height: 8px; vertical-align: middle; accent-color: var(--cyan); }
+.jobs-box { margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--line-bright); border-radius: var(--radius); }

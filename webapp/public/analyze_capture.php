@@ -61,6 +61,25 @@ $provenanceTail = $imagery['caption_line'] !== '' ? "\n" . $imagery['caption_lin
 $shareDefaultCaption = $study['title'] . ' — OrbitalEye' . $provenanceTail;
 $cropShareDefaultCaption = 'Ritaglio — ' . $study['title'] . ' — OrbitalEye' . $provenanceTail;
 $esriNoticeVisible = $imagery['is_esri'];
+// "Scarica quest'area in dettaglio" (vedi DetailFetcher): solo per riprese
+// Esri georiferite, e solo se ne vale la pena — la ripresa è almeno 1,5
+// volte meno dettagliata delle immagini Esri che la compongono.
+$detailNativeRes = null;
+if ($imagery['is_esri'] && $geoRef && $measureMpp) {
+    $native = null;
+    for ($c = $capture, $seen = []; $c && !isset($seen[$c['id']]); $c = !empty($m['source_capture_id']) ? Capture::find((int) $m['source_capture_id']) : null) {
+        $seen[$c['id']] = true;
+        $m = json_decode($c['meta_json'] ?? '', true) ?: [];
+        if (!empty($m['esri_imagery']['acquisitions'][0]['resolution_m'])) {
+            $native = (float) $m['esri_imagery']['acquisitions'][0]['resolution_m'];
+            break;
+        }
+    }
+    $native = $native ?: 0.5;
+    if (($measureMpp['mpp_x'] + $measureMpp['mpp_y']) / 2 > $native * 1.5) {
+        $detailNativeRes = round($native, 2);
+    }
+}
 
 $pageTitle = 'Analisi — ' . ($capture['label'] ?: ('Ripresa #' . $capture['id']));
 $activeNav = 'dashboard';
@@ -451,6 +470,9 @@ require __DIR__ . '/partials/nav.php';
         </div>
         <div class="tag-row">
           <button type="button" class="btn btn-primary btn-sm" id="an-crop-save-btn">💾 Salva ritaglio come nuova ripresa</button>
+          <?php if ($detailNativeRes !== null): ?>
+            <button type="button" class="btn btn-sm" id="an-crop-detail-btn" title="Riscarica da Esri l'area selezionata alla risoluzione nativa delle immagini (<?= e(str_replace('.', ',', (string) $detailNativeRes)) ?> m/pixel secondo i metadati), invece di ingrandire i pixel di questa ripresa. Diventa una nuova ripresa dello studio.">🛰 Scarica quest'area in dettaglio</button>
+          <?php endif; ?>
         </div>
         <span class="hint" id="an-crop-save-status"></span>
       </div>

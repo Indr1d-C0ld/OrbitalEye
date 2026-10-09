@@ -4,7 +4,7 @@
 
 Pensata per essere installata ed eseguita su un proprio server (VPS, homelab, NAS), senza dipendere da servizi cloud di terze parti per l'elaborazione.
 
-![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)
+![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg) [![CI](https://github.com/Indr1d-C0ld/OrbitalEye/actions/workflows/ci.yml/badge.svg)](https://github.com/Indr1d-C0ld/OrbitalEye/actions/workflows/ci.yml)
 
 ---
 
@@ -45,7 +45,7 @@ Il confronto non è una semplice sovrapposizione: le due immagini vengono prima 
 - **Scaricamento pianificato guidato dai nuovi dati**: si scarica solo quando la fonte ha qualcosa di nuovo — un passaggio Sentinel-2 successivo all'ultimo con nuvole sull'area entro la soglia, un passaggio Sentinel-1 della stessa orbita, oppure un aggiornamento delle immagini Esri dell'area (riconosciuto dai metadati, senza scaricare) — con **alert** che riporta le date e la variazione rispetto alla ripresa precedente; pagina di gestione centralizzata di tutte le pianificazioni con badge d'errore nel menu
 
 **Analisi e change detection**
-- Allineamento automatico (feature matching ORB/RANSAC + rifinitura sub-pixel ECC) o **manuale** tramite editor di punti di controllo. Quando l'allineamento non è affidabile il motore lo dichiara (metodo "none") invece di forzare un risultato, e punti di controllo coincidenti o allineati vengono rifiutati con una spiegazione
+- **Allineamento dalle coordinate**: se entrambe le riprese sono georiferite (scaricate da Copernicus o Esri, o derivate da queste) vengono allineate dalle coordinate geografiche — che non dipendono dal trovare dettagli in comune, utile fra fonti, sensori ed epoche diverse — e poi rifinite confrontando le immagini (ECC), solo se la rifinitura migliora davvero. Se le coordinate non bastano (sovrapposizione minima) o dopo l'allineamento le immagini restano poco correlate (coordinate salvate imprecise), si prova anche l'allineamento dalle immagini e si tiene il migliore; altrimenti allineamento dalle immagini (feature matching ORB/RANSAC + rifinitura sub-pixel ECC), o **manuale** tramite editor di punti di controllo. Il metodo usato è mostrato fra i risultati. Quando l'allineamento non è affidabile il motore lo dichiara (metodo "none") invece di forzare un risultato, e punti di controllo coincidenti o allineati vengono rifiutati con una spiegazione
 - Confronto per differenza SSIM (robusta a luce/contrasto) o differenza assoluta
 - Soglia di sensibilità manuale o automatica (Otsu), con preset rapidi (bassa/media/alta)
 - Pulizia morfologica e filtro per area minima, per scartare rumore fotografico e falsi positivi
@@ -64,6 +64,7 @@ Il confronto non è una semplice sovrapposizione: le due immagini vengono prima 
 - **Stima altezza da ombra** (elevazione solare + lunghezza dell'ombra)
 - **Annotazioni vettoriali**: rettangolo, polilinea, poligono (vertici trascinabili), con colore ed etichetta, persistenti
 - **Barra di scala** sovrapposta "come su una cartina": adattiva allo zoom nella vista live, fissa nell'export
+- **Scarica quest'area in dettaglio**: da una ripresa Esri d'insieme, l'area selezionata col ritaglio viene riscaricata alla risoluzione nativa delle immagini indicata dai metadati Esri (spesso 0,3 m), con la stessa rotazione e, per le versioni storiche, la stessa versione dell'archivio
 - **Ritaglio** di un frammento → ricerca inversa (Google Lens) e/o analisi con assistenti AI (Google Gemini, Claude, ChatGPT, DeepSeek) per incolla manuale; il frammento si può salvare come nuova ripresa (con la propria area geografica esatta) o condividere
 - **Livello annotazioni/misurazioni/scala incorporabile a scelta** nelle immagini salvate/condivise
 - Salva come nuova ripresa (cuoce le regolazioni nei pixel), con **ereditarietà di scala, area geografica, rotazione e data** dalla sorgente (misurazioni ed export corretti anche su ritagli e riprese migliorate)
@@ -86,7 +87,9 @@ Il confronto non è una semplice sovrapposizione: le due immagini vengono prima 
 - Export per singola immagine, per confronto (ZIP con immagini + report HTML/JSON) o per l'intera libreria
 - Tooltip esplicativi su ogni parametro/filtro
 
-**Interfaccia**
+**Interfaccia e fondamenta**
+- **Lavori in background**: scaricamenti, confronti, rilevamenti e dettagli girano sul server in un processo separato, con barra di avanzamento e fase in corso; cambiando pagina il lavoro continua e, riaprendo lo studio, si ritrovano i lavori ancora in corso
+- **Migrazioni del database** numerate e applicate da sole all'avvio; **test automatici** del webapp e del servizio di analisi, eseguiti a ogni push dalla CI del repository
 - Responsive: utilizzabile da desktop, tablet e smartphone (menu a scomparsa, target touch dedicati)
 - Tema scuro in stile console di analisi, con font monospace/display dedicati
 
@@ -240,7 +243,7 @@ Apri il sito: verrai reindirizzato a `setup.php` per creare l'account operatore 
 
 ### Pipeline di analisi (sintesi)
 
-1. **Allineamento** (ORB + RANSAC, rifinito con ECC sub-pixel) — corregge piccoli disallineamenti tra le due riprese prima di confrontarle; i bordi privi di dati reali generati dal riallineamento vengono esclusi dal calcolo per evitare falsi positivi lungo il perimetro.
+1. **Allineamento** (dalle coordinate geografiche se disponibili, altrimenti ORB + RANSAC; rifinito con ECC sub-pixel) — corregge piccoli disallineamenti tra le due riprese prima di confrontarle; i bordi privi di dati reali generati dal riallineamento vengono esclusi dal calcolo per evitare falsi positivi lungo il perimetro.
 2. **Enhancement opzionale** — bilanciamento del bianco, riduzione rumore, CLAHE, equalizzazione istogramma, gamma, sharpening, desaturazione, contorni (tutti con parametri regolabili), applicato a entrambe le riprese in modo coerente prima del confronto.
 3. **Differenza** — SSIM (si concentra sui cambi strutturali reali) oppure differenza assoluta (più veloce, più sensibile a variazioni di luce/colore non legate a cambiamenti reali).
 4. **Soglia** — manuale o Otsu automatica.
@@ -329,7 +332,18 @@ dell'immagine; quelle scritte a mano non vengono toccate.
 
 ## Struttura del progetto
 
-Vedi [Architettura](#architettura) sopra per l'albero delle cartelle principali. I file `*.example.*` (config, `.env`) sono i template versionati: copiali e personalizzali, non modificare direttamente eventuali file generati a runtime.
+Vedi [Architettura](#architettura) sopra per l'albero delle cartelle principali. In più:
+
+- `webapp/migrations/` — migrazioni del database (`NNN_descrizione.sql`), applicate una volta sola, in ordine, al primo accesso dopo un aggiornamento e registrate in `schema_migrations`. `schema.sql` resta lo schema di base, idempotente; le migrazioni servono a ciò che lo schema da solo non può fare (aggiungere colonne, trasformare dati)
+- `webapp/cli/run_job.php` — esecutore dei lavori in background, avviato dal webserver uno per lavoro (nessun demone da installare; se `exec` è disabilitato il lavoro gira dentro la richiesta, come prima)
+- `webapp/tests/`, `python-service/tests/` — test automatici, su database e storage temporanei, senza contattare servizi esterni:
+
+```bash
+php webapp/tests/run.php
+cd python-service && venv/bin/python -m unittest discover -s tests -t .
+```
+
+ I file `*.example.*` (config, `.env`) sono i template versionati: copiali e personalizzali, non modificare direttamente eventuali file generati a runtime.
 
 ## Librerie e servizi di terze parti
 

@@ -1,144 +1,16 @@
 <?php
 require __DIR__ . '/../../src/bootstrap.php';
 Auth::requireLogin();
+session_write_close();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     respond_json(['error' => 'Metodo non consentito'], 405);
 }
 
-$body = json_body();
-
-$studyId = (int) ($body['study_id'] ?? 0);
-$captureAId = (int) ($body['capture_a_id'] ?? 0);
-$captureBId = (int) ($body['capture_b_id'] ?? 0);
-
-$study = $studyId ? Study::find($studyId) : null;
-$captureA = $captureAId ? Capture::find($captureAId) : null;
-$captureB = $captureBId ? Capture::find($captureBId) : null;
-
-if (!$study || !$captureA || !$captureB) {
-    respond_json(['error' => 'Studio o riprese non trovati'], 404);
-}
-if ((int)$captureA['study_id'] !== $studyId || (int)$captureB['study_id'] !== $studyId) {
-    respond_json(['error' => 'Le riprese non appartengono a questo studio'], 400);
-}
-
-function build_enhance_steps(array $opts): array
-{
-    $steps = [];
-    if (!empty($opts['white_balance'])) {
-        $steps[] = ['filter' => 'white_balance', 'params' => new stdClass()];
-    }
-    if (!empty($opts['denoise'])) {
-        $steps[] = ['filter' => 'denoise', 'params' => [
-            'method' => $opts['denoise_method'] ?? 'gaussian',
-            'strength' => (int) ($opts['denoise_strength'] ?? 3),
-        ]];
-    }
-    if (!empty($opts['clahe'])) {
-        $steps[] = ['filter' => 'clahe', 'params' => [
-            'clip_limit' => (float) ($opts['clahe_clip'] ?? 2.0),
-            'tile_grid_size' => (int) ($opts['clahe_grid'] ?? 8),
-        ]];
-    }
-    if (!empty($opts['hist_eq'])) {
-        $steps[] = ['filter' => 'histogram_equalization', 'params' => new stdClass()];
-    }
-    if (!empty($opts['gamma_enabled'])) {
-        $steps[] = ['filter' => 'gamma', 'params' => ['gamma' => (float) ($opts['gamma'] ?? 1.0)]];
-    }
-    if (!empty($opts['sharpen'])) {
-        $steps[] = ['filter' => 'sharpen', 'params' => ['amount' => (float) ($opts['sharpen_amount'] ?? 1.0)]];
-    }
-    if (!empty($opts['desaturate'])) {
-        $steps[] = ['filter' => 'desaturate', 'params' => ['amount' => (float) ($opts['desaturate_amount'] ?? 1.0)]];
-    }
-    return $steps;
-}
-
-$enhanceOpts = $body['enhance'] ?? [];
-$enhanceSteps = build_enhance_steps($enhanceOpts);
-
-// Allineamento manuale: se richiesto esplicitamente (align_mode === 'manual'),
-// usa i punti di controllo salvati per questa coppia di riprese al posto del
-// motore automatico. Se non ce ne sono almeno 3, l'errore arriva già dal
-// servizio Python — qui verifichiamo solo per dare un messaggio più chiaro.
-$controlPoints = [];
-if (($body['align_mode'] ?? 'auto') === 'manual') {
-    $controlPoints = ManualControlPoints::getPoints($captureAId, $captureBId);
-    if (count($controlPoints) < 3) {
-        respond_json(['error' => 'Servono almeno 3 punti di controllo salvati per questa coppia di riprese per usare l\'allineamento manuale'], 400);
-    }
-}
-
-// Scala reale (metri/pixel) per esprimere le aree delle regioni cambiate in
-// m² e non solo in pixel/%. Si prende dalla ripresa A (il diff avviene alla
-// sua risoluzione, B viene allineata su A): mpp diretti nel meta o ricavati
-// dalla bbox propria — vedi Capture::resolveMpp.
-$mpp = Capture::resolveMpp($captureA);
-if (!$mpp && ($mppB = Capture::resolveMpp($captureB))
-    && (int) $captureA['width'] > 0 && (int) $captureA['height'] > 0
-) {
-    // Solo B ha una scala nota: va riportata sulla griglia di A, perché B
-    // viene ridimensionata alle dimensioni di A prima del confronto. Usarla
-    // così com'era falsava le aree in m² del rapporto fra le due dimensioni.
-    $mpp = [
-        'mpp_x' => $mppB['mpp_x'] * (int) $captureB['width'] / (int) $captureA['width'],
-        'mpp_y' => $mppB['mpp_y'] * (int) $captureB['height'] / (int) $captureA['height'],
-    ];
-}
-
-$payload = [
-    'capture_a_path' => $captureA['relative_path'],
-    'capture_b_path' => $captureB['relative_path'],
-    'mpp_x' => $mpp['mpp_x'] ?? null,
-    'mpp_y' => $mpp['mpp_y'] ?? null,
-    'align' => !empty($body['align']),
-    'diff_method' => $body['diff_method'] ?? 'ssim',
-    'threshold' => (int) ($body['threshold'] ?? 30),
-    'use_otsu' => !empty($body['use_otsu']),
-    'morph_kernel' => (int) ($body['morph_kernel'] ?? 3),
-    'open_iterations' => (int) ($body['open_iterations'] ?? 1),
-    'close_iterations' => (int) ($body['close_iterations'] ?? 2),
-    'min_blob_area' => (int) ($body['min_blob_area'] ?? 40),
-    'overlay_alpha' => (float) ($body['overlay_alpha'] ?? 0.35),
-    'enhance_a' => $enhanceSteps,
-    'enhance_b' => $enhanceSteps,
-    'control_points' => $controlPoints,
-];
-
+// La logica sta in ComparisonRunner, condivisa con i lavori in background
+// (vedi api/jobs.php, che la pagina studio usa per non restare bloccata).
 try {
-    $client = new PythonServiceClient();
-    $result = $client->post('/analysis/compare', $payload);
-} catch (PythonServiceException $e) {
-    respond_json(['error' => $e->getMessage()], 502);
+    respond_json(ComparisonRunner::run(json_body()));
+} catch (ComparisonException $e) {
+    respond_json(['error' => $e->getMessage()], $e->httpStatus);
 }
-
-$comparisonId = Comparison::create(
-    $studyId,
-    $captureAId,
-    $captureBId,
-    trim($body['title'] ?? '') ?: null,
-    $payload,
-    $result['stats'],
-    $result['regions'],
-    $result['paths'],
-    $result['registration']
-);
-
-Study::touch($studyId);
-
-respond_json([
-    'comparison_id' => $comparisonId,
-    'stats' => $result['stats'],
-    'regions' => $result['regions'],
-    'registration' => $result['registration'],
-    'urls' => [
-        'enhanced_a' => isset($result['paths']['enhanced_a']) ? storage_url($result['paths']['enhanced_a']) : null,
-        'aligned_b' => storage_url($result['paths']['aligned_b']),
-        'mask' => storage_url($result['paths']['mask']),
-        'overlay' => storage_url($result['paths']['overlay']),
-        'heatmap' => storage_url($result['paths']['heatmap']),
-        'edges' => storage_url($result['paths']['edges']),
-    ],
-]);

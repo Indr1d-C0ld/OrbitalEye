@@ -105,17 +105,20 @@ def _orb_homography(gray_a: np.ndarray, gray_b: np.ndarray, max_features: int = 
     return homography, inliers
 
 
-def _ecc_refine(gray_a: np.ndarray, gray_b_warped: np.ndarray, warp_mode=cv2.MOTION_EUCLIDEAN):
+def _ecc_refine(gray_a: np.ndarray, gray_b_warped: np.ndarray, warp_mode=cv2.MOTION_EUCLIDEAN,
+                mask: np.ndarray | None = None):
     """Rifinisce l'allineamento massimizzando la correlazione (ECC) tra le due
     immagini, lavorando su versioni CLAHE-normalizzate: l'ECC confronta
     direttamente le intensità dei pixel, quindi differenze di bilanciamento
     colore/contrasto tra fonti diverse fanno fallire la convergenza molto più
-    spesso che con il matching a feature locali (ORB)."""
+    spesso che con il matching a feature locali (ORB). Con mask, la
+    correlazione si calcola solo dove B ha dati reali (i bordi neri del warp
+    la falserebbero)."""
     warp_matrix = np.eye(2, 3, dtype=np.float32)
     criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 200, 1e-6)
     try:
         cc, warp_matrix = cv2.findTransformECC(
-            _clahe_normalize(gray_a), _clahe_normalize(gray_b_warped), warp_matrix, warp_mode, criteria, None, 5
+            _clahe_normalize(gray_a), _clahe_normalize(gray_b_warped), warp_matrix, warp_mode, criteria, mask, 5
         )
         return warp_matrix, True, float(cc)
     except cv2.error:
@@ -371,5 +374,135 @@ def register_with_points(
         warp_matrix=warp_out,
         matched_features=len(points),
         confidence=1.0,
+        warp_like=warp_like,
+    )
+
+
+# Spostamento massimo (frazione della diagonale) che la rifinitura ECC può
+# aggiungere all'allineamento geografico: le coordinate sono già corrette a
+# meno di qualche metro (ortorettifica, georeferenza delle fonti); una
+# correzione più grande vuol dire che ECC ha agganciato altro.
+GEO_REFINE_MAX_SHIFT = 0.02
+
+
+def _masked_cc(gray_a: np.ndarray, gray_b: np.ndarray, mask: np.ndarray) -> float:
+    """Correlazione (ECC) fra le due immagini dove B ha dati reali."""
+    try:
+        return float(cv2.computeECC(_clahe_normalize(gray_a), _clahe_normalize(gray_b), mask))
+    except cv2.error:
+        return 0.0
+
+
+def register_auto(
+    img_a: np.ndarray, img_b: np.ndarray, points: list[tuple[float, float, float, float]], refine: bool = True
+) -> RegistrationResult:
+    """Allineamento automatico: dalle coordinate (register_geo) se possibile,
+    con le immagini (register_images) come riserva.
+
+    Le coordinate salvate non sono sempre giuste — riprese Esri scaricate
+    prima della correzione dell'aspect ratio hanno bbox sbagliate anche di
+    un fattore 2 —: se dopo l'allineamento geografico le immagini restano
+    poco correlate si prova anche quello dalle immagini e si tiene il
+    migliore, misurato allo stesso modo (correlazione dove B ha dati). Se
+    le coordinate non bastano (sovrapposizione minima, punti in fila) si
+    usano direttamente le immagini, invece di fallire.
+    """
+    try:
+        geo = register_geo(img_a, img_b, points, refine)
+    except ValueError:
+        return register_images(img_a, img_b)
+    if geo.confidence >= ECC_MIN_CORRELATION:
+        return geo
+    feat = register_images(img_a, img_b)
+    if not feat.success:
+        return geo
+    feat_cc = _masked_cc(to_gray(img_a), to_gray(feat.aligned), feat.valid_mask)
+    if feat_cc > geo.confidence + 0.05:
+        # Stessa misura per entrambi i metodi anche nel risultato salvato.
+        feat.confidence = round(max(0.0, min(1.0, feat_cc)), 3)
+        return feat
+    return geo
+
+
+def register_geo(
+    img_a: np.ndarray, img_b: np.ndarray, points: list[tuple[float, float, float, float]], refine: bool = True
+) -> RegistrationResult:
+    """Allinea img_b su img_a a partire dalle coordinate geografiche delle
+    due riprese: i punti (ax, ay, bx, by) sono calcolati dal webapp
+    proiettando una griglia di punti di A, tramite lon/lat, sull'immagine B
+    (pixel originali di entrambe).
+
+    È il metodo più robusto fra fonti diverse (Sentinel ed Esri, epoche
+    lontane, sensori diversi), dove il feature matching trova poco o
+    aggancia dettagli sbagliati: la geometria viene dalle coordinate, non
+    dalle immagini. Con refine, una rifinitura ECC corregge poi i piccoli
+    scarti di georeferenza fra le fonti — accettata solo se migliora davvero
+    la correlazione e resta entro GEO_REFINE_MAX_SHIFT.
+    """
+    if len(points) < 4:
+        raise ValueError("Servono almeno 4 punti per l'allineamento geografico.")
+    h, w = img_a.shape[:2]
+    if img_b.shape[:2] != (h, w):
+        sx, sy = w / img_b.shape[1], h / img_b.shape[0]
+        img_b_resized = cv2.resize(img_b, (w, h), interpolation=cv2.INTER_AREA)
+    else:
+        sx = sy = 1.0
+        img_b_resized = img_b
+    pts_a = np.float32([[p[0], p[1]] for p in points])
+    pts_b = np.float32([[p[2] * sx, p[3] * sy] for p in points])
+    # Punti quasi allineati (B che si sovrappone ad A solo in una striscia):
+    # l'omografia sarebbe indeterminata nella direzione mancante.
+    if cv2.contourArea(cv2.convexHull(pts_a)) < 0.01 * w * h:
+        raise ValueError("Le due riprese si sovrappongono troppo poco per un allineamento dalle coordinate.")
+    # Punti esatti (non misure): minimi quadrati, nessun RANSAC.
+    homography, _ = cv2.findHomography(pts_b, pts_a, 0)
+    if homography is None:
+        raise ValueError("Impossibile ricavare la trasformazione dalle coordinate delle riprese.")
+
+    full_mask = np.full((h, w), 255, dtype=np.uint8)
+    warp = lambda ch, _h=homography: cv2.warpPerspective(  # noqa: E731
+        _fit(ch, w, h), _h, (w, h), flags=cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+    aligned = cv2.warpPerspective(img_b_resized, homography, (w, h), flags=cv2.INTER_LINEAR,
+                                  borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+    valid_mask = warp(full_mask)
+    if _coverage(valid_mask) < MIN_VALID_COVERAGE:
+        raise ValueError("Le due riprese coprono aree quasi del tutto diverse: non c'è abbastanza superficie in comune da confrontare.")
+
+    method = "geo"
+    warp_like = warp
+    gray_a = to_gray(img_a)
+    base_cc = _masked_cc(gray_a, to_gray(aligned), valid_mask)
+    # Confidenza: la correlazione fra le immagini dove si sovrappongono
+    # (le coordinate da sole non dicono quanto siano giuste).
+    confidence = round(max(0.0, min(1.0, base_cc)), 3)
+    if refine:
+        gray_b = to_gray(aligned)
+        m, ok, _ = _ecc_refine(gray_a, gray_b, mask=valid_mask)
+        shift = float(np.hypot(m[0, 2], m[1, 2])) / float(np.hypot(w, h))
+        if ok and shift <= GEO_REFINE_MAX_SHIFT:
+            refined = cv2.warpAffine(aligned, m, (w, h), flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP,
+                                     borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+            refined_mask = cv2.warpAffine(valid_mask, m, (w, h), flags=cv2.INTER_NEAREST | cv2.WARP_INVERSE_MAP,
+                                          borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+            # La correlazione restituita da findTransformECC è misurata sulle
+            # immagini sfocate (gaussFiltSize), sistematicamente più alta di
+            # base_cc: il confronto si rifà con la stessa misura.
+            cc = _masked_cc(gray_a, to_gray(refined), refined_mask)
+            if cc > base_cc + 0.01:
+                aligned, valid_mask = refined, refined_mask
+                warp_like = lambda ch, _w=warp, _m=m: cv2.warpAffine(  # noqa: E731
+                    _w(ch), _m, (w, h), flags=cv2.INTER_NEAREST | cv2.WARP_INVERSE_MAP,
+                    borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+                method = "geo+ecc"
+                confidence = round(max(0.0, min(1.0, cc)), 3)
+
+    return RegistrationResult(
+        aligned=aligned,
+        method=method,
+        success=True,
+        valid_mask=_erode_valid_mask(valid_mask),
+        warp_matrix=homography.tolist(),
+        matched_features=len(points),
+        confidence=confidence,
         warp_like=warp_like,
     )

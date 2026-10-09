@@ -7,7 +7,7 @@ from ..core import detect as detectmod
 from ..core import diff as diffmod
 from ..core import enhance as enhancemod
 from ..core import spectral as spectralmod
-from ..core.registration import register_images, register_with_points
+from ..core.registration import register_auto, register_images, register_with_points
 from ..core.utils import load_image, load_image_with_mask, new_id, safe_storage_path, save_image
 from ..deps import require_service_key
 
@@ -75,6 +75,10 @@ class CompareRequest(BaseModel):
     # su "align": l'analista ha già indicato lui stesso le corrispondenze,
     # niente motore automatico di mezzo.
     control_points: list[ControlPoint] = Field(default_factory=list)
+    # Punti ricavati dalle coordinate geografiche delle due riprese (vedi
+    # register_geo): allineamento dalle coordinate, rifinito con ECC.
+    geo_points: list[ControlPoint] = Field(default_factory=list)
+    geo_refine: bool = True
 
 
 @router.post("/compare")
@@ -116,6 +120,12 @@ def compare(req: CompareRequest):
             )
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
+        img_b_aligned = reg_result.aligned
+        reg_method = reg_result.method
+        reg_confidence = reg_result.confidence
+        valid_mask = reg_result.valid_mask
+    elif req.align and len(req.geo_points) >= 4:
+        reg_result = register_auto(img_a, img_b, [(p.ax, p.ay, p.bx, p.by) for p in req.geo_points], req.geo_refine)
         img_b_aligned = reg_result.aligned
         reg_method = reg_result.method
         reg_confidence = reg_result.confidence

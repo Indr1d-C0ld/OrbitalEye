@@ -67,11 +67,14 @@ final class CaptureFetcher
      *   evita una seconda ricerca, che se fallisse per un momento lascerebbe
      *   la ripresa senza orbita/nuvole — e il cron perderebbe il filtro
      *   sull'orbita radar al giro successivo.
+     * @param callable|null $progress fn(int $percent, string $message), per i lavori in background
      * @return array{capture_id:int, relative_path:string, width:int, height:int}
      * @throws CaptureFetchException Messaggio già pronto per l'utente/il log.
      */
-    public static function fetchAndSave(array $params, ?array $knownPass = null): array
+    public static function fetchAndSave(array $params, ?array $knownPass = null, ?callable $progress = null): array
     {
+        // Avanzamento per i lavori in background (vedi Job): fn(percento, messaggio).
+        $progress = $progress ?? fn() => null;
         $studyId = (int) ($params['study_id'] ?? 0);
         $study = $studyId ? Study::find($studyId) : null;
         if (!$study) {
@@ -130,9 +133,11 @@ final class CaptureFetcher
         $rect = [$minLon, $minLat, $maxLon, $maxLat];
 
         if ($source === 'sentinelhub' || $source === 'sentinel1') {
+            $progress(10, 'Ricerca del passaggio nel catalogo Copernicus…');
             $pass = ($knownPass && ($knownPass['datetime'] ?? null) === ($params['pass_datetime'] ?? null))
                 ? $knownPass
                 : self::resolvePass($source, $params, $rect);
+            $progress(35, 'Scaricamento del passaggio del ' . ImageryCatalog::label($pass['datetime']) . '…');
             $passDate = substr($pass['datetime'], 0, 10);
             $isS1 = $source === 'sentinel1';
 
@@ -211,6 +216,7 @@ final class CaptureFetcher
         } else {
             // Versione storica dell'archivio Wayback (vedi EsriWayback) o
             // mosaico corrente.
+            $progress(10, 'Scaricamento da Esri…');
             $wayback = null;
             if (!empty($params['wayback_release'])) {
                 try {
@@ -261,6 +267,7 @@ final class CaptureFetcher
 
             // Data REALE delle immagini (non del download): metadati ufficiali
             // Esri sull'area effettivamente scaricata, alla scala della ripresa.
+            $progress(75, 'Lettura della data reale delle immagini…');
             $metaBbox = (abs($rotation) >= 0.01) ? $bbox : ($result['bbox'] ?? $bbox);
             $imagery = null;
             $imageryError = null;
@@ -305,6 +312,7 @@ final class CaptureFetcher
         }
 
         Study::touch($studyId);
+        $progress(100, 'Ripresa salvata.');
 
         return [
             'capture_id' => $captureId,

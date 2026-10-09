@@ -4,6 +4,188 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-10-09 (2) — Fondamenta tecniche: lavori in background, allineamento dalle coordinate, dettaglio nativo, test e CI, migrazioni
+
+Quinta e ultima parte del piano di evoluzione.
+
+### Lavori in background con avanzamento
+
+Scaricamenti, confronti e rilevamenti duravano fino a qualche minuto dentro
+una sola richiesta. La pagina restava ferma senza dire a che punto fosse e,
+cambiando pagina, non si sapeva più se il lavoro fosse finito.
+
+- **[webapp/src/Job.php](webapp/src/Job.php)** (nuovo),
+  **[webapp/cli/run_job.php](webapp/cli/run_job.php)** (nuovo),
+  **[webapp/public/api/jobs.php](webapp/public/api/jobs.php)** (nuovo):
+  - La richiesta registra il lavoro e avvia un processo PHP separato, uno
+    per lavoro, senza demoni né code esterne. Il processo lo esegue e
+    aggiorna avanzamento e fase.
+  - Presa in carico atomica: un lavoro parte una volta sola.
+  - Il processo viene avviato con `setsid`, in una sessione propria, e
+    l'avvio viene verificato: PID restituito e processo vivo, o lavoro già
+    preso in carico, ripetuto per un secondo al massimo, perché all'inizio
+    il processo può essere ancora la shell che sta per avviare PHP. Se non
+    parte, il lavoro gira dentro la richiesta.
+    L'uscita d'errore dei processi va in `data/jobs.log`.
+  - Viene segnato come interrotto, invece di restare "in corso" per sempre,
+    un lavoro che:
+    - ha perso il processo. Il processo si riconosce dalla riga di comando
+      in `/proc`, non dal solo PID, che il sistema può riassegnare;
+    - è in esecuzione da oltre 20 minuti;
+    - è rimasto in coda oltre due minuti.
+  - Un lavoro che finisce mentre lo si sta controllando resta finito: conta
+    l'esito scritto dal processo.
+  - I lavori conclusi da più di un giorno vengono eliminati.
+  - Se `exec` non è disponibile, il lavoro gira dentro la richiesta come
+    prima.
+  - Limite noto: un riavvio completo di Apache (`systemctl restart`)
+    termina anche i lavori in corso, che stanno nel suo gruppo di processi.
+    Vengono segnati come interrotti e si possono rilanciare. Il reload e il
+    riavvio "graceful" non li toccano.
+- **[webapp/src/ComparisonRunner.php](webapp/src/ComparisonRunner.php)**,
+  **[webapp/src/DetectionRunner.php](webapp/src/DetectionRunner.php)** (nuovi) —
+  la logica di `api/compare.php` e `api/detect.php` spostata in classi
+  usate sia dalle API dirette (risposte invariate) sia dai lavori.
+  `CaptureFetcher::fetchAndSave` riceve un callback di avanzamento con le
+  fasi reali: ricerca del passaggio, scaricamento, lettura delle date,
+  salvataggio.
+- **[webapp/public/assets/js/common.js](webapp/public/assets/js/common.js)** —
+  `runJob`, `waitJob` e barra di avanzamento con la fase in corso.
+  Qualche errore di rete passeggero non fa perdere il lavoro, che intanto
+  continua sul server.
+- **[webapp/public/assets/js/study.js](webapp/public/assets/js/study.js)**,
+  **[webapp/public/assets/js/analyze.js](webapp/public/assets/js/analyze.js)** —
+  scaricamenti, confronti, rilevamenti (anche in serie dallo storico) e
+  dettagli passano dai lavori. Riaprendo uno studio, un riquadro "⏳ Lavori
+  in corso" ritrova quelli ancora attivi e ne segue la fine.
+
+### Allineamento dalle coordinate
+
+- **[python-service/app/core/registration.py](python-service/app/core/registration.py)**,
+  **[routers/analysis.py](python-service/app/routers/analysis.py)** —
+  nuovo `register_geo`.
+  - L'omografia viene ricavata da punti calcolati dalle coordinate
+    geografiche, non dalle immagini.
+  - La rifinitura ECC viene accettata solo se migliora davvero la
+    correlazione e sposta meno del 2% della diagonale: le coordinate sono
+    già giuste a meno di qualche metro.
+  - La correlazione prima e dopo la rifinitura si misura nello stesso modo:
+    - solo dove B ha dati reali, altrimenti con riprese parzialmente
+      sovrapposte i bordi neri del warp facevano scartare la rifinitura;
+    - sulle immagini non sfocate. Il valore restituito da
+      `findTransformECC` è misurato su immagini sfocate ed è più alto:
+      faceva accettare quasi ogni rifinitura e gonfiava la confidenza.
+  - Nuovo `register_auto`. Le coordinate salvate non sono sempre giuste: le
+    riprese Esri scaricate prima della correzione dell'aspect ratio hanno
+    bbox sbagliate anche di un fattore 2. Se dopo l'allineamento geografico
+    le immagini restano poco correlate (sotto 0,5), si prova anche quello
+    dalle immagini e si tiene il migliore, misurato allo stesso modo. La
+    confidenza salvata è quella stessa correlazione per entrambi i metodi.
+  - Si allinea con le immagini, invece di fallire, anche quando le
+    coordinate non bastano: aree quasi disgiunte, punti in comune tutti su
+    una riga (nel webapp servono almeno due righe e due colonne della
+    griglia).
+- **[webapp/src/Capture.php](webapp/src/Capture.php)** — nuovo
+  `lonLatToFrac()`, inverso esatto di `fracToLonLat()` anche per le riprese
+  ruotate in entrambi i modelli (errore ~1e-13).
+- **ComparisonRunner** — in modalità automatica, se entrambe le riprese
+  sono georiferite, 25 punti di A vengono portati in lon/lat e poi nei
+  pixel di B.
+  - Correlazione dopo l'allineamento, misurata allo stesso modo per i due
+    metodi (dove B ha dati, senza sfocatura):
+    - versione Wayback 2018 contro l'immagine attuale: 0,42 dalle
+      coordinate più rifinitura, contro 0,37 dalle immagini;
+    - su Sigonella, Sentinel-2 contro Esri: 0,53 per entrambi.
+  - Il vantaggio è la robustezza più che la precisione: le coordinate non
+    dipendono dal trovare dettagli in comune, che fra epoche e sensori
+    diversi possono mancare o ingannare.
+- **[webapp/public/study.php](webapp/public/study.php)**, **study.js** —
+  nuova modalità "Solo dalle immagini" e riquadro "Allineamento" fra i
+  risultati: dalle coordinate, coordinate + immagini, dalle immagini, punti
+  manuali, non riuscito. In giallo i casi da verificare a vista.
+
+### Scarica quest'area in dettaglio
+
+- **[webapp/src/DetailFetcher.php](webapp/src/DetailFetcher.php)** (nuovo),
+  **[webapp/public/analyze_capture.php](webapp/public/analyze_capture.php)**,
+  **analyze.js** — da una ripresa Esri d'insieme, l'area del ritaglio
+  viene riscaricata alla risoluzione nativa delle immagini, indicata dai
+  metadati Esri.
+  - Restano la stessa rotazione e, per una versione storica, la stessa
+    versione dell'archivio.
+  - Le dimensioni si chiedono in proporzione ai gradi, come le interpreta
+    Esri. Con una proporzione in metri Esri allargava l'area in altezza
+    (del 41% a 45° di latitudine) e il dettaglio peggiorava.
+  - La risoluzione indicata è quella ottenuta, letta dalla ripresa salvata,
+    non quella chiesta: il ritaglio ruotato e i tentativi a risoluzione
+    ridotta di Esri possono abbassarla.
+  - Per le riprese ruotate, la risoluzione indicata è quella dei pixel
+    scaricati in latitudine. Il ritaglio ruotato ricampiona sul passo più
+    fine, quello della longitudine, ma in latitudine è solo un
+    ingrandimento.
+  - Lato massimo 2500 px, con un avviso se l'area è troppo grande per la
+    risoluzione nativa.
+  - Il pulsante compare solo quando la ripresa è almeno 1,5 volte meno
+    dettagliata delle immagini Esri.
+  - Ghedi: da una ripresa di ~6 km a 7 m/pixel, un riquadro di 600 m
+    riscaricato a 0,34 m/pixel (2500×2000 px; nativa 0,31). La bbox
+    salvata coincide esattamente con quella chiesta.
+
+### Migrazioni del database
+
+- **[webapp/src/Database.php](webapp/src/Database.php)**,
+  **[webapp/migrations/001_jobs.sql](webapp/migrations/001_jobs.sql)** (nuovo) —
+  migrazioni numerate, applicate una volta sola, in ordine, ciascuna in una
+  transazione e registrate in `schema_migrations`.
+  - Una migrazione fallita blocca l'applicazione invece di lasciarla su uno
+    schema a metà.
+  - Confronto per nome fra file e versioni registrate: un file rinominato
+    o rimosso non nasconde una migrazione nuova.
+  - `BEGIN IMMEDIATE` e un nuovo controllo dentro la transazione: due
+    richieste arrivate insieme dopo un aggiornamento applicano la
+    migrazione una volta sola.
+  - Se SQLite ha già annullato la transazione da sé (disco pieno, I/O),
+    l'errore riportato resta quello vero.
+  - `schema.sql` resta lo schema di base idempotente; le migrazioni servono
+    per ciò che non può fare (aggiungere colonne, trasformare dati).
+
+### Test automatici e CI
+
+- **[webapp/tests/](webapp/tests/)** (nuovo) — 39 test PHP senza
+  dipendenze esterne, su database e storage temporanei
+  (`Config::set`), senza contattare servizi esterni. Coprono:
+  - geometria (coordinate ↔ pixel con rotazione, scala, ritagli, punti per
+    l'allineamento);
+  - identificatore dei velivoli ed etichette per parola intera;
+  - attribuzioni e chiavi di acquisizione;
+  - schema e migrazioni;
+  - lavori (errori, processi spariti, PID riassegnati, durata massima,
+    lavori finiti durante il controllo);
+  - dimensioni del dettaglio alla risoluzione nativa;
+  - schede di pubblicazione (dimensioni, ritagli stretti, limiti) e coda
+    di revisione.
+- **[python-service/tests/](python-service/tests/)** (nuovo) — 20 test:
+  - allineamento dalle coordinate con e senza rifinitura (anche con
+    sovrapposizione parziale), rifinitura inutile che non gonfia la
+    confidenza, aree disgiunte, punti in fila;
+  - ripiego sulle immagini con coordinate sbagliate o insufficienti;
+  - immagini scorrelate non dichiarate allineate;
+  - aree delle regioni coerenti col totale;
+  - tasselli e frammenti del rilevamento;
+  - raggruppamento dei passaggi, statistiche con "NaN";
+  - calcoli dei tasselli Wayback.
+- **[.github/workflows/ci.yml](.github/workflows/ci.yml)** (nuovo) — a ogni
+  push e pull request: sintassi e test PHP 8.4, test Python 3.13, sintassi
+  JavaScript. Badge nel README.
+  - Il runner esce con codice 1 anche se non esegue nessun test.
+  - [webapp/src/bootstrap.php](webapp/src/bootstrap.php): senza
+    `config.php`, il bootstrap usciva con codice 0 da riga di comando, e in
+    CI i test PHP sarebbero risultati superati senza girare. Ora esce con
+    codice 1, e i test, che forniscono la configurazione da sé, saltano il
+    controllo.
+- Script di sincronizzazione: aggiunte `webapp/migrations`, `webapp/tests`,
+  `python-service/tests` e `webapp/cli/run_job.php`.
+
 ## 2026-10-09 — Flusso di pubblicazione: scheda, album Prima/Dopo, file a piena risoluzione, coda di revisione
 
 Quarta parte del piano di evoluzione. Le condivisioni avevano due

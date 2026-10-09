@@ -1,0 +1,54 @@
+# Controlli automatici a ogni push e pull request: sintassi e test del
+# webapp PHP, test del servizio di analisi Python, sintassi del JavaScript.
+# Nessun servizio esterno viene contattato (Copernicus, Esri, Telegram):
+# i test girano su database e storage temporanei.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  php:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: gd, pdo_sqlite, mbstring, curl, posix, fileinfo
+          coverage: none
+      - name: Font per la composizione delle schede di pubblicazione
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends fonts-dejavu-core
+      - name: Sintassi
+        run: find webapp -name '*.php' -print0 | xargs -0 -n1 -P4 php -l > /dev/null
+      - name: Test
+        run: php webapp/tests/run.php
+
+  python:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: python-service/requirements.txt
+      - name: Dipendenze
+        run: pip install -r python-service/requirements.txt
+      - name: Test
+        working-directory: python-service
+        run: python -m unittest discover -s tests -t . -v
+
+  javascript:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Sintassi
+        run: for f in webapp/public/assets/js/*.js; do node --check "$f"; done
