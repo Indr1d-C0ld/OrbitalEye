@@ -85,12 +85,10 @@ require __DIR__ . '/partials/nav.php';
     <div style="margin-top:14px; padding-top:14px; border-top:1px solid var(--line);">
       <label style="display:flex; align-items:center; gap:6px;">Riepilogo di studio <span class="info-tip" tabindex="0" data-tip="Condivide l'ultimo confronto salvato di questo studio (immagine overlay) con una didascalia che riassume conteggi e ultima variazione rilevata. Anteprima e didascalia sono sempre modificabili prima dell'invio.">?</span></label>
       <textarea id="study-share-caption" rows="4" style="width:100%; margin-top:6px;"><?= e($studySummaryCaption) ?></textarea>
-      <label class="checkbox-row" style="margin:6px 0;">
-        <input type="checkbox" id="study-share-include-attribution" checked>
-        Scrivi data e fonte sull'immagine
-      </label>
+      <?php $publishPrefix = 'study'; $publishKind = 'comparison'; $publishTitle = $study['title']; require __DIR__ . '/partials/publish_options.php'; ?>
       <?php $esriNoticeVisible = $summaryImagery && $summaryImagery['is_esri']; require __DIR__ . '/partials/esri_share_notice.php'; ?>
       <div class="tag-row" style="margin-top:8px;">
+        <button type="button" class="btn btn-sm" id="study-share-preview-btn">👁 Anteprima</button>
         <button type="button" class="btn btn-primary btn-sm" id="study-share-telegram-btn">📤 Invia su Telegram</button>
         <button type="button" class="btn btn-sm" id="study-share-copy-btn">📋 Copia immagine negli appunti</button>
         <button type="button" class="btn btn-sm" id="study-share-twitter-btn">🐦 Apri su X</button>
@@ -661,12 +659,10 @@ require __DIR__ . '/partials/nav.php';
   <div style="margin:12px 0; padding:12px; border:1px solid var(--line); border-radius:4px;">
     <label style="display:flex; align-items:center; gap:6px;">Condividi la vista corrente <span class="info-tip" tabindex="0" data-tip="Condivide l'immagine attualmente selezionata sopra (overlay/heatmap/maschera/contorni/originali — non disponibile per 'Prima/Dopo (swipe)', che non è un'immagine salvata). Anteprima e didascalia sono sempre modificabili prima dell'invio, mai una pubblicazione automatica.">?</span></label>
     <textarea id="cmp-share-caption" rows="4" style="width:100%; margin-top:6px;"></textarea>
-    <label class="checkbox-row" style="margin:6px 0;">
-      <input type="checkbox" id="cmp-share-include-attribution" checked>
-      Scrivi data e fonte sull'immagine <span class="info-tip" tabindex="0" data-tip="Striscia in basso con le date reali delle due immagini e l'attribuzione delle fonti (richiesta dai termini d'uso). Vale per Telegram e per la copia negli appunti.">?</span>
-    </label>
+    <?php $publishPrefix = 'cmp'; $publishKind = 'comparison'; $publishTitle = $study['title']; require __DIR__ . '/partials/publish_options.php'; ?>
     <div id="cmp-esri-notice" style="display:none;"><?php $esriNoticeVisible = true; require __DIR__ . '/partials/esri_share_notice.php'; ?></div>
     <div class="tag-row" style="margin-top:8px;">
+      <button type="button" class="btn btn-sm" id="cmp-share-preview-btn">👁 Anteprima</button>
       <button type="button" class="btn btn-primary btn-sm" id="cmp-share-telegram-btn">📤 Invia su Telegram</button>
       <button type="button" class="btn btn-sm" id="cmp-share-copy-btn">📋 Copia immagine negli appunti</button>
       <button type="button" class="btn btn-sm" id="cmp-share-twitter-btn">🐦 Apri su X</button>

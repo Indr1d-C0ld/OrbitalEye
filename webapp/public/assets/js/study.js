@@ -1392,57 +1392,42 @@
   // regolazioni "live" da cuocere client-side): il server la risolve da
   // comparison_id/vista, nessun upload di bytes necessario per Telegram —
   // solo per il "copia negli appunti" serve scaricare i bytes nel browser.
-  function setupShareBlock({ prefix, getComparisonId, getViewUrl, getView, getStudyId, getProvenance }) {
-    const includeAttributionEl = $('#' + prefix + '-share-include-attribution');
+  // Blocchi "Condividi" di confronto e riepilogo: le immagini partono dal
+  // server, che le compone nel formato scelto (vedi PublicationBuilder);
+  // qui solo la richiesta, l'anteprima e la copia per X.
+  function setupShareBlock({ prefix, getComparisonId, getView, getStudyId, getProvenance }) {
     const provenance = () => (getProvenance && getProvenance()) || { strip: '', isEsri: false };
-    const wantsAttribution = () => !!(includeAttributionEl && includeAttributionEl.checked);
     const captionEl = $('#' + prefix + '-share-caption');
     const statusEl = $('#' + prefix + '-share-status');
     const telegramBtn = $('#' + prefix + '-share-telegram-btn');
     const copyBtn = $('#' + prefix + '-share-copy-btn');
     const twitterBtn = $('#' + prefix + '-share-twitter-btn');
+    const previewBtn = $('#' + prefix + '-share-preview-btn');
     if (!captionEl || !telegramBtn) return;
+    const kind = prefix === 'study' ? 'study' : 'comparison';
 
-    async function fetchViewBlob() {
-      const url = getViewUrl();
-      if (!url) throw new Error('Nessuna immagine disponibile per questa vista (es. "Prima/Dopo (swipe)" non è un file salvato: scegli un\'altra vista).');
-      const res = await fetch(url);
-      if (!res.ok) throw new Error('Immagine non raggiungibile');
-      const blob = await res.blob();
-      const strip = provenance().strip;
-      if (!wantsAttribution() || !strip) return blob;
-      // Stessa striscia che il server scrive sulle immagini inviate a Telegram.
-      const bitmap = await createImageBitmap(blob);
-      const c = document.createElement('canvas');
-      c.width = bitmap.width;
-      c.height = bitmap.height;
-      const ctx = c.getContext('2d');
-      ctx.drawImage(bitmap, 0, 0);
-      drawAttributionStrip(ctx, c.width, c.height, strip);
-      return new Promise((resolve) => c.toBlob(resolve, 'image/png'));
+    function publishForm() {
+      const comparisonId = getComparisonId();
+      if (!comparisonId) throw new Error('Nessun confronto disponibile.');
+      const form = new FormData();
+      form.append('kind', kind);
+      form.append('ref_id', kind === 'study' ? getStudyId() : comparisonId);
+      form.append('study_id', getStudyId());
+      form.append('view', getView());
+      form.append('caption', captionEl.value);
+      appendPublishOptions(form, prefix);
+      return form;
     }
 
     telegramBtn.addEventListener('click', async () => {
       if (telegramBtn.disabled) return; // evita invii duplicati su doppio click/tap
-      const comparisonId = getComparisonId();
-      if (!comparisonId) { statusEl.textContent = 'Nessun confronto disponibile.'; return; }
+      let form;
+      try { form = publishForm(); } catch (e) { statusEl.textContent = e.message; return; }
       if (!confirmEsriPublishing(provenance().isEsri)) return;
       telegramBtn.disabled = true;
-      statusEl.textContent = 'Invio in corso...';
+      statusEl.textContent = 'Composizione e invio in corso...';
       try {
-        const form = new FormData();
-        form.append('platform', 'telegram');
-        form.append('kind', prefix === 'study' ? 'study' : 'comparison');
-        form.append('ref_id', prefix === 'study' ? getStudyId() : comparisonId);
-        form.append('study_id', getStudyId());
-        form.append('view', getView());
-        form.append('caption', captionEl.value);
-        // L'immagine parte dal server: la striscia la scrive lui (share.php).
-        form.append('include_attribution', wantsAttribution() ? '1' : '0');
-        const res = await fetch('api/share.php', { method: 'POST', body: form });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Errore');
-        statusEl.textContent = 'Inviato su Telegram.';
+        statusEl.textContent = await sendPublication(form);
       } catch (err) {
         statusEl.textContent = 'Errore: ' + err.message;
       } finally {
@@ -1450,20 +1435,22 @@
       }
     });
 
+    if (previewBtn) {
+      previewBtn.addEventListener('click', () => {
+        let form;
+        try { form = publishForm(); } catch (e) { statusEl.textContent = e.message; return; }
+        openPublicationPreview(form, statusEl);
+      });
+    }
+
     if (copyBtn) {
       copyBtn.addEventListener('click', async () => {
-        if (!window.isSecureContext || !navigator.clipboard || !navigator.clipboard.write || typeof ClipboardItem === 'undefined') {
-          statusEl.textContent = 'Copia negli appunti non disponibile in questo browser/connessione (serve HTTPS).';
-          return;
-        }
         if (copyBtn.disabled) return;
+        let form;
+        try { form = publishForm(); } catch (e) { statusEl.textContent = e.message; return; }
         copyBtn.disabled = true;
         try {
-          const blob = await fetchViewBlob();
-          await navigator.clipboard.write([new ClipboardItem({ [blob.type || 'image/jpeg']: blob })]);
-          statusEl.textContent = 'Copiato. Ora vai su X e incolla con Ctrl+V.';
-        } catch (err) {
-          statusEl.textContent = 'Copia non riuscita: ' + err.message;
+          await copyPublicationImage(form, statusEl);
         } finally {
           copyBtn.disabled = false;
         }
@@ -1478,8 +1465,8 @@
         window.open('https://twitter.com/intent/tweet?text=' + text, '_blank');
         const form = new FormData();
         form.append('platform', 'twitter');
-        form.append('kind', prefix === 'study' ? 'study' : 'comparison');
-        form.append('ref_id', prefix === 'study' ? getStudyId() : (comparisonId || ''));
+        form.append('kind', kind);
+        form.append('ref_id', kind === 'study' ? getStudyId() : (comparisonId || ''));
         form.append('study_id', getStudyId());
         form.append('caption', captionEl.value);
         fetch('api/share.php', { method: 'POST', body: form }).catch(() => {});
@@ -1487,15 +1474,10 @@
     }
   }
 
-  // Nomi delle viste dell'interfaccia -> file del confronto (gli stessi che
-  // il server usa per Telegram, vedi api/share.php). "Originale A/B" non
-  // hanno un proprio file: sono le immagini effettivamente confrontate.
-  const VIEW_FILES = { 'original-a': 'enhanced_a', 'original-b': 'aligned_b' };
   setupShareBlock({
     prefix: 'cmp',
     getComparisonId: () => state.currentComparison && state.currentComparison.comparisonId,
     getView: () => state.currentView,
-    getViewUrl: () => state.currentComparison && state.currentComparison.urls[VIEW_FILES[state.currentView] || state.currentView],
     getProvenance: () => state.currentProvenance,
     getStudyId: () => window.ORBITALEYE.studyId,
   });
@@ -1508,11 +1490,6 @@
     getComparisonId: () => window.ORBITALEYE.latestSavedComparisonId,
     getProvenance: () => window.ORBITALEYE.summaryImagery,
     getView: () => 'overlay',
-    getViewUrl: () => {
-      const id = window.ORBITALEYE.latestSavedComparisonId;
-      const latest = window.ORBITALEYE.comparisons.find((c) => parseInt(c.id, 10) === id);
-      return latest ? window.ORBITALEYE.mediaBase + encodeURIComponent(latest.result_paths.overlay) : null;
-    },
     getStudyId: () => window.ORBITALEYE.studyId,
   });
 

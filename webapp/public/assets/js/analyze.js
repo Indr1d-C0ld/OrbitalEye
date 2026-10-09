@@ -1866,19 +1866,15 @@
   // frammento, cioè lo stesso rettangolo sorgente già usato per il
   // frammento "pulito" — così i due restano sempre perfettamente allineati.
   // Nessuna maniglia di modifica: non è contenuto, solo un aiuto dal vivo.
-  // opts.publish: il frammento va verso l'esterno (copia, download,
-  // condivisione) e riceve, se richiesto, la striscia con data e fonte. Mai
-  // per il salvataggio come nuova ripresa: lì il testo diventerebbe parte
-  // dei pixel analizzati.
-  function buildCropBlob(opts = {}) {
-    const publish = opts.publish !== false;
+  // Data, fonte e scheda non si disegnano qui: le aggiunge il server solo a
+  // ciò che si pubblica (vedi PublicationBuilder), così il frammento resta
+  // pulito per la ricerca inversa e per il salvataggio come nuova ripresa.
+  function buildCropBlob() {
     return new Promise((resolve) => {
       if (!lastCropCanvas) { resolve(null); return; }
       const includeLayerEl = $('#an-crop-include-overlay-layer');
       const includeLayer = !!(includeLayerEl && includeLayerEl.checked && lastCropNativeRect);
-      const attributionEl = $('#an-crop-include-attribution');
-      const includeAttribution = publish && !!(attributionEl && attributionEl.checked);
-      if (!includeLayer && !includeAttribution) {
+      if (!includeLayer) {
         lastCropCanvas.toBlob(resolve, 'image/png');
         return;
       }
@@ -1904,22 +1900,18 @@
           unit: imgRight.naturalWidth / canvas.width,
         });
       }
-      if (includeAttribution) drawAttributionStrip(fctx, finalCanvas.width, finalCanvas.height, imageryStrip);
       finalCanvas.toBlob(resolve, 'image/png');
     });
   }
 
-  // Funzioni comuni in common.js (drawAttributionStrip, confirmEsriPublishing),
-  // qui con il testo e la fonte di questa ripresa.
-  const imageryStrip = (CFG.imagery && CFG.imagery.strip) || '';
+  // Avviso Esri prima di pubblicare (confirmEsriPublishing in common.js).
   const imageryIsEsri = !!(CFG.imagery && CFG.imagery.isEsri);
 
   // Aggiorna anche l'anteprima del frammento quando si spunta/sspunta la
   // checkbox, così quello che si vede combacia sempre con quello che le
   // azioni sotto (copia/scarica/salva/condividi) useranno davvero.
   const cropIncludeOverlayEl = $('#an-crop-include-overlay-layer');
-  const cropIncludeAttributionEl = $('#an-crop-include-attribution');
-  [cropIncludeOverlayEl, cropIncludeAttributionEl].filter(Boolean).forEach((el) => {
+  [cropIncludeOverlayEl].filter(Boolean).forEach((el) => {
     el.addEventListener('change', async () => {
       if (!lastCropCanvas) return;
       const blob = await buildCropBlob();
@@ -2014,7 +2006,7 @@
     cropSaveBtn.disabled = true;
     status.textContent = 'Salvataggio in corso...';
     try {
-      const blob = await buildCropBlob({ publish: false });
+      const blob = await buildCropBlob();
       if (!blob) throw new Error('impossibile generare l\'immagine');
       const form = new FormData();
       form.append('study_id', CFG.studyId);
@@ -2049,27 +2041,31 @@
     }
   });
 
+  // Richiesta di pubblicazione del ritaglio: il frammento "pulito" e la sua
+  // larghezza in pixel della ripresa originale (per la barra di scala).
+  async function cropPublishForm() {
+    const blob = await buildCropBlob();
+    if (!blob) throw new Error('impossibile generare l\'immagine');
+    const form = new FormData();
+    form.append('kind', 'capture');
+    form.append('ref_id', CFG.captureId);
+    form.append('study_id', CFG.studyId);
+    form.append('caption', $('#an-crop-share-caption').value);
+    form.append('image', blob, 'ritaglio_ripresa' + CFG.captureId + '.png');
+    if (lastCropNativeRect) form.append('natural_width', lastCropNativeRect.sw);
+    appendPublishOptions(form, 'an-crop');
+    return form;
+  }
+
   cropShareTelegramBtn.addEventListener('click', async () => {
     if (cropShareTelegramBtn.disabled) return; // evita invii duplicati su doppio click/tap
     if (!lastCropBlob) return;
     if (!confirmEsriPublishing(imageryIsEsri)) return;
     const status = $('#an-crop-share-status');
     cropShareTelegramBtn.disabled = true;
-    status.textContent = 'Invio in corso...';
+    status.textContent = 'Composizione e invio in corso...';
     try {
-      const blob = await buildCropBlob();
-      if (!blob) throw new Error('impossibile generare l\'immagine');
-      const form = new FormData();
-      form.append('platform', 'telegram');
-      form.append('kind', 'capture');
-      form.append('ref_id', CFG.captureId);
-      form.append('study_id', CFG.studyId);
-      form.append('caption', $('#an-crop-share-caption').value);
-      form.append('image', blob, 'ritaglio_ripresa' + CFG.captureId + '.png');
-      const res = await fetch('api/share.php', { method: 'POST', body: form });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Errore');
-      status.textContent = 'Ritaglio inviato su Telegram.';
+      status.textContent = await sendPublication(await cropPublishForm());
     } catch (err) {
       status.textContent = 'Errore: ' + err.message;
     } finally {
@@ -2077,12 +2073,27 @@
     }
   });
 
+  $('#an-crop-share-preview-btn').addEventListener('click', () => {
+    if (!lastCropBlob) return;
+    openPublicationPreview(cropPublishForm(), $('#an-crop-share-status'));
+  });
+
+  $('#an-crop-share-copy-btn').addEventListener('click', async () => {
+    if (!lastCropBlob) return;
+    const status = $('#an-crop-share-status');
+    try {
+      await copyPublicationImage(cropPublishForm(), status);
+    } catch (err) {
+      status.textContent = 'Copia non riuscita: ' + err.message;
+    }
+  });
+
   cropShareTwitterBtn.addEventListener('click', () => {
     if (!confirmEsriPublishing(imageryIsEsri)) return;
     // Stesso schema del pannello "Condividi" qui sotto: l'intent di X non
     // supporta l'allegato di un'immagine via URL, solo testo — l'analista
-    // incolla/trascina lui il ritaglio (pulsante "Copia negli appunti" qui
-    // sopra, già usato per Lens/Claude). L'invio resta un gesto manuale.
+    // incolla/trascina lui il ritaglio (pulsante "Copia per X", nel formato
+    // scelto). L'invio resta un gesto manuale.
     const text = encodeURIComponent($('#an-crop-share-caption').value);
     window.open('https://twitter.com/intent/tweet?text=' + text, '_blank');
     const form = new FormData();
@@ -2103,13 +2114,25 @@
   const shareCaptionEl = $('#an-share-caption');
   const shareStatusEl = $('#an-share-status');
 
+  // La copia di lavoro così com'è: il formato (scheda, striscia...) lo
+  // applica il server, uguale per Telegram, copia e anteprima.
   function shareCanvasBlob() {
     const shareCanvas = renderAdjustedCanvas();
-    const includeEl = $('#an-share-include-attribution');
-    if (includeEl && includeEl.checked) {
-      drawAttributionStrip(shareCanvas.getContext('2d'), shareCanvas.width, shareCanvas.height, imageryStrip);
-    }
     return new Promise((resolve) => shareCanvas.toBlob(resolve, 'image/jpeg', 0.92));
+  }
+
+  async function capturePublishForm() {
+    const blob = await shareCanvasBlob();
+    if (!blob) throw new Error('impossibile generare l\'immagine');
+    const form = new FormData();
+    form.append('kind', 'capture');
+    form.append('ref_id', CFG.captureId);
+    form.append('study_id', CFG.studyId);
+    form.append('caption', shareCaptionEl.value);
+    form.append('image', blob, 'ripresa_' + CFG.captureId + '.jpg');
+    form.append('natural_width', imgRight.naturalWidth);
+    appendPublishOptions(form, 'an');
+    return form;
   }
 
   const shareTelegramBtn = $('#an-share-telegram-btn');
@@ -2119,21 +2142,9 @@
     if (shareTelegramBtn.disabled) return; // evita invii duplicati su doppio click/tap
     if (!confirmEsriPublishing(imageryIsEsri)) return;
     shareTelegramBtn.disabled = true;
-    shareStatusEl.textContent = 'Preparazione immagine e invio in corso...';
+    shareStatusEl.textContent = 'Composizione e invio in corso...';
     try {
-      const blob = await shareCanvasBlob();
-      if (!blob) { shareStatusEl.textContent = 'Errore: impossibile generare l\'immagine.'; return; }
-      const form = new FormData();
-      form.append('platform', 'telegram');
-      form.append('kind', 'capture');
-      form.append('ref_id', CFG.captureId);
-      form.append('study_id', CFG.studyId);
-      form.append('caption', shareCaptionEl.value);
-      form.append('image', blob, 'ripresa_' + CFG.captureId + '.jpg');
-      const res = await fetch('api/share.php', { method: 'POST', body: form });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Errore');
-      shareStatusEl.textContent = 'Inviato su Telegram.';
+      shareStatusEl.textContent = await sendPublication(await capturePublishForm());
     } catch (err) {
       shareStatusEl.textContent = 'Errore: ' + err.message;
     } finally {
@@ -2141,18 +2152,15 @@
     }
   });
 
+  $('#an-share-preview-btn').addEventListener('click', () => {
+    openPublicationPreview(capturePublishForm(), shareStatusEl);
+  });
+
   shareCopyBtn.addEventListener('click', async () => {
-    if (!window.isSecureContext || !navigator.clipboard || !navigator.clipboard.write || typeof ClipboardItem === 'undefined') {
-      shareStatusEl.textContent = 'Copia negli appunti non disponibile in questo browser/connessione (serve HTTPS).';
-      return;
-    }
     if (shareCopyBtn.disabled) return;
     shareCopyBtn.disabled = true;
     try {
-      const blob = await shareCanvasBlob();
-      if (!blob) { shareStatusEl.textContent = 'Errore: impossibile generare l\'immagine.'; return; }
-      await navigator.clipboard.write([new ClipboardItem({ 'image/jpeg': blob })]);
-      shareStatusEl.textContent = 'Copiato. Ora vai su X e incolla con Ctrl+V.';
+      await copyPublicationImage(capturePublishForm(), shareStatusEl);
     } catch (err) {
       shareStatusEl.textContent = 'Copia non riuscita: ' + err.message;
     } finally {

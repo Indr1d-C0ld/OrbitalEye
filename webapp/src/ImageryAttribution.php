@@ -127,26 +127,10 @@ final class ImageryAttribution
                 $captionCredits[self::creditSentence($info)] = true;
             }
         }
-        // Più riprese Esri con fornitori diversi: un solo "© Esri" con tutti
-        // i fornitori, invece di "© Esri, Microsoft · © Esri, Vantor".
-        $esriProviders = [];
-        foreach (array_keys($credits) as $credit) {
-            // Solo la forma "© Esri, fornitore, ...": la dicitura senza
-            // metadati ("© Esri e licenzianti") resta intatta.
-            if (strpos($credit, '© Esri, ') === 0) {
-                unset($credits[$credit]);
-                foreach (array_slice(explode(', ', $credit), 1) as $provider) {
-                    $esriProviders[$provider] = true;
-                }
-                $credits['© Esri'] = true;
-            }
-        }
-        if (isset($credits['© Esri']) && $esriProviders) {
-            $credits = ['© Esri, ' . implode(', ', array_keys($esriProviders)) => true] + array_diff_key($credits, ['© Esri' => true]);
-        }
         $strip = implode(' · ', $stripParts);
-        if ($credits) {
-            $strip .= ' · ' . implode(' · ', array_keys($credits));
+        $merged = self::mergeCredits(array_keys($credits));
+        if ($merged) {
+            $strip .= ' · ' . implode(' · ', $merged);
         }
         return [
             'is_esri' => $isEsri,
@@ -186,11 +170,10 @@ final class ImageryAttribution
     ];
 
     /**
-     * Scrive la striscia di provenienza su un'immagine lato server — per le
-     * immagini che partono direttamente dal server (confronti, riepilogo di
-     * studio inviati a Telegram). Stesso aspetto di drawAttributionStrip()
-     * in common.js. Se il font o GD non sono disponibili restituisce null:
-     * l'attribuzione resta comunque nella didascalia.
+     * Scrive la striscia di provenienza su un'immagine, lato server: per
+     * ogni pubblicazione nel formato "striscia" e per le riprese di un album
+     * (vedi PublicationBuilder). Se il font o GD non sono disponibili
+     * restituisce null: l'attribuzione resta comunque nella didascalia.
      *
      * @return array{0:string,1:string}|null [byte JPEG, tipo MIME]
      */
@@ -392,6 +375,66 @@ final class ImageryAttribution
             'caption_line' => $captionLine,
             'credit' => $credit,
         ];
+    }
+
+    /**
+     * Attribuzione da riportare sull'immagine pubblicata (scheda), per una o
+     * più provenienze: i crediti brevi delle fonti (più riprese Esri: un solo
+     * "© Esri" con tutti i fornitori) e, una volta sola ciascuna, le frasi
+     * richieste dai loro termini (per Esri quella delle immagini statiche).
+     */
+    public static function publicationCredit(array ...$infos): string
+    {
+        $credits = [];
+        $sentences = [];
+        foreach ($infos as $info) {
+            $credit = $info['credit'] ?? '';
+            if ($credit !== '') {
+                $credits[] = $credit;
+            }
+            $sentence = rtrim(self::creditSentence($info), '.');
+            if ($sentence !== '' && $sentence !== $credit && strpos($sentence, $credit !== '' ? $credit : "\0") === false) {
+                $sentences[$sentence . '.'] = true;
+            }
+        }
+        $short = implode(' · ', self::mergeCredits(array_values(array_unique($credits))));
+        $long = implode(' ', array_keys($sentences));
+        return trim($short !== '' && $long !== '' ? "$short — $long" : $short . $long);
+    }
+
+    /**
+     * Crediti brevi senza ripetizioni: più riprese Esri con fornitori diversi
+     * danno un solo "© Esri, Microsoft, Vantor" invece di "© Esri, Microsoft
+     * · © Esri, Vantor". La dicitura senza metadati ("© Esri e licenzianti")
+     * resta intatta.
+     *
+     * @param string[] $credits
+     * @return string[]
+     */
+    private static function mergeCredits(array $credits): array
+    {
+        $out = [];
+        $esriProviders = [];
+        $esriAt = null;
+        foreach ($credits as $credit) {
+            if (strpos($credit, '© Esri, ') === 0) {
+                foreach (array_slice(explode(', ', $credit), 1) as $provider) {
+                    $esriProviders[$provider] = true;
+                }
+                if ($esriAt === null) {
+                    $esriAt = count($out);
+                    $out[] = '';
+                }
+            } elseif (!in_array($credit, $out, true)) {
+                $out[] = $credit;
+            }
+        }
+        if ($esriAt !== null) {
+            $out[$esriAt] = '© Esri, ' . implode(', ', array_keys($esriProviders));
+            // Con i fornitori noti, la dicitura generica è ridondante.
+            $out = array_values(array_filter($out, fn($c) => $c !== '© Esri e licenzianti'));
+        }
+        return $out;
     }
 
     /** Solo la frase di attribuzione (senza data) di una provenienza. */

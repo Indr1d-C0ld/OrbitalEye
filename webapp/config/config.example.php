@@ -23,4 +23,9 @@ return [
     // Timeout (secondi) per le chiamate al servizio Python (il compare con
     // allineamento + SSIM su immagini grandi può richiedere qualche secondo)
     'python_service_timeout' => 60,
+
+    // Facoltativo: indirizzo di un server Bot API di Telegram locale
+    // (https://github.com/tdlib/telegram-bot-api), che accetta file fino a
+    // 2 GB. Senza, si usa l'API pubblica https://api.telegram.org.
+    // 'telegram_api_base' => 'http://127.0.0.1:8081',
 ];

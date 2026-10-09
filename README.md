@@ -77,7 +77,10 @@ Il confronto non è una semplice sovrapposizione: le due immagini vengono prima 
 **Organizzazione e output**
 - Annotazioni e misurazioni persistenti, disegnabili direttamente sulle immagini
 - Libreria degli studi salvati, con ricerca
-- **Condivisione** manuale di ripresa/confronto/riepilogo studio su Telegram (bot) o X/Twitter (finestra di composizione), con registro di controllo — nessuna pubblicazione automatica, mai agganciata al motore di scaricamento
+- **Condivisione** manuale di ripresa/ritaglio/confronto/riepilogo studio su Telegram (bot) o X/Twitter (finestra di composizione), con registro di controllo — nessuna pubblicazione automatica, mai agganciata al motore di scaricamento
+- **Scheda di pubblicazione**: l'immagine con una fascia che riporta titolo, data reale e sensore, barra di scala, freccia del nord e attribuzione richiesta dalla fonte — composta sul server, identica su Telegram, nella copia da incollare su X e nell'anteprima; per i confronti anche con **Prima e Dopo affiancate**
+- **Album Telegram** con l'immagine principale e le due riprese confrontate, e **file a piena risoluzione** allegato (Telegram comprime le foto)
+- **Coda di revisione** facoltativa: le condivisioni vanno prima a una chat privata, dove si vedono esattamente come usciranno, e partono verso il canale solo dopo l'approvazione nella piattaforma (pagina **Pubblicazioni**, con il registro di tutto ciò che è stato pubblicato)
 - **Provenienza in ogni pubblicazione**: data reale dell'immagine, sensore e attribuzione richiesta dalla fonte (Esri, Copernicus o quella dichiarata al caricamento) nella didascalia e, a scelta, in una striscia sull'immagine stessa; avviso sui termini d'uso Esri accanto ai pulsanti di condivisione; segnalazione quando si confrontano due riprese della stessa acquisizione
 - **Export georeferenziato KML/GeoJSON** di annotazioni e misurazioni (per Google Earth / QGIS), esatto anche per riprese ruotate, ritagli e copie derivate
 - Export per singola immagine, per confronto (ZIP con immagini + report HTML/JSON) o per l'intera libreria
@@ -105,6 +108,7 @@ orbitaleye/
     ├── raw/                    riprese originali (upload o fetch)
     ├── processed/               output di enhancement standalone
     ├── results/                  output dei confronti (overlay, heatmap, contorni, maschera)
+    ├── publications/              immagini in attesa di revisione (coda di pubblicazione)
     └── config/                    credenziali dinamiche (Sentinel Hub/Esri), non versionate
 ```
 
@@ -266,7 +270,10 @@ Nella vista di analisi ripresa singola sono disponibili anche **misurazioni** di
 ### Condivisione ed export
 
 - **Condivisione** (Telegram / X) di una ripresa, di un confronto o del riepilogo di uno studio: gesto sempre manuale e previewabile, con didascalia modificabile e registro di controllo. Nessun contenuto viene mai pubblicato automaticamente.
-- **Data e fonte**: la didascalia proposta riporta la data reale dell'immagine (non quella del download) e l'attribuzione richiesta dalla fonte; l'opzione "Scrivi data e fonte sull'immagine" aggiunge una striscia in basso, così l'informazione resta attaccata all'immagine anche quando viene inoltrata. La striscia non viene mai scritta nelle riprese salvate in archivio (resterebbe nei pixel analizzati).
+- **Data e fonte**: la didascalia proposta riporta la data reale dell'immagine (non quella del download) e l'attribuzione richiesta dalla fonte.
+- **Formato**: *Scheda di pubblicazione* (predefinito) — l'immagine con una fascia in basso: titolo (modificabile), data reale e sensore, barra di scala, freccia del nord (ruotata per le aree ruotate) e attribuzione completa; *Scheda con Prima e Dopo affiancate* per i confronti, con data su ciascuna; *Striscia data e fonte*; *Solo immagine*. Le immagini sono composte sul server, quindi Telegram, la copia per X (**📋 Copia**) e l'anteprima (**👁 Anteprima**) sono identiche. Data, fonte e scheda non vengono mai scritte nelle riprese salvate in archivio né nel frammento per la ricerca inversa. Nessuna coordinata viene aggiunta.
+- **Album e file a piena risoluzione** (Telegram): per un confronto, un album con l'immagine principale e le due riprese a piena dimensione, ciascuna con la propria data; per qualunque condivisione, la stessa immagine anche come file, senza la compressione di Telegram.
+- **Revisione**: con una chat di revisione configurata, l'opzione **Passa dalla revisione** (attiva di default) manda il contenuto prima lì, con un link alla pagina **📤 Pubblicazioni**. Lì si vede com'è, si può correggere la didascalia, e lo si **approva** — solo allora parte, identico, verso il canale — o lo si **scarta**. La chat di revisione riceve l'esito. Il bot non riceve comandi da Telegram: l'approvazione avviene sempre nella piattaforma, dopo il login.
 - **Export georeferenziato KML / GeoJSON** di annotazioni e misurazioni, pronto per Google Earth / QGIS. La conversione in coordinate geografiche è esatta anche per le riprese ruotate e per ritagli e copie derivate (che conservano l'area geografica della sorgente); solo per un'immagine caricata a mano senza alcun riferimento viene usata, con un avviso esplicito, l'area dello studio.
 - **Singola immagine**: download diretto con nome file descrittivo.
 - **Confronto**: ZIP con le due riprese originali, le immagini di risultato, un report HTML autonomo (apribile offline, con tutti i parametri/statistiche/regioni/annotazioni) e gli stessi dati in JSON.
@@ -276,9 +283,14 @@ Nella vista di analisi ripresa singola sono disponibili anche **misurazioni** di
 
 Dalla pagina **Impostazioni** puoi modificare in qualunque momento, senza toccare file:
 - Credenziali Copernicus (Sentinel Hub) e token Esri (sincronizzate automaticamente col servizio Python)
-- Bot Telegram per la condivisione (token + chat id; restano nel DB, mai in un file versionato)
+- Bot Telegram per la condivisione (token + chat id; restano nel DB, mai in un file versionato), chat di revisione facoltativa e indirizzo pubblico della piattaforma (per il link "approva" nei messaggi di revisione)
 - Parametri di analisi predefiniti (metodo diff, soglia, area minima blob, kernel morfologico, opacità overlay)
 - Password dell'account
+
+Per inviare file più grandi dei limiti dell'API pubblica di Telegram si può
+usare un [server Bot API locale](https://github.com/tdlib/telegram-bot-api):
+basta indicarne l'indirizzo in `webapp/config/config.php` con la chiave
+`telegram_api_base` (vedi `config.example.php`).
 
 Lo **scaricamento pianificato** richiede una voce cron che invochi
 periodicamente `webapp/cli/run_scheduled_downloads.php` (es. ogni 6 ore); le

@@ -415,10 +415,6 @@ require __DIR__ . '/partials/nav.php';
       <input type="checkbox" id="an-crop-include-overlay-layer">
       <label style="margin:0;">Includi annotazioni/misurazioni/scala nel frammento <span class="info-tip" tabindex="0" data-tip="Incorpora nei pixel del frammento il livello con annotazioni, misurazioni ed eventuale barra di scala, allineato all'area ritagliata. Vale per tutte le azioni qui sotto (copia, scarica, apri motori/assistenti, salva, condividi). Sempre disattivato di default: una scelta esplicita — non include mai le maniglie di modifica.">?</span></label>
     </div>
-    <div class="checkbox-row" style="margin-bottom:10px;">
-      <input type="checkbox" id="an-crop-include-attribution" checked>
-      <label for="an-crop-include-attribution" style="margin:0;">Scrivi data e fonte sul frammento <span class="info-tip" tabindex="0" data-tip="Striscia in basso con la data reale dell'immagine e l'attribuzione della fonte (richiesta dai termini d'uso) — per copia, download e condivisione. Toglila se il frammento ti serve per una ricerca inversa (Lens o assistenti), dove il testo potrebbe disturbare. Non viene mai scritta nel ritaglio salvato come ripresa.">?</span></label>
-    </div>
     <div class="grid grid-2">
       <div>
         <h3>Frammento ritagliato</h3>
@@ -459,14 +455,17 @@ require __DIR__ . '/partials/nav.php';
         <span class="hint" id="an-crop-save-status"></span>
       </div>
       <div>
-        <h3>Condividi ritaglio <span class="info-tip" tabindex="0" data-tip="Invia il frammento su Telegram, oppure apri la finestra di composizione X — per incollare l'immagine su X usa 'Copia negli appunti' qui sopra. Nessuna pubblicazione automatica, il ritaglio non deve essere salvato prima per poter essere condiviso.">?</span></h3>
+        <h3>Condividi ritaglio <span class="info-tip" tabindex="0" data-tip="Invia il frammento su Telegram, oppure copialo nel formato scelto e apri la finestra di composizione X per incollarlo. Il frammento qui sopra resta senza scritte (per la ricerca inversa): data, fonte e scheda vengono aggiunte solo a ciò che si pubblica. Nessuna pubblicazione automatica, il ritaglio non deve essere salvato prima per poter essere condiviso.">?</span></h3>
         <div class="field">
           <label>Didascalia</label>
           <textarea id="an-crop-share-caption" rows="4" style="width:100%;"><?= e($cropShareDefaultCaption) ?></textarea>
         </div>
+        <?php $publishPrefix = 'an-crop'; $publishKind = 'capture'; $publishTitle = $study['title']; require __DIR__ . '/partials/publish_options.php'; ?>
         <?php require __DIR__ . '/partials/esri_share_notice.php'; ?>
         <div class="tag-row">
+          <button type="button" class="btn btn-sm" id="an-crop-share-preview-btn">👁 Anteprima</button>
           <button type="button" class="btn btn-primary btn-sm" id="an-crop-share-telegram-btn">📤 Invia su Telegram</button>
+          <button type="button" class="btn btn-sm" id="an-crop-share-copy-btn">📋 Copia per X</button>
           <button type="button" class="btn btn-sm" id="an-crop-share-twitter-btn">🐦 Apri su X</button>
         </div>
         <span class="hint" id="an-crop-share-status"></span>
@@ -481,12 +480,10 @@ require __DIR__ . '/partials/nav.php';
     <label>Didascalia</label>
     <textarea id="an-share-caption" rows="4" style="width:100%;"><?= e($shareDefaultCaption) ?></textarea>
   </div>
-  <label class="checkbox-row" style="margin:6px 0;">
-    <input type="checkbox" id="an-share-include-attribution" checked>
-    Scrivi data e fonte sull'immagine <span class="info-tip" tabindex="0" data-tip="Aggiunge in basso una striscia con la data reale dell'immagine, il sensore e l'attribuzione della fonte (richiesta dai termini d'uso). Vale per Telegram e per la copia negli appunti.">?</span>
-  </label>
+  <?php $publishPrefix = 'an'; $publishKind = 'capture'; $publishTitle = $study['title']; require __DIR__ . '/partials/publish_options.php'; ?>
   <?php require __DIR__ . '/partials/esri_share_notice.php'; ?>
   <div class="tag-row">
+    <button type="button" class="btn btn-sm" id="an-share-preview-btn">👁 Anteprima</button>
     <button type="button" class="btn btn-primary btn-sm" id="an-share-telegram-btn">📤 Invia su Telegram</button>
     <button type="button" class="btn btn-sm" id="an-share-copy-btn">📋 Copia immagine negli appunti</button>
     <button type="button" class="btn btn-sm" id="an-share-twitter-btn">🐦 Apri su X</button>

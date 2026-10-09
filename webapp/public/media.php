@@ -15,7 +15,8 @@ Auth::requireLogin();
 //  2) estensione immagine in allowlist — evita di trasformare questo
 //     endpoint in un lettore di file generico per qualunque cosa finisca
 //     in quelle cartelle.
-const MEDIA_ALLOWED_DIRS = ['raw', 'processed', 'results'];
+// publications: immagini in attesa di revisione (vedi Publication.php).
+const MEDIA_ALLOWED_DIRS = ['raw', 'processed', 'results', 'publications'];
 const MEDIA_ALLOWED_TYPES = [
     'png' => 'image/png',
     'jpg' => 'image/jpeg',

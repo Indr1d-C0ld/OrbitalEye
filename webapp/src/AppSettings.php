@@ -16,6 +16,11 @@ final class AppSettings
         'esri_api_key' => '',
         'telegram_bot_token' => '',
         'telegram_chat_id' => '',
+        // Coda di revisione (vedi Publication): chat privata dove arrivano le
+        // condivisioni da approvare, e indirizzo pubblico della piattaforma
+        // per il link "approva" nei messaggi. Entrambi facoltativi.
+        'telegram_review_chat_id' => '',
+        'public_base_url' => '',
     ];
 
     public static function all(): array

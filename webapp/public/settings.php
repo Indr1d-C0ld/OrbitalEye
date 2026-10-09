@@ -43,6 +43,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         AppSettings::setMany([
             'telegram_bot_token' => trim($_POST['telegram_bot_token'] ?? ''),
             'telegram_chat_id' => trim($_POST['telegram_chat_id'] ?? ''),
+            'telegram_review_chat_id' => trim($_POST['telegram_review_chat_id'] ?? ''),
+            'public_base_url' => preg_match('#^https?://#i', trim($_POST['public_base_url'] ?? '')) ? rtrim(trim($_POST['public_base_url']), '/') : '',
         ]);
         $message = 'Impostazioni Telegram salvate.';
     }
@@ -52,6 +54,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $client = new TelegramClient();
             $client->sendMessage('OrbitalEye: test di connessione riuscito. Il canale è configurato correttamente.');
             $message = 'Messaggio di test inviato: controlla il canale/chat configurato.';
+            $review = TelegramClient::forReview();
+            if ($review) {
+                $review->sendMessage('OrbitalEye: test di connessione riuscito. Questa è la chat di revisione.');
+                $message = 'Messaggi di test inviati al canale e alla chat di revisione.';
+            }
         } catch (Throwable $e) {
             $error = 'Test fallito: ' . $e->getMessage();
         }
@@ -136,6 +143,14 @@ require __DIR__ . '/partials/nav.php';
       <div class="field">
         <label>ID canale/chat <span class="info-tip" tabindex="0" data-tip="Per un canale è un numero negativo che inizia con -100 (es. -1001234567890). Si trova inoltrando un messaggio del canale a @userinfobot, o dai log della prima chiamata API se il bot è già stato aggiunto.">?</span></label>
         <input type="text" name="telegram_chat_id" value="<?= e($settings['telegram_chat_id']) ?>" placeholder="-1001234567890">
+      </div>
+      <div class="field">
+        <label>ID chat di revisione (facoltativo) <span class="info-tip" tabindex="0" data-tip="Un gruppo o una chat privata in cui aggiungere lo stesso bot. Se impostata, le condivisioni Telegram possono passare prima da qui (opzione 'Passa dalla revisione'): chi deve approvare vede il contenuto esattamente come uscirà, e lo pubblica sul canale — o lo scarta — dalla pagina Pubblicazioni.">?</span></label>
+        <input type="text" name="telegram_review_chat_id" value="<?= e($settings['telegram_review_chat_id']) ?>" placeholder="-1009876543210">
+      </div>
+      <div class="field">
+        <label>Indirizzo pubblico della piattaforma (facoltativo) <span class="info-tip" tabindex="0" data-tip="Es. https://tuo-dominio.tld/orbitaleye — serve solo al pulsante 'Approva o scarta in OrbitalEye' nei messaggi di revisione. Il bot non riceve comandi da Telegram: l'approvazione avviene sempre nella piattaforma, dopo il login.">?</span></label>
+        <input type="url" name="public_base_url" value="<?= e($settings['public_base_url']) ?>" placeholder="https://tuo-dominio.tld/orbitaleye">
       </div>
       <button class="btn btn-primary" type="submit">Salva</button>
     </form>

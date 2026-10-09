@@ -4,6 +4,168 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-10-09 — Flusso di pubblicazione: scheda, album Prima/Dopo, file a piena risoluzione, coda di revisione
+
+Quarta parte del piano di evoluzione. Le condivisioni avevano due
+composizioni diverse: la striscia data/fonte era disegnata nel browser per
+riprese e ritagli e sul server per confronti e riepiloghi. Partivano sempre
+come singola foto compressa da Telegram, e dritte sul canale.
+
+### Composizione unica sul server
+
+- **[webapp/src/PublicationComposer.php](webapp/src/PublicationComposer.php)** (nuovo) —
+  GD con DejaVu Sans.
+  - **Scheda di pubblicazione**: l'immagine e una fascia con titolo, data
+    reale e sensore, barra di scala, freccia del nord e attribuzione
+    completa (per Esri la frase dei termini delle immagini statiche).
+  - **Scheda con Prima e Dopo affiancate**, una sopra l'altra se molto
+    larghe, con l'etichetta e la data su ciascuna.
+  - Larghezza fra 1000 e 2560 px: un ritaglio piccolo viene ingrandito, e
+    la barra di scala ne tiene conto.
+  - L'altezza dell'immagine non supera 4000 px. Un ritaglio stretto e alto
+    (una pista, una nave) resta al centro di una fascia più larga invece di
+    diventare 1000×22500, che Telegram rifiuterebbe.
+  - Immagini oltre 40 megapixel rifiutate con un messaggio chiaro, nessuna
+    copia superflua dei JPEG, limite di memoria alzato solo durante la
+    composizione.
+  - Un titolo senza spazi (hashtag, indirizzo) va a capo invece di finire
+    sopra la scala; titolo limitato a 120 caratteri anche sul server.
+  - La freccia del nord ruota per le aree scaricate ruotate: positivo =
+    orario sulla mappa, quindi il nord è a −θ.
+  - Nessuna coordinata viene aggiunta.
+- **[webapp/src/PublicationBuilder.php](webapp/src/PublicationBuilder.php)** (nuovo) —
+  da una richiesta (ripresa o ritaglio, confronto, riepilogo; formato
+  scheda, affiancata, striscia o solo immagine; album; documento) produce
+  le immagini da pubblicare.
+  - La scala è solo quella della ripresa georiferita (`Capture::resolveMpp`),
+    mai quella ricavata dall'area dello studio: su un'immagine pubblica una
+    barra sbagliata sarebbe un'informazione falsa. Viene riportata
+    all'immagine effettivamente caricata (`natural_width`, limitata alla
+    larghezza della ripresa: un ritaglio ne copre una parte).
+  - Il file "a piena risoluzione" di una scheda viene composto senza il
+    limite di 2560 px delle foto Telegram, fino a 8000 px.
+  - Verifica le immagini caricate (tipo reale, 10 MB).
+  - La scheda affiancata si può avere anche dalla vista Prima/Dopo, che non
+    è un'immagine.
+- **[webapp/public/api/publication_preview.php](webapp/public/api/publication_preview.php)** (nuovo) —
+  l'immagine composta esattamente come partirebbe, per l'anteprima e per la
+  copia da incollare su X.
+- **[webapp/src/ImageryAttribution.php](webapp/src/ImageryAttribution.php)** —
+  `publicationCredit()` per una o più provenienze: un solo "© Esri" con
+  tutti i fornitori e una sola frase legale. Prima, con due riprese Esri,
+  la frase era ripetuta. Unione dei crediti in `mergeCredits()`, usata
+  anche dalle strisce.
+
+### Telegram: album, documento, link
+
+- **[webapp/src/TelegramClient.php](webapp/src/TelegramClient.php)** — una
+  chiamata multipart generica.
+  - `sendMediaGroup` (album), `sendDocument` (file senza compressione),
+    pulsanti-link, destinazione variabile (canale o chat di revisione).
+  - Il token viene oscurato negli errori di rete.
+  - Server Bot API locale facoltativo (`telegram_api_base` in config.php,
+    file fino a 2 GB).
+  - Il bot non riceve aggiornamenti (niente webhook né getUpdates): lo
+    stesso bot può servire altri programmi e non c'è un endpoint pubblico.
+- **Album di un confronto**: l'immagine principale nel formato scelto e,
+  a piena dimensione, le due riprese confrontate, ciascuna con la propria
+  data e il proprio fornitore.
+- **File a piena risoluzione** allegato in risposta alla foto o all'album.
+- **Errori parziali**: solo il primo invio (la foto o l'album) è
+  decisivo. Se dopo fallisce il file allegato, il contenuto è già pubblico:
+  viene registrato come pubblicato, con un avviso. Prima l'errore invitava
+  a riprovare, e un secondo clic lo pubblicava due volte.
+- Lunghezza della didascalia contata come la conta Telegram, in unità
+  UTF-16 (un'emoji vale 2).
+
+### Coda di revisione
+
+- **[webapp/schema.sql](webapp/schema.sql)**,
+  **[webapp/src/Publication.php](webapp/src/Publication.php)** (nuovo) —
+  tabella `publications`.
+  - Le immagini già composte vengono salvate in `storage/publications/`.
+    Alla chat di revisione arriva un messaggio "🕵 DA APPROVARE" con il link
+    alla coda e, in risposta, il contenuto con la didascalia identica a
+    quella che andrà sul canale. Chi approva vede esattamente ciò che
+    uscirà; un'intestazione dentro la didascalia l'avrebbe allungata, e
+    vicino al limite tagliata.
+  - Presa in carico atomica (stato transitorio `sending`): due
+    approvazioni simultanee non pubblicano due volte. Una presa rimasta a
+    metà da oltre 10 minuti (processo interrotto durante l'invio) torna
+    decidibile.
+  - Le immagini delle pubblicazioni scartate vengono eliminate.
+- **[webapp/public/api/share.php](webapp/public/api/share.php)** — riscritto
+  sul costruttore comune: invio diretto al canale oppure in coda. La
+  didascalia oltre 1024 caratteri (limite di Telegram) viene rifiutata
+  prima di comporre.
+- **[webapp/public/api/publications.php](webapp/public/api/publications.php)** (nuovo),
+  **[webapp/public/publications.php](webapp/public/publications.php)** (nuovo) —
+  pagina "📤 Pubblicazioni".
+  - Coda con le immagini, didascalia modificabile, "Approva e pubblica sul
+    canale" e "Scarta".
+  - Registro di tutto ciò che è stato reso pubblico, che prima non era
+    consultabile da nessuna pagina.
+  - La chat di revisione riceve l'esito, in risposta al messaggio
+    originale.
+- **[webapp/public/settings.php](webapp/public/settings.php)**,
+  **[webapp/src/AppSettings.php](webapp/src/AppSettings.php)** — chat di
+  revisione e indirizzo pubblico della piattaforma, per il link; un
+  indirizzo che non è http(s) viene rifiutato. Il test di connessione
+  scrive anche nella chat di revisione.
+- **[webapp/public/partials/nav.php](webapp/public/partials/nav.php)** —
+  voce "Pubblicazioni" con il numero di quelle in attesa.
+- **[webapp/public/media.php](webapp/public/media.php)**,
+  **[fix_permissions.sh](fix_permissions.sh)**, `.gitignore`,
+  `storage/publications/.gitkeep` — nuova cartella `storage/publications/`.
+
+### Interfaccia
+
+- **[webapp/public/partials/publish_options.php](webapp/public/partials/publish_options.php)** (nuovo) —
+  le stesse opzioni in tutti e quattro i blocchi di condivisione (ripresa,
+  ritaglio, confronto, riepilogo): formato, titolo della scheda, album,
+  file a piena risoluzione, "Passa dalla revisione".
+- **[webapp/public/assets/js/common.js](webapp/public/assets/js/common.js)** —
+  `publishOptions`, `fetchPublicationImage`, `openPublicationPreview`,
+  `copyPublicationImage`, `sendPublication`.
+  - L'anteprima si apre nel clic stesso; se il browser blocca la nuova
+    scheda compare un link.
+  - La copia negli appunti passa a ClipboardItem una promessa (Safari) e
+    usa PNG, l'unico formato immagine accettato in modo affidabile dagli
+    appunti: la vecchia copia in JPEG poteva fallire su Chrome.
+  - Rimossa `drawAttributionStrip`: la striscia la fa solo il server.
+  - Una risposta non JSON del server (errore fatale) produce un messaggio
+    leggibile, non "Unexpected token '<'". Gli URL temporanei delle
+    anteprime vengono liberati.
+- **[webapp/public/assets/js/analyze.js](webapp/public/assets/js/analyze.js)**,
+  **[webapp/public/analyze_capture.php](webapp/public/analyze_capture.php)**,
+  **[webapp/public/assets/js/study.js](webapp/public/assets/js/study.js)**,
+  **[webapp/public/study.php](webapp/public/study.php)**:
+  - Copia di lavoro e ritaglio partono "puliti" verso il server.
+  - Il frammento ritagliato resta senza scritte, perché serve alla ricerca
+    inversa.
+  - Nuovi pulsanti "👁 Anteprima" e, per il ritaglio, "📋 Copia per X".
+
+### Verifica
+
+Revisione indipendente del diff: nessun XSS, path traversal o fuga del
+token; nessuna coordinata aggiunta; segno della freccia del nord, scale e
+presa in carico atomica corretti. Corretti i 9 punti segnalati, descritti
+sopra.
+
+Prove in ambiente isolato con un finto server Bot API locale (tramite
+`telegram_api_base`), che registra ogni chiamata:
+- schede di ripresa, ritaglio, confronto e riepilogo; scheda affiancata
+  anche dalla vista Prima/Dopo;
+- album con documento;
+- revisione → approvazione con didascalia corretta → canale e notifica;
+  scarto con eliminazione dei file; doppia decisione bloccata;
+- documento rifiutato da Telegram dopo la foto: pubblicato con avviso;
+- immagini da 6000×4000 (composta con il limite di 128 MB), 8000×6000
+  (rifiutata), ritaglio 40×900, titolo senza spazi;
+- Impostazioni e test di connessione;
+- interfaccia nel browser;
+- 13 pagine senza errori.
+
 ## 2026-10-08 (3) — Strumenti di identificazione: velivoli dalle misure, rilevamento automatico, storico dell'area
 
 Terza parte del piano di evoluzione. L'uso reale della piattaforma è

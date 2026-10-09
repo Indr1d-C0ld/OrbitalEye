@@ -157,6 +157,29 @@ CREATE TABLE IF NOT EXISTS detections (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Coda di revisione delle pubblicazioni (vedi src/Publication.php,
+-- publications.php): una condivisione Telegram può passare prima da una
+-- chat di revisione; qui restano le immagini esattamente come sono state
+-- riviste (storage/publications/) finché qualcuno, dalla piattaforma, non
+-- la approva — e solo allora parte verso il canale — o la scarta.
+-- status: 'pending' | 'published' | 'rejected'.
+CREATE TABLE IF NOT EXISTS publications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    study_id INTEGER REFERENCES studies(id) ON DELETE SET NULL,
+    kind TEXT NOT NULL,
+    ref_id INTEGER,
+    summary TEXT,
+    caption TEXT,
+    format TEXT,
+    media_json TEXT NOT NULL,
+    document_json TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    review_message_id INTEGER,
+    error TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    decided_at TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_captures_study ON captures(study_id);
 CREATE INDEX IF NOT EXISTS idx_comparisons_study ON comparisons(study_id);
 CREATE INDEX IF NOT EXISTS idx_annotations_study ON annotations(study_id);
@@ -168,3 +191,4 @@ CREATE INDEX IF NOT EXISTS idx_alerts_unread ON alerts(is_read);
 CREATE INDEX IF NOT EXISTS idx_shares_study ON shares(study_id);
 CREATE INDEX IF NOT EXISTS idx_detections_capture ON detections(capture_id);
 CREATE INDEX IF NOT EXISTS idx_detections_study ON detections(study_id);
+CREATE INDEX IF NOT EXISTS idx_publications_status ON publications(status);

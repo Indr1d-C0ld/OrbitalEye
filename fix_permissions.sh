@@ -70,7 +70,7 @@ chmod +x "$PROJECT_DIR/fix_permissions.sh"
 #    servizi vi accedono come proprietario o tramite il gruppo condiviso;
 #    prima (775/664) erano leggibili da qualunque utente della macchina.
 chmod 2770 "$STORAGE_DIR" 2>/dev/null || true
-for d in "$STORAGE_DIR/raw" "$STORAGE_DIR/processed" "$STORAGE_DIR/results" "$STORAGE_DIR/config" "$WEBAPP_DATA_DIR"; do
+for d in "$STORAGE_DIR/raw" "$STORAGE_DIR/processed" "$STORAGE_DIR/results" "$STORAGE_DIR/config" "$STORAGE_DIR/publications" "$WEBAPP_DATA_DIR"; do
     mkdir -p "$d"
     chmod 2770 "$d"
 done
