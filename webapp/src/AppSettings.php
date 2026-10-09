@@ -3,7 +3,7 @@
 final class AppSettings
 {
     private const DEFAULTS = [
-        'default_diff_method' => 'ssim',
+        'default_diff_method' => 'auto',
         'default_threshold' => '30',
         'default_use_otsu' => '0',
         'default_morph_kernel' => '3',

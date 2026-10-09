@@ -27,6 +27,47 @@ final class ComparisonException extends RuntimeException
 final class ComparisonRunner
 {
     /**
+     * Metodi di confronto (diff_method), con l'etichetta per l'interfaccia.
+     * 'auto' non arriva mai al servizio di analisi: diventa 'robust' o
+     * 'ssim' secondo la risoluzione (vedi resolveDiffMethod).
+     */
+    public const DIFF_METHODS = [
+        'auto' => 'Automatico (consigliato)',
+        'robust' => 'Robusto: oggetti e colori a 2 m',
+        'ssim' => 'SSIM: struttura pixel per pixel',
+        'absdiff' => 'Differenza assoluta (veloce)',
+    ];
+
+    /**
+     * Sotto questa risoluzione (m/pixel, asse più grossolano) 'auto' usa il
+     * confronto robusto. Lo SSIM sotto il metro segna come cambiata quasi
+     * tutta l'area fra riprese di epoche diverse (94-99% su Sigonella e
+     * Ghedi) e basta 1,5 m di disallineamento della STESSA foto per passare
+     * dallo 0% al 95%; a 10 m (Sentinel-2) resta il metodo adatto.
+     */
+    public const ROBUST_BELOW_MPP = 1.5;
+
+    /** Scala del confronto robusto, in metri (vedi diff.py). */
+    public const ROBUST_SCALE_M = 2.0;
+
+    /**
+     * 'auto' → metodo effettivo per la scala della ripresa A. Il confronto
+     * robusto lavora a celle di ROBUST_SCALE_M metri: senza una scala nota
+     * (o con una scala nulla nei metadati) non saprebbe quanto mediare, e
+     * si usa lo SSIM anche se lo si è scelto a mano.
+     */
+    public static function resolveDiffMethod(string $requested, ?array $mpp): string
+    {
+        $known = $mpp && ($mpp['mpp_x'] ?? 0) > 0 && ($mpp['mpp_y'] ?? 0) > 0;
+        if ($requested === 'auto') {
+            return $known && max($mpp['mpp_x'], $mpp['mpp_y']) < self::ROBUST_BELOW_MPP ? 'robust' : 'ssim';
+        }
+        if ($requested === 'robust' && !$known) {
+            return 'ssim';
+        }
+        return isset(self::DIFF_METHODS[$requested]) ? $requested : 'ssim';
+    }
+    /**
      * @param callable|null $progress fn(int $percent, string $message)
      * @return array risposta come quella di api/compare.php
      */
@@ -77,13 +118,17 @@ final class ComparisonRunner
             ];
         }
 
+        $requestedMethod = is_string($body['diff_method'] ?? null) && isset(self::DIFF_METHODS[$body['diff_method']])
+            ? $body['diff_method'] : 'auto';
         $payload = [
             'capture_a_path' => $captureA['relative_path'],
             'capture_b_path' => $captureB['relative_path'],
             'mpp_x' => $mpp['mpp_x'] ?? null,
             'mpp_y' => $mpp['mpp_y'] ?? null,
             'align' => $align,
-            'diff_method' => $body['diff_method'] ?? 'ssim',
+            'diff_method' => self::resolveDiffMethod($requestedMethod, $mpp ?: null),
+            'diff_method_requested' => $requestedMethod,
+            'analysis_scale_m' => self::ROBUST_SCALE_M,
             'threshold' => (int) ($body['threshold'] ?? 30),
             'use_otsu' => !empty($body['use_otsu']),
             'morph_kernel' => (int) ($body['morph_kernel'] ?? 3),
@@ -123,6 +168,14 @@ final class ComparisonRunner
             'stats' => $result['stats'],
             'regions' => $result['regions'],
             'registration' => $result['registration'],
+            // Parametri effettivi, per gli avvisi sull'affidabilità (study.js).
+            'params' => [
+                'diff_method' => $payload['diff_method'],
+                'diff_method_requested' => $payload['diff_method_requested'],
+                'analysis_scale_m' => $payload['analysis_scale_m'],
+                'mpp_x' => $payload['mpp_x'],
+                'mpp_y' => $payload['mpp_y'],
+            ],
             'urls' => [
                 'enhanced_a' => isset($result['paths']['enhanced_a']) ? storage_url($result['paths']['enhanced_a']) : null,
                 'aligned_b' => storage_url($result['paths']['aligned_b']),

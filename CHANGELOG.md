@@ -4,6 +4,127 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-10-09 (3) — Confronto affidabile fra riprese ad alta risoluzione di epoche diverse
+
+Limite rimasto aperto dal punto 2 del piano di evoluzione: fra riprese
+sotto il metro di epoche, sensori o elaborazioni diverse, il confronto
+segnava come cambiata quasi tutta l'area.
+
+### Diagnosi, sulle riprese reali
+
+Versioni Wayback di un piazzale di Sigonella (2022, 2023 WV02, 2024) e di
+un'area di Ghedi (2020, 2025, con un grande cantiere reale), più coppie
+della stessa acquisizione come controllo:
+
+- **SSIM:** 94–99% dell'area "cambiata" fra epoche diverse, 0% sui
+  controlli.
+- **Causa principale:** sotto il metro lo SSIM misura la correlazione
+  della trama fine (cemento, erba, macchie), che fra due foto diverse è
+  quasi nulla ovunque. Spostando di 1,5 m la stessa identica foto si
+  passava dallo 0% al 95%.
+- **Ricampionare a 2–3 m da solo non basta:** con lo SSIM resta il 75–95%.
+- **Soglie adattive dalla mediana, scartate:** con questo rumore di fondo
+  non segnalano più nulla, nemmeno il cantiere di Ghedi.
+- **Attenuazione delle ombre, scartata:** il criterio "scuro in una sola
+  delle due immagini" prende anche velivoli grigio scuro e vegetazione. Un
+  velivolo scuro comparso su cemento chiaro rischiava di sparire.
+
+### Confronto robusto
+
+- **[python-service/app/core/diff.py](python-service/app/core/diff.py)** —
+  nuovo `compute_robust_diff` (metodo `robust`):
+  1. Colori di B portati su quelli di A in L\*a\*b\* (media e deviazione
+     per canale, solo dove entrambe hanno dati).
+  2. Entrambe ricampionate a celle quadrate di 2 m a terra, per asse: le
+     riprese in gradi hanno pixel diversi sui due assi.
+  3. Distanza di colore fra le celle, riportata alla griglia originale
+     (0–255, stesse soglie degli altri metodi).
+- **Scelte e protezioni:**
+  - La luminosità pesa circa 2,5 volte il colore, per la codifica a 8 bit
+    di OpenCV. È voluto: a pesi uguali il colore della vegetazione, che
+    cambia con la stagione, alzava Ghedi dal 62% al 76%.
+  - Fuori dai dati validi (bordi neri del warp) B prende i valori di A
+    prima della media. Altrimenti il nero si mescolava ai pixel vicini e
+    lungo i bordi compariva una fascia di falso cambiamento, più larga con
+    pixel più fini.
+  - Se una delle due immagini è senza colore (foto storica in bianco e
+    nero, radar) si confronta solo la luminosità. Uniformare il colore
+    segnava come cambiato metà dell'area.
+  - Il guadagno con cui si uniformano i colori è limitato a 0,25–4.
+- **Risultati sulle stesse coppie:**
+  - Sigonella: 9–19% di area variata, concentrata su velivoli comparsi o
+    spariti e sul cantiere, contro l'86–99% dello SSIM;
+  - Ghedi: il cantiere resta segnalato (63%);
+  - controlli: 0%;
+  - 1,5 m di disallineamento della stessa foto: 1,5–2,2%, contro il 95%.
+- **Limiti:** oggetti più piccoli della scala (veicoli) si attenuano.
+  Ombre, inclinazione degli edifici e vegetazione possono ancora comparire
+  come variazioni.
+- **[python-service/app/routers/analysis.py](python-service/app/routers/analysis.py)**:
+  - `diff_method: robust` e `analysis_scale_m` (predefinito 2 m);
+  - mappa di calore amplificata solo per la visualizzazione: le distanze
+    di colore stanno quasi tutte sotto 85 e la mappa risultava quasi nera.
+
+### Scelta automatica e avvisi
+
+- **[webapp/src/ComparisonRunner.php](webapp/src/ComparisonRunner.php)**:
+  - nuovo metodo `auto`, ora predefinito. Diventa `robust` sotto
+    1,5 m/pixel (asse più grossolano della ripresa A) e `ssim` sopra, o a
+    scala ignota: per Sentinel non cambia nulla;
+  - senza una scala nota, o con scala nulla nei metadati, anche il robusto
+    scelto a mano diventa SSIM, perché non saprebbe quanto mediare. Il
+    metodo richiesto viene ricondotto a uno di quelli previsti;
+  - salvati sia il metodo richiesto sia quello effettivo, e la risposta
+    riporta i parametri usati;
+  - `DIFF_METHODS` è l'unico elenco dei metodi con le loro etichette.
+- **[webapp/public/study.php](webapp/public/study.php)**,
+  **[webapp/public/settings.php](webapp/public/settings.php)**,
+  **[webapp/src/AppSettings.php](webapp/src/AppSettings.php)** — metodi
+  dall'elenco unico; predefinito "Automatico (consigliato)"; spiegazione
+  dei metodi aggiornata. Il valore salvato nelle impostazioni ora è
+  validato.
+- **[webapp/public/assets/js/study.js](webapp/public/assets/js/study.js)**:
+  - riquadro "Confronto" fra i risultati, con metodo e scala;
+  - avvisi sull'affidabilità della percentuale, anche per i confronti
+    dello storico:
+    - SSIM o differenza assoluta sotto 1,5 m/pixel;
+    - variazione oltre il 35% dell'area: verificare con lo swipe prima di
+      trarre conclusioni o pubblicare;
+  - con il metodo robusto, una nota sui suoi limiti.
+- **[webapp/src/ExportBuilder.php](webapp/src/ExportBuilder.php)** — nel
+  report del pacchetto, il metodo per esteso e "(scelto automaticamente)".
+- **[webapp/cli/run_scheduled_downloads.php](webapp/cli/run_scheduled_downloads.php)**:
+  il confronto con la ripresa precedente usa la stessa scelta del metodo e
+  lo stesso allineamento dalle coordinate della pagina. Prima segnava lo
+  SSIM sotto il metro, e l'alert "Variazione rilevata" riportava le
+  percentuali dell'86–99%. Ora su Sigonella dà 18,8%, come la pagina. Le
+  soglie dei duplicati restano valide:
+  - una nuova immagine Esri si riconosce già dalla data nei metadati e si
+    tiene comunque;
+  - la soglia conta solo quando i metadati mancano, e lì il confronto
+    robusto dà 0% sulla stessa immagine e almeno il 9% fra epoche
+    diverse.
+
+### Test
+
+- [python-service/tests/test_diff.py](python-service/tests/test_diff.py),
+  5 nuovi test:
+  - 1,5 m di disallineamento: oltre il 50% per lo SSIM, sotto il 5% per il
+    robusto;
+  - colori e contrasto diversi non contano come cambiamento;
+  - un oggetto di ~16 m comparso su trama diversa viene rilevato;
+  - nessuna fascia di cambiamento lungo i bordi senza dati;
+  - una foto in bianco e nero contro una a colori della stessa scena.
+
+  Gli ultimi due falliscono senza le relative protezioni.
+- [webapp/tests/ComparisonTest.php](webapp/tests/ComparisonTest.php)
+  (nuovo): scelta automatica del metodo.
+- Totali: 41 test PHP, 25 Python.
+
+Revisione indipendente: 5 punti, tutti corretti. I principali: fascia di
+falso cambiamento ai bordi, bianco e nero contro colore, robusto senza
+scala, cron rimasto sullo SSIM.
+
 ## 2026-10-09 (2) — Fondamenta tecniche: lavori in background, allineamento dalle coordinate, dettaglio nativo, test e CI, migrazioni
 
 Quinta e ultima parte del piano di evoluzione.

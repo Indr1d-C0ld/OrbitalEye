@@ -178,11 +178,22 @@ foreach ($due as $sched) {
 
     // ---- Confronto con la precedente ----
     try {
+        // Stessa scelta del confronto dalla pagina: sotto 1,5 m/pixel lo
+        // SSIM segna come cambiata quasi tutta l'area fra due immagini
+        // diverse, e la percentuale dell'alert non direbbe nulla.
+        $prevMpp = Capture::resolveMpp($prevCapture);
         $cmp = $client->post('/analysis/compare', [
             'capture_a_path' => $prevCapture['relative_path'],
             'capture_b_path' => $result['relative_path'],
             'align' => true,
-            'diff_method' => 'ssim',
+            'diff_method' => ComparisonRunner::resolveDiffMethod('auto', $prevMpp),
+            'mpp_x' => $prevMpp['mpp_x'] ?? null,
+            'mpp_y' => $prevMpp['mpp_y'] ?? null,
+            'analysis_scale_m' => ComparisonRunner::ROBUST_SCALE_M,
+            // Allineamento dalle coordinate, come dalla pagina (vedi
+            // ComparisonRunner::geoControlPoints).
+            'geo_points' => ($newCapture = Capture::find($newCaptureId))
+                ? (ComparisonRunner::geoControlPoints($prevCapture, $newCapture) ?? []) : [],
         ]);
         $changedRatio = (float) ($cmp['stats']['changed_ratio'] ?? 1.0);
         // /analysis/compare scrive sempre una cartella results/<id>/ con sei

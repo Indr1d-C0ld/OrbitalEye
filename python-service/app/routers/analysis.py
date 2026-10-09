@@ -60,7 +60,9 @@ class CompareRequest(BaseModel):
     mpp_x: float | None = None
     mpp_y: float | None = None
     align: bool = True
-    diff_method: str = "ssim"  # 'ssim' | 'absdiff'
+    diff_method: str = "ssim"  # 'ssim' | 'absdiff' | 'robust'
+    # Scala del confronto robusto, in metri (vedi diff.compute_robust_diff).
+    analysis_scale_m: float = Field(diffmod.ROBUST_SCALE_M, ge=0.5, le=20)
     threshold: int = 30
     use_otsu: bool = False
     morph_kernel: int = 3
@@ -91,10 +93,10 @@ def compare(req: CompareRequest):
     if not path_a.is_file() or not path_b.is_file():
         raise HTTPException(status_code=404, detail="Una o entrambe le immagini non sono state trovate")
 
-    if req.diff_method not in ("ssim", "absdiff"):
+    if req.diff_method not in ("ssim", "absdiff", "robust"):
         # Prima un valore sconosciuto ricadeva in silenzio su SSIM, mentre i
         # parametri restituiti riportavano il metodo richiesto.
-        raise HTTPException(status_code=400, detail="Metodo di differenza non valido (ssim|absdiff)")
+        raise HTTPException(status_code=400, detail="Metodo di differenza non valido (ssim|absdiff|robust)")
 
     # Maschere dei pixel con dati reali (trasparenza/dataMask): le zone
     # senza dati non devono essere contate come cambiamento.
@@ -149,7 +151,10 @@ def compare(req: CompareRequest):
             warped_b = cv2.resize(nodata_b, (w, h), interpolation=cv2.INTER_NEAREST) if nodata_b.shape[:2] != (h, w) else nodata_b
         valid_mask = cv2.bitwise_and(valid_mask, warped_b)
 
-    diff_map = diffmod.compute_diff(img_a, img_b_aligned, method=req.diff_method)
+    diff_map = diffmod.compute_diff(
+        img_a, img_b_aligned, method=req.diff_method,
+        mpp_x=req.mpp_x, mpp_y=req.mpp_y, scale_m=req.analysis_scale_m, valid_mask=valid_mask,
+    )
     mask = diffmod.apply_threshold(
         diff_map, threshold=req.threshold, use_otsu=req.use_otsu, valid_mask=valid_mask
     )
@@ -163,7 +168,11 @@ def compare(req: CompareRequest):
     mask = cv2.bitwise_and(mask, valid_mask)
     regions = diffmod.find_change_regions(mask, min_area=req.min_blob_area)
     overlay = diffmod.build_overlay(img_b_aligned, mask, regions, alpha=req.overlay_alpha)
-    heatmap = diffmod.build_heatmap(diff_map)
+    # Solo per la visualizzazione: le distanze di colore del confronto
+    # robusto stanno quasi tutte sotto 85 e la mappa risultava quasi nera.
+    heatmap = diffmod.build_heatmap(
+        np.clip(diff_map.astype(np.float32) * 3, 0, 255).astype(np.uint8) if req.diff_method == "robust" else diff_map
+    )
     # Vista contorni: i bordi netti (Canny) della ripresa "dopo" aiutano a
     # distinguere il profilo di strutture nuove da semplice rumore diffuso,
     # in modo complementare alla mappa di calore delle differenze.

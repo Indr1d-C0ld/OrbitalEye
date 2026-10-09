@@ -542,10 +542,11 @@ require __DIR__ . '/partials/nav.php';
         </div>
       </div>
       <div class="field">
-        <label>Metodo diff <span class="info-tip" tabindex="0" data-tip="SSIM confronta la struttura locale delle due immagini: più robusto a variazioni di luce/contrasto tra le riprese, si concentra sui cambi strutturali reali (es. nuovi edifici). Differenza assoluta confronta i pixel direttamente: più veloce ma più sensibile a variazioni di illuminazione/colore non legate a cambiamenti reali.">?</span></label>
+        <label>Metodo diff <span class="info-tip" tabindex="0" data-tip="Automatico: robusto per le riprese ad alta risoluzione (sotto 1,5 m/pixel), SSIM per Sentinel. Robusto: uniforma i colori delle due riprese e confronta colore e luminosità a celle di 2 m; non risente della trama del terreno né di scarti di qualche metro fra le fonti, vede velivoli, edifici, cantieri, ma non oggetti più piccoli di qualche metro. SSIM: confronta la struttura locale pixel per pixel; adatto a Sentinel, sotto il metro segna come cambiata quasi tutta l'area fra epoche diverse. Differenza assoluta: confronta i pixel direttamente, veloce ma sensibile a luce e colore.">?</span></label>
         <select id="opt-diff-method">
-          <option value="ssim" <?= $defaults['default_diff_method']==='ssim'?'selected':'' ?>>SSIM (robusto a luce/contrasto)</option>
-          <option value="absdiff" <?= $defaults['default_diff_method']==='absdiff'?'selected':'' ?>>Differenza assoluta (veloce)</option>
+          <?php foreach (ComparisonRunner::DIFF_METHODS as $value => $label): ?>
+            <option value="<?= e($value) ?>" <?= $defaults['default_diff_method'] === $value ? 'selected' : '' ?>><?= e($label) ?></option>
+          <?php endforeach; ?>
         </select>
       </div>
       <div class="field">
@@ -645,6 +646,7 @@ require __DIR__ . '/partials/nav.php';
   </div>
 
   <div class="alert alert-warning" id="same-acquisition-warning" style="display:none; margin-top:12px;"></div>
+  <div class="alert alert-warning" id="cmp-reliability-warning" style="display:none; margin-top:12px;"></div>
   <div class="grid grid-4" id="result-stats" style="margin:16px 0;"></div>
 
   <div class="viewer-tabs">

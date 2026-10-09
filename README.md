@@ -30,7 +30,7 @@ Pensata per essere installata ed eseguita su un proprio server (VPS, homelab, NA
 
 OrbitalEye confronta due riprese satellitari della stessa area geografica scattate in momenti diversi e ne evidenzia automaticamente le differenze: nuove costruzioni, variazioni del territorio, cambi di uso del suolo, movimenti di grandi strutture. È pensato per chi vuole condurre questo tipo di analisi in autonomia — ricercatori, giornalisti investigativi, analisti OSINT, urbanisti, ambientalisti, appassionati di osservazione della Terra — senza dover dipendere da piattaforme SaaS chiuse o inviare i propri dati a terzi.
 
-Il confronto non è una semplice sovrapposizione: le due immagini vengono prima **riallineate automaticamente** (per correggere piccoli scostamenti di inquadratura tra le riprese), poi confrontate con algoritmi di elaborazione immagini (SSIM o differenza assoluta), ripulite dal rumore fotografico con filtri morfologici, e infine presentate come report visivo con le aree di cambiamento evidenziate ed elencate.
+Il confronto non è una semplice sovrapposizione: le due immagini vengono prima **riallineate automaticamente** (per correggere piccoli scostamenti di inquadratura tra le riprese), poi confrontate con algoritmi di elaborazione immagini (confronto robusto per l'alta risoluzione, SSIM o differenza assoluta), ripulite dal rumore fotografico con filtri morfologici, e infine presentate come report visivo con le aree di cambiamento evidenziate ed elencate.
 
 ## Caratteristiche
 
@@ -46,7 +46,11 @@ Il confronto non è una semplice sovrapposizione: le due immagini vengono prima 
 
 **Analisi e change detection**
 - **Allineamento dalle coordinate**: se entrambe le riprese sono georiferite (scaricate da Copernicus o Esri, o derivate da queste) vengono allineate dalle coordinate geografiche — che non dipendono dal trovare dettagli in comune, utile fra fonti, sensori ed epoche diverse — e poi rifinite confrontando le immagini (ECC), solo se la rifinitura migliora davvero. Se le coordinate non bastano (sovrapposizione minima) o dopo l'allineamento le immagini restano poco correlate (coordinate salvate imprecise), si prova anche l'allineamento dalle immagini e si tiene il migliore; altrimenti allineamento dalle immagini (feature matching ORB/RANSAC + rifinitura sub-pixel ECC), o **manuale** tramite editor di punti di controllo. Il metodo usato è mostrato fra i risultati. Quando l'allineamento non è affidabile il motore lo dichiara (metodo "none") invece di forzare un risultato, e punti di controllo coincidenti o allineati vengono rifiutati con una spiegazione
-- Confronto per differenza SSIM (robusta a luce/contrasto) o differenza assoluta
+- Confronto con metodo scelto automaticamente in base alla risoluzione:
+  - **robusto** per le riprese sotto 1,5 m/pixel: colori delle due riprese uniformati, confronto di colore e luminosità a celle di 2 m. Non risente della trama del terreno né di scarti di qualche metro fra le fonti, e vede velivoli, edifici e cantieri. Su Sigonella, fra riprese di anni diversi, lo SSIM segnava come cambiato l'86–99% dell'area; il confronto robusto il 9–19%, concentrato su velivoli comparsi o spariti e su un cantiere;
+  - **SSIM** per Sentinel. Si può anche scegliere a mano, insieme alla differenza assoluta.
+
+  Fra i risultati, un avviso quando la percentuale non è affidabile: SSIM su riprese ad alta risoluzione, o variazione su gran parte dell'area.
 - Soglia di sensibilità manuale o automatica (Otsu), con preset rapidi (bassa/media/alta)
 - Pulizia morfologica e filtro per area minima, per scartare rumore fotografico e falsi positivi
 - Filtri di enhancement pre-analisi con **parametri regolabili**: bilanciamento del bianco, riduzione rumore (4 metodi + intensità), CLAHE (clip limit + tile), equalizzazione istogramma, correzione gamma, sharpening, desaturazione, contorni
@@ -245,7 +249,12 @@ Apri il sito: verrai reindirizzato a `setup.php` per creare l'account operatore 
 
 1. **Allineamento** (dalle coordinate geografiche se disponibili, altrimenti ORB + RANSAC; rifinito con ECC sub-pixel) — corregge piccoli disallineamenti tra le due riprese prima di confrontarle; i bordi privi di dati reali generati dal riallineamento vengono esclusi dal calcolo per evitare falsi positivi lungo il perimetro.
 2. **Enhancement opzionale** — bilanciamento del bianco, riduzione rumore, CLAHE, equalizzazione istogramma, gamma, sharpening, desaturazione, contorni (tutti con parametri regolabili), applicato a entrambe le riprese in modo coerente prima del confronto.
-3. **Differenza** — SSIM (si concentra sui cambi strutturali reali) oppure differenza assoluta (più veloce, più sensibile a variazioni di luce/colore non legate a cambiamenti reali).
+3. **Differenza**:
+   - robusta, per l'alta risoluzione: colori uniformati in L\*a\*b\*, distanza di colore fra celle di 2 m;
+   - SSIM: si concentra sui cambi strutturali, adatta a Sentinel;
+   - differenza assoluta: più veloce, più sensibile a variazioni di luce e colore non legate a cambiamenti reali.
+
+   In automatico la scelta dipende dalla risoluzione della ripresa.
 4. **Soglia** — manuale o Otsu automatica.
 5. **Pulizia** — apertura/chiusura morfologica + filtro per area minima del blob, per scartare rumore fotografico e micro-disallineamenti residui.
 6. **Report grafico** — overlay in falso colore con bounding box numerate e cliccabili, heatmap, contorni, maschera binaria, slider prima/dopo.

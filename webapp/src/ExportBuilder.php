@@ -158,6 +158,14 @@ final class ExportBuilder
         $study = $d['study']; $capA = $d['capture_a']; $capB = $d['capture_b']; $cmp = $d['comparison'];
         $stats = $d['stats']; $params = $d['params']; $regions = $d['regions']; $reg = $d['registration'];
         $annotations = $d['annotations'];
+        $method = (string) ($params['diff_method'] ?? '');
+        $diffMethodLabel = ComparisonRunner::DIFF_METHODS[$method] ?? ($method ?: '—');
+        if ($method === 'robust' && !empty($params['analysis_scale_m'])) {
+            $diffMethodLabel = 'Robusto: oggetti e colori a ' . str_replace('.', ',', (string) $params['analysis_scale_m']) . ' m';
+        }
+        if (($params['diff_method_requested'] ?? '') === 'auto') {
+            $diffMethodLabel .= ' (scelto automaticamente)';
+        }
 
         $regionsRows = '';
         foreach ($regions as $i => $r) {
@@ -259,7 +267,7 @@ final class ExportBuilder
 
   <h2>Parametri di analisi</h2>
   <div class="panel">
-    <div class="kv"><span>Metodo diff</span><span>{$e($params['diff_method'] ?? '—')}</span></div>
+    <div class="kv"><span>Metodo diff</span><span>{$e($diffMethodLabel)}</span></div>
     <div class="kv"><span>Soglia</span><span>{$e($params['use_otsu'] ?? false ? 'Automatica (Otsu)' : ($params['threshold'] ?? '—'))}</span></div>
     <div class="kv"><span>Area minima blob</span><span>{$e($params['min_blob_area'] ?? '—')} px&sup2;</span></div>
     <div class="kv"><span>Kernel morfologico</span><span>{$e($params['morph_kernel'] ?? '—')}</span></div>

@@ -773,6 +773,7 @@
           regions: data.regions,
           urls: data.urls,
           registration: data.registration,
+          params: data.params,
         });
       } catch (err) {
         status.textContent = 'Errore: ' + err.message;
@@ -803,6 +804,7 @@
       regions: cmp.regions,
       urls,
       registration: (() => { try { return JSON.parse(cmp.registration_json || 'null'); } catch (e) { return null; } })(),
+      params: (() => { try { return JSON.parse(cmp.params_json || 'null'); } catch (e) { return null; } })(),
     });
     refreshSelectionUI();
     $('#result-title').value = cmp.title || '';
@@ -828,6 +830,45 @@
     return `<div class="stat-tile" title="${esc(tip)}"><div class="value" style="font-size:16px;${warn ? ' color:var(--amber);' : ''}">${esc(label)}</div><div class="label">Allineamento</div></div>`;
   }
 
+  // Metodo di confronto effettivo (vedi ComparisonRunner::DIFF_METHODS).
+  const DIFF_LABELS = {
+    robust: ['robusto', 'Colori uniformati e confronto di colore e luminosità a celle di qualche metro: non risente della trama del terreno né di piccoli scarti fra le fonti, ma non vede oggetti più piccoli della scala.'],
+    ssim: ['SSIM', 'Struttura locale pixel per pixel.'],
+    absdiff: ['differenza assoluta', 'Differenza diretta dei pixel.'],
+  };
+  function methodTile(params) {
+    if (!params || !params.diff_method) return '';
+    const [label, tip] = DIFF_LABELS[params.diff_method] || [params.diff_method, ''];
+    const scale = params.diff_method === 'robust' && params.analysis_scale_m
+      ? ' · ' + String(params.analysis_scale_m).replace('.', ',') + ' m' : '';
+    return `<div class="stat-tile" title="${esc(tip)}"><div class="value" style="font-size:16px;">${esc(label + scale)}</div><div class="label">Confronto</div></div>`;
+  }
+
+  // Quanto ci si può fidare della percentuale: lo SSIM sotto il metro e le
+  // variazioni su gran parte dell'area vanno dette prima che il numero
+  // venga letto o pubblicato come cambiamento reale.
+  function reliabilityNotes(result) {
+    const p = result.params || {};
+    const s = result.stats || {};
+    const mpp = p.mpp_x && p.mpp_y ? Math.max(p.mpp_x, p.mpp_y) : null;
+    const notes = [];
+    if ((p.diff_method === 'ssim' || p.diff_method === 'absdiff') && mpp && mpp < 1.5) {
+      notes.push('⚠ Confronto pixel per pixel su riprese ad alta risoluzione (' + mpp.toFixed(2).replace('.', ',')
+        + ' m/pixel): fra epoche o sensori diversi la trama del terreno e scarti di 1–2 m bastano a far risultare '
+        + 'cambiata quasi tutta l\'area. Usa il metodo Automatico o Robusto.');
+    }
+    if (s.changed_ratio > 0.35) {
+      notes.push('⚠ Risulta variata una quota molto ampia dell\'area (' + Math.round(s.changed_ratio * 100) + '%): oltre ai cambiamenti reali '
+        + 'possono contare stagione e vegetazione, ombre e angolo di vista. Verifica con lo swipe Prima/Dopo prima di '
+        + 'trarre conclusioni o pubblicare.');
+    }
+    if (p.diff_method === 'robust' && notes.length === 0 && s.changed_ratio > 0) {
+      notes.push('ℹ Confronto a celle di ' + String(p.analysis_scale_m || 2).replace('.', ',') + ' m: oggetti più piccoli '
+        + '(veicoli) possono sfuggire; ombre, inclinazione degli edifici e vegetazione possono comparire come variazioni.');
+    }
+    return notes;
+  }
+
   function renderResult(result) {
     state.currentComparison = result;
     $('#results-panel').style.display = '';
@@ -850,7 +891,17 @@
       ${largestTile}
       ${changedTile}
       ${alignTile(result.registration)}
+      ${methodTile(result.params)}
     `;
+    const relWarn = $('#cmp-reliability-warning');
+    if (relWarn) {
+      const notes = reliabilityNotes(result);
+      relWarn.style.display = notes.length ? '' : 'none';
+      relWarn.textContent = notes.join(' ');
+      const isWarning = notes.some((n) => n.startsWith('⚠'));
+      relWarn.classList.toggle('alert-warning', isWarning);
+      relWarn.classList.toggle('alert-info', !isWarning);
+    }
 
     renderRegionList(result.regions);
     setView('overlay');

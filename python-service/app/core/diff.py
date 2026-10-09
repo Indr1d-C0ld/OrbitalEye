@@ -51,7 +51,107 @@ def _ssim_map(gray_a: np.ndarray, gray_b: np.ndarray) -> np.ndarray:
     return numerator / denominator
 
 
-def compute_diff(img_a: np.ndarray, img_b: np.ndarray, method: str = "ssim") -> np.ndarray:
+# Scala predefinita del confronto robusto, in metri: tollera gli scarti di
+# georeferenza fra fonti (qualche metro) e vede ancora un velivolo.
+ROBUST_SCALE_M = 2.0
+# Limite del guadagno nell'uniformare i colori (vedi _lab_matched).
+MAX_MATCH_GAIN = 4.0
+# Dispersione minima dei canali a*/b* (unità OpenCV a 8 bit) perché
+# un'immagine conti come a colori.
+MIN_CHROMA_SPREAD = 2.0
+
+
+def _lab_matched(img_a: np.ndarray, img_b: np.ndarray, valid_mask: np.ndarray | None):
+    """Le due immagini in L*a*b*, con media e deviazione di ogni canale di B
+    portate su quelle di A (calcolate solo dove entrambe hanno dati): toglie
+    le differenze globali di colore, contrasto e luminosità fra sensori ed
+    elaborazioni diverse, che non sono cambiamenti sul terreno."""
+    lab_a = cv2.cvtColor(img_a, cv2.COLOR_BGR2LAB).astype(np.float32)
+    lab_b = cv2.cvtColor(img_b, cv2.COLOR_BGR2LAB).astype(np.float32)
+    has_mask = valid_mask is not None and np.count_nonzero(valid_mask) > 0
+    sel = valid_mask > 0 if has_mask else slice(None)
+    stats = [(float(lab_a[..., c][sel].mean()), float(lab_a[..., c][sel].std()),
+              float(lab_b[..., c][sel].mean()), float(lab_b[..., c][sel].std())) for c in range(3)]
+    # Una delle due senza colore (foto storica in bianco e nero, radar):
+    # uniformare il colore inventerebbe differenze su ogni pixel colorato
+    # dell'altra, quindi si confronta solo la luminosità.
+    color = min(stats[1][1], stats[1][3], stats[2][1], stats[2][3]) >= MIN_CHROMA_SPREAD
+    for c, (ma, sa, mb, sb) in enumerate(stats):
+        if c > 0 and not color:
+            lab_b[..., c] = lab_a[..., c]
+            continue
+        # Guadagno limitato: un canale quasi piatto in B non va amplificato
+        # fino a trasformarne il rumore in "cambiamento".
+        gain = min(MAX_MATCH_GAIN, max(1 / MAX_MATCH_GAIN, sa / max(sb, 1e-3)))
+        lab_b[..., c] = (lab_b[..., c] - mb) * gain + ma
+    if has_mask:
+        # Fuori dai dati validi (bordi neri del warp) B prende i valori di
+        # A: altrimenti, mediando le celle, il nero si mescolerebbe ai
+        # pixel validi vicini e lungo i bordi comparirebbe una fascia di
+        # falso cambiamento, tanto più larga quanto più fini sono i pixel.
+        invalid = valid_mask == 0
+        lab_b[invalid] = lab_a[invalid]
+    return lab_a, lab_b
+
+
+def compute_robust_diff(
+    img_a: np.ndarray,
+    img_b: np.ndarray,
+    mpp_x: float | None = None,
+    mpp_y: float | None = None,
+    scale_m: float = ROBUST_SCALE_M,
+    valid_mask: np.ndarray | None = None,
+) -> np.ndarray:
+    """Differenza di colore e luminosità a scala di oggetto, per riprese ad
+    alta risoluzione di epoche, sensori o elaborazioni diverse.
+
+    Sotto il metro lo SSIM misura la correlazione della trama fine (cemento,
+    erba, macchie), che fra due foto diverse è quasi nulla ovunque: fra
+    riprese Esri di anni diversi segnava come cambiato il 94-99% dell'area,
+    e bastavano 1,5 m di disallineamento della STESSA foto per passare dallo
+    0% al 95%. Qui invece:
+      1. colori di B uniformati a quelli di A (_lab_matched);
+      2. entrambe ricampionate a celle di scale_m metri (media dei pixel):
+         la trama e gli scarti di pochi metri si annullano, gli oggetti
+         (velivoli, veicoli grandi, edifici, cantieri) restano;
+      3. distanza di colore L*a*b* fra le celle, riportata alla griglia
+         originale (0-255, stesse soglie degli altri metodi). Nella codifica
+         a 8 bit di OpenCV la luminosità vale circa 2,5 volte il colore: è
+         voluto, il colore della vegetazione cambia con la stagione (a pesi
+         uguali Ghedi passava dal 62% al 76% di area variata).
+    Sulle stesse coppie: 9-21% di area variata, concentrata su velivoli
+    comparsi o spariti e cantieri; 1,5% con 1,5 m di disallineamento.
+    Oggetti più piccoli della scala si attenuano fino a sparire.
+    """
+    h, w = img_a.shape[:2]
+    # Un filtro pre-analisi può aver lasciato un solo canale.
+    img_a = cv2.cvtColor(img_a, cv2.COLOR_GRAY2BGR) if img_a.ndim == 2 else img_a
+    img_b = cv2.cvtColor(img_b, cv2.COLOR_GRAY2BGR) if img_b.ndim == 2 else img_b
+    lab_a, lab_b = _lab_matched(img_a, img_b, valid_mask)
+    # Celle quadrate a terra: le riprese in gradi hanno pixel diversi sui
+    # due assi. Un asse già più grossolano della scala resta com'è.
+    fx = min(1.0, mpp_x / scale_m) if mpp_x and scale_m > 0 else 1.0
+    fy = min(1.0, mpp_y / scale_m) if mpp_y and scale_m > 0 else 1.0
+    if fx < 1.0 or fy < 1.0:
+        size = (max(8, round(w * fx)), max(8, round(h * fy)))
+        lab_a = cv2.resize(lab_a, size, interpolation=cv2.INTER_AREA)
+        lab_b = cv2.resize(lab_b, size, interpolation=cv2.INTER_AREA)
+    d = lab_a - lab_b
+    dist = np.sqrt(np.sum(d * d, axis=2))
+    if dist.shape[:2] != (h, w):
+        dist = cv2.resize(dist, (w, h), interpolation=cv2.INTER_LINEAR)
+    return np.clip(dist, 0, 255).astype(np.uint8)
+
+
+def compute_diff(
+    img_a: np.ndarray,
+    img_b: np.ndarray,
+    method: str = "ssim",
+    mpp_x: float | None = None,
+    mpp_y: float | None = None,
+    scale_m: float = ROBUST_SCALE_M,
+    valid_mask: np.ndarray | None = None,
+) -> np.ndarray:
     """Ritorna una mappa di differenza a 8 bit (255 = massima differenza).
 
     method:
@@ -60,8 +160,13 @@ def compute_diff(img_a: np.ndarray, img_b: np.ndarray, method: str = "ssim") -> 
       'ssim'    - 1 - similarità strutturale locale, più robusto a piccole
                   variazioni di luce/contrasto, si concentra su cambi di
                   struttura/texture (es. nuove costruzioni) piuttosto che
-                  su variazioni cromatiche globali.
+                  su variazioni cromatiche globali. Adatto a risoluzioni di
+                  metri (Sentinel); sotto il metro vedi 'robust'.
+      'robust'  - vedi compute_robust_diff (usa mpp, scale_m, valid_mask).
     """
+    if method == "robust":
+        return compute_robust_diff(img_a, img_b, mpp_x, mpp_y, scale_m, valid_mask)
+
     gray_a = to_gray(img_a)
     gray_b = to_gray(img_b)
 

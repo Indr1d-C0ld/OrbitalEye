@@ -10,7 +10,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'save_defaults') {
         AppSettings::setMany([
-            'default_diff_method' => $_POST['default_diff_method'] ?? 'ssim',
+            'default_diff_method' => isset(ComparisonRunner::DIFF_METHODS[$_POST['default_diff_method'] ?? '']) ? $_POST['default_diff_method'] : 'auto',
             'default_threshold' => (int) ($_POST['default_threshold'] ?? 30),
             'default_min_blob_area' => (int) ($_POST['default_min_blob_area'] ?? 40),
             // Dispari e fra 1 e 31, come lo slider del confronto (passo 2) e il
@@ -167,8 +167,9 @@ require __DIR__ . '/partials/nav.php';
       <div class="field">
         <label>Metodo diff</label>
         <select name="default_diff_method">
-          <option value="ssim" <?= $settings['default_diff_method']==='ssim'?'selected':'' ?>>SSIM</option>
-          <option value="absdiff" <?= $settings['default_diff_method']==='absdiff'?'selected':'' ?>>Differenza assoluta</option>
+          <?php foreach (ComparisonRunner::DIFF_METHODS as $value => $label): ?>
+            <option value="<?= e($value) ?>" <?= $settings['default_diff_method'] === $value ? 'selected' : '' ?>><?= e($label) ?></option>
+          <?php endforeach; ?>
         </select>
       </div>
       <div class="field"><label>Soglia threshold predefinita</label><input type="number" name="default_threshold" value="<?= e($settings['default_threshold']) ?>" min="1" max="255"></div>
