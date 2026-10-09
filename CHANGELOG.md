@@ -4,6 +4,137 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-10-09 (4) — Confronto per oggetti: velivoli, navi e veicoli comparsi, spariti, rimasti
+
+Secondo passo dopo il confronto robusto: il confronto per pixel dice dove
+è cambiata l'immagine, questo dice cosa è cambiato. Ad esempio "aerei: 5
+comparsi, 9 spariti, 0 rimasti".
+
+### Calcolo
+
+- **[webapp/src/ObjectChange.php](webapp/src/ObjectChange.php)** (nuovo):
+  - Classi confrontate: aerei, elicotteri, navi, veicoli grandi e piccoli.
+    I veicoli grandi e piccoli si abbinano fra loro, perché il rilevatore
+    li distingue in modo instabile.
+  - Tutto si confronta nel sistema della ripresa A, in metri. Gli oggetti
+    di B vi sono riportati con la stessa trasformazione con cui il
+    confronto ha allineato le immagini, non con le sole coordinate salvate.
+    Fra fonti diverse le georeferenze possono differire di 5–15 m, quanto
+    un'auto: con le sole coordinate un intero parcheggio risulterebbe
+    sparito e ricomparso. Le due riprese possono avere aree, rotazioni e
+    risoluzioni diverse.
+  - Senza allineamento delle immagini (disattivato o non riuscito) si
+    ripiega sulle coordinate geografiche, con una nota che lo dice.
+  - Contano solo gli oggetti che cadono anche nell'altra ripresa. Quelli
+    fuori dall'area comune non sono "spariti": vengono contati in una nota.
+  - Abbinamento dalla coppia più vicina. Due oggetti sono lo stesso se:
+    - sono della stessa categoria;
+    - sono entro max(10 m, metà della lunghezza), per tollerare gli
+      scarti di georeferenza fra fonti;
+    - le lunghezze differiscono al massimo di 1,6 volte.
+  - Un velivolo diverso nella stessa piazzola risulta sostituito (sparito
+    più comparso). Uno spostato di qualche decina di metri risulta
+    sparito da un posto e comparso in un altro.
+  - Stessa soglia di confidenza per le due riprese, la maggiore delle due
+    esecuzioni. Altrimenti gli oggetti incerti risulterebbero comparsi o
+    spariti solo perché tenuti da una parte e scartati dall'altra. Una
+    nota segnala se l'opzione "oggetti piccoli" è stata usata su una sola
+    delle due riprese.
+  - Posizioni e contorni nel sistema della ripresa A, lo stesso delle
+    viste del confronto, che quindi cadono sugli oggetti anche nella
+    ripresa B allineata. Contorni solo per ciò che è cambiato: per i
+    rimasti basta il centro, perché centinaia di veicoli appesantirebbero
+    la pagina dello studio, che incorpora tutti i confronti.
+  - Oggetti salvati in forma inattesa vengono ignorati. Una trasformazione
+    non valida fa ripiegare sulle coordinate.
+  - Riassunto testuale per didascalie e report.
+- **[python-service/app/core/registration.py](python-service/app/core/registration.py)**,
+  **[routers/analysis.py](python-service/app/routers/analysis.py)** — nuovo
+  `frac_homography`. Il confronto restituisce in `registration.b_to_a` la
+  trasformazione finale B→A come omografia fra coordinate frazionarie.
+  Ogni metodo di allineamento la espone solo come funzione di warp: la si
+  applica a griglie di coordinate e se ne stima l'omografia, che è esatta
+  perché tutti i metodi sono omografie o affini, anche composte con la
+  rifinitura.
+- **[webapp/src/ComparisonRunner.php](webapp/src/ComparisonRunner.php)**:
+  - dopo il confronto per pixel, riusa i rilevamenti già fatti e lancia
+    quelli mancanti, con l'avanzamento nel lavoro in background;
+  - se il rilevatore è occupato da un altro rilevamento, riprova fino a 3
+    volte;
+  - un errore nel calcolo degli oggetti non fa perdere il confronto per
+    pixel, i cui file sono già scritti;
+  - il confronto per oggetti si fa solo se chiesto. La pagina lo chiede di
+    serie; chi chiama `api/compare.php` direttamente non si ritrova minuti
+    di rilevamento;
+  - se il calcolo non si può fare, il risultato dice perché invece di
+    fallire, e il confronto per pixel viene salvato comunque. Casi:
+    - riprese non georiferite;
+    - risoluzione oltre 2 m/pixel (Sentinel) o scala ignota;
+    - rilevatore non disponibile o non riuscito.
+- **[webapp/migrations/002_comparison_objects.sql](webapp/migrations/002_comparison_objects.sql)**
+  (nuovo) e [webapp/src/Comparison.php](webapp/src/Comparison.php) — nuova
+  colonna `comparisons.objects_json`. È la prima migrazione che aggiunge
+  una colonna a una tabella esistente. Un commento in `schema.sql` avverte
+  di non aggiungerla anche lì: su un database nuovo la migrazione
+  fallirebbe.
+
+### Interfaccia ed export
+
+- **[webapp/public/study.php](webapp/public/study.php)**,
+  **[webapp/public/assets/js/study.js](webapp/public/assets/js/study.js)**:
+  - opzione "Confronta anche gli oggetti", attiva di serie;
+  - riquadro "Oggetti" con +comparsi, −spariti, =rimasti, oppure "non
+    disponibile" con il motivo;
+  - sezione "Oggetti comparsi e spariti": per ogni oggetto categoria,
+    dimensioni e primo tipo compatibile, con zoom sulla ripresa A o B;
+  - contorni sull'immagine, disattivabili: verdi i comparsi, rossi
+    tratteggiati gli spariti, grigi i rimasti;
+  - il riassunto entra nella didascalia predefinita. Contiene solo
+    conteggi, nessuna coordinata;
+  - anche i confronti riaperti dallo storico mostrano gli oggetti.
+- **[webapp/src/ExportBuilder.php](webapp/src/ExportBuilder.php)** — nel
+  report del pacchetto, riepilogo e tabella dei cambiamenti. Avverte che i
+  riquadri includono margine e ombra, e che il tipo compatibile è solo un
+  indizio. I dati completi sono in `report.json`.
+
+### Prove
+
+Nella copia isolata, su versioni Wayback di un piazzale di Sigonella:
+
+- **2022 contro 2024:** 5 comparsi, 9 spariti, 0 rimasti. A vista è
+  corretto: in due anni gli aerei sono tutti diversi.
+- **2023 contro 2024:** 5 comparsi, 4 spariti.
+- **Stessa acquisizione del 2024, area spostata di ~90 m:** tutti e 5 gli
+  aerei rimasti, a 0–4 m di distanza; i 2 fuori dall'area comune esclusi.
+- **Scarto di georeferenza simulato:** la bbox salvata di quella ripresa
+  è stata spostata di ~8 m.
+  - Con l'allineamento delle immagini: aerei ancora a 0–4 m, riquadri
+    sugli aerei nella ripresa B.
+  - Con le sole coordinate (allineamento disattivato): 8–12 m.
+- **Ripresa d'insieme a ~4,5 m/pixel:** "non disponibile" con il motivo.
+- **Test:** [webapp/tests/ObjectChangeTest.php](webapp/tests/ObjectChangeTest.php)
+  (nuovo), 10 test:
+  - rimasto, sparito e comparso;
+  - sostituito;
+  - categorie diverse e veicoli fra loro;
+  - stessa soglia per le due riprese;
+  - area comune;
+  - posizioni di B nel sistema di A;
+  - riprese senza coordinate;
+  - uno scarto di georeferenza di 12 m corretto dall'allineamento;
+  - B senza coordinate ma allineata;
+  - dati malformati.
+
+  In più, 3 test Python per `frac_homography`, rifinitura compresa.
+  Totali: 51 test PHP, 28 Python.
+
+Revisione indipendente: nessun bug grave, 5 punti, tutti corretti. Il
+principale: abbinare gli oggetti con l'allineamento delle immagini invece
+che con le sole coordinate.
+
+Richiede il riavvio del servizio Python per `b_to_a`. Senza riavvio il
+confronto per oggetti funziona lo stesso, ma solo con le coordinate.
+
 ## 2026-10-09 (3) — Confronto affidabile fra riprese ad alta risoluzione di epoche diverse
 
 Limite rimasto aperto dal punto 2 del piano di evoluzione: fra riprese

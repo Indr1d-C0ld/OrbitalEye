@@ -4,7 +4,7 @@ import unittest
 import numpy as np
 
 from . import _env  # noqa: F401
-from app.core.registration import register_auto, register_geo, register_images
+from app.core.registration import frac_homography, register_auto, register_geo, register_images
 
 
 def textured(h=400, w=400, seed=1):
@@ -104,6 +104,44 @@ class RegisterAutoTest(unittest.TestCase):
         b = cv2.warpAffine(a, np.float32([[1, 0, 30], [0, 1, 10]]), (400, 400))
         pts = [(x, y, x + 30, y + 10) for x in (40, 200, 360) for y in (40, 200, 360)]
         self.assertIn("geo", register_auto(a, b, pts).method)
+
+
+class FracHomographyTest(unittest.TestCase):
+    def _map(self, hmat, x, y):
+        v = np.array(hmat) @ np.array([x, y, 1.0])
+        return v[0] / v[2], v[1] / v[2]
+
+    def test_punto_di_b_riportato_in_a(self):
+        # B = A spostata di 30 px a destra e 10 in basso: il punto (x, y) di
+        # A sta in (x+30, y+10) di B, e la trasformazione B→A lo riporta.
+        import cv2
+        a = textured()
+        b = cv2.warpAffine(a, np.float32([[1, 0, 30], [0, 1, 10]]), (400, 400))
+        pts = [(x, y, x + 30, y + 10) for x in (40, 200, 360) for y in (40, 200, 360)]
+        r = register_geo(a, b, pts, refine=False)
+        hmat = frac_homography(r, 400, 400)
+        x, y = self._map(hmat, (230 + 0.5) / 400, (110 + 0.5) / 400)
+        self.assertAlmostEqual(x * 400, 200.5, delta=1.0)
+        self.assertAlmostEqual(y * 400, 100.5, delta=1.0)
+
+    def test_comprende_la_rifinitura(self):
+        # Coordinate sbagliate di 3 px, corrette dalla rifinitura: la
+        # trasformazione restituita è quella finale, non quella geografica.
+        import cv2
+        a = textured()
+        b = cv2.warpAffine(a, np.float32([[1, 0, 33], [0, 1, 12]]), (400, 400))
+        pts = [(x, y, x + 30, y + 10) for x in (40, 200, 360) for y in (40, 200, 360)]
+        r = register_geo(a, b, pts, refine=True)
+        self.assertEqual(r.method, "geo+ecc")
+        x, y = self._map(frac_homography(r, 400, 400), (233 + 0.5) / 400, (112 + 0.5) / 400)
+        self.assertAlmostEqual(x * 400, 200.5, delta=1.0)
+        self.assertAlmostEqual(y * 400, 100.5, delta=1.0)
+
+    def test_nessuna_trasformazione_senza_allineamento(self):
+        rng = np.random.default_rng(3)
+        r = register_images(rng.integers(0, 255, (300, 300, 3), dtype=np.uint8),
+                            rng.integers(0, 255, (300, 300, 3), dtype=np.uint8))
+        self.assertIsNone(frac_homography(r, 300, 300))
 
 
 class RegisterImagesTest(unittest.TestCase):

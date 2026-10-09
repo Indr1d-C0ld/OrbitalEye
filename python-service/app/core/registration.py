@@ -506,3 +506,41 @@ def register_geo(
         confidence=confidence,
         warp_like=warp_like,
     )
+
+
+def frac_homography(result: RegistrationResult, w: int, h: int, grid: int = 24) -> list | None:
+    """La trasformazione B→A dell'allineamento come omografia 3×3 fra
+    coordinate frazionarie (0-1) delle due immagini: un punto di B in
+    frazioni va nel punto di A, e quindi di aligned_b, che mostra lo stesso
+    contenuto.
+
+    Ogni metodo (coordinate + rifinitura, ORB + ECC, ECC affine, punti
+    manuali) espone la propria trasformazione solo come warp_like: qui la si
+    applica a due griglie che contengono le coordinate di B, e dai punti di
+    A che ricevono dati si stima l'omografia (esatta: tutti i metodi sono
+    omografie o affini, anche composte). Serve a confrontare gli oggetti
+    rilevati con lo stesso allineamento delle immagini, non con le sole
+    coordinate salvate, che fra fonti diverse possono differire di 5-15 m.
+
+    None se l'allineamento non è riuscito o è disattivato.
+    """
+    if result is None or not result.success or result.warp_like is None or result.method in ("none", "skipped"):
+        return None
+    ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
+    gx = (xs + 0.5) / w
+    gy = (ys + 0.5) / h
+    valid = result.warp_like(np.full((h, w), 255, np.uint8))
+    wx = result.warp_like(gx)
+    wy = result.warp_like(gy)
+    iy = np.linspace(0, h - 1, grid).astype(int)
+    ix = np.linspace(0, w - 1, grid).astype(int)
+    pts_a, pts_b = [], []
+    for y in iy:
+        for x in ix:
+            if valid[y, x] > 0:
+                pts_a.append(((x + 0.5) / w, (y + 0.5) / h))
+                pts_b.append((float(wx[y, x]), float(wy[y, x])))
+    if len(pts_a) < 8:
+        return None
+    homography, _ = cv2.findHomography(np.float32(pts_b), np.float32(pts_a), 0)
+    return homography.tolist() if homography is not None else None

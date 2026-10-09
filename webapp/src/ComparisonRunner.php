@@ -149,6 +149,15 @@ final class ComparisonRunner
             throw new ComparisonException($e->getMessage(), 502);
         }
 
+        // Confronto per oggetti (vedi ObjectChange): facoltativo, e un suo
+        // problema non deve far perdere il confronto per pixel già fatto.
+        // Solo se chiesto: la pagina lo chiede di serie, un chiamante
+        // diretto di api/compare.php non si ritrova minuti di rilevamento.
+        $objects = null;
+        if (!empty($body['objects'])) {
+            $objects = self::objectChange($captureA, $captureB, $result['registration']['b_to_a'] ?? null, $progress);
+        }
+
         $progress(90, 'Salvataggio…');
         $comparisonId = Comparison::create(
             $studyId,
@@ -159,7 +168,8 @@ final class ComparisonRunner
             $result['stats'],
             $result['regions'],
             $result['paths'],
-            $result['registration']
+            $result['registration'],
+            $objects
         );
         Study::touch($studyId);
 
@@ -168,6 +178,7 @@ final class ComparisonRunner
             'stats' => $result['stats'],
             'regions' => $result['regions'],
             'registration' => $result['registration'],
+            'objects' => $objects,
             // Parametri effettivi, per gli avvisi sull'affidabilità (study.js).
             'params' => [
                 'diff_method' => $payload['diff_method'],
@@ -218,6 +229,60 @@ final class ComparisonRunner
         // Punti tutti su una riga o una colonna (B sovrapposta ad A solo in
         // una striscia) non bastano: si allinea con le immagini.
         return count($points) >= 4 && count($rows) >= 2 && count($cols) >= 2 ? $points : null;
+    }
+
+    /**
+     * Oggetti comparsi, spariti e rimasti fra le due riprese. Usa i
+     * rilevamenti già fatti e lancia quelli che mancano (soglia predefinita).
+     * Se non si può fare, lo dice invece di fallire.
+     */
+    private static function objectChange(array $captureA, array $captureB, ?array $bToA, callable $progress): array
+    {
+        if (!Capture::resolveGeoRef($captureA) || (!$bToA && !Capture::resolveGeoRef($captureB))) {
+            return ['available' => false, 'reason' => 'Servono riprese georiferite: senza coordinate non si può sapere dove si trovano gli oggetti dell\'una nell\'altra.'];
+        }
+        foreach ([$captureA, $captureB] as $c) {
+            $mpp = Detection::resolveMpp($c);
+            if (!$mpp || ($mpp['mpp_x'] + $mpp['mpp_y']) / 2 > Detection::MAX_MPP) {
+                return ['available' => false, 'reason' => 'Il rilevamento degli oggetti richiede riprese più dettagliate di ' . str_replace('.', ',', (string) Detection::MAX_MPP) . ' m/pixel con scala nota (non Sentinel).'];
+            }
+        }
+        $dets = [];
+        foreach ([['A', $captureA, 60], ['B', $captureB, 75]] as [$name, $c, $pct]) {
+            $det = Detection::forCapture((int) $c['id']);
+            if (!$det) {
+                $progress($pct, "Rilevamento degli oggetti nella ripresa $name…");
+                // Il rilevatore serve una richiesta alla volta e risponde
+                // "occupato" dopo 20 s di attesa: un rilevamento lanciato
+                // in parallelo non deve far perdere il confronto per oggetti.
+                for ($attempt = 1; ; $attempt++) {
+                    try {
+                        $det = DetectionRunner::run(['capture_id' => (int) $c['id']]);
+                        break;
+                    } catch (Throwable $e) {
+                        if ($attempt < 3 && str_contains($e->getMessage(), 'in corso')) {
+                            $progress($pct, "Rilevatore occupato, nuovo tentativo per la ripresa $name…");
+                            sleep(5);
+                            continue;
+                        }
+                        return ['available' => false, 'reason' => "Rilevamento nella ripresa $name non riuscito: " . $e->getMessage()];
+                    }
+                }
+                if (!$det) {
+                    return ['available' => false, 'reason' => "Rilevamento nella ripresa $name non riuscito."];
+                }
+            }
+            $dets[] = $det;
+        }
+        $progress(88, 'Confronto degli oggetti…');
+        try {
+            return ObjectChange::compare($captureA, $captureB, $dets[0], $dets[1], $bToA);
+        } catch (Throwable $e) {
+            // Il confronto per pixel è già fatto (e i suoi file scritti):
+            // non va perso per un rilevamento salvato in forma inattesa.
+            error_log('OrbitalEye: confronto per oggetti non riuscito: ' . $e->getMessage());
+            return ['available' => false, 'reason' => 'Confronto degli oggetti non riuscito: ' . $e->getMessage()];
+        }
     }
 
     private static function enhanceSteps(array $opts): array

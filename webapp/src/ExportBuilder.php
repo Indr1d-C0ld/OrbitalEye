@@ -45,6 +45,7 @@ final class ExportBuilder
         $regions = json_decode($comparison['regions_json'], true) ?: [];
         $resultPaths = json_decode($comparison['result_paths_json'], true) ?: [];
         $registration = json_decode($comparison['registration_json'], true) ?: [];
+        $objects = json_decode($comparison['objects_json'] ?? '', true) ?: null;
         $annotations = array_map(function ($a) {
             $a['coords'] = json_decode($a['coords_json'], true);
             return $a;
@@ -90,6 +91,7 @@ final class ExportBuilder
             'stats' => $stats,
             'regions' => $regions,
             'registration' => $registration,
+            'objects' => $objects,
             'annotations' => $annotations,
         ];
 
@@ -139,6 +141,7 @@ final class ExportBuilder
             ],
             'params' => $d['params'],
             'registration' => $d['registration'],
+            'objects' => $d['objects'],
             'stats' => $d['stats'],
             'regions' => $d['regions'],
             'annotations' => array_map(fn($a) => [
@@ -165,6 +168,32 @@ final class ExportBuilder
         }
         if (($params['diff_method_requested'] ?? '') === 'auto') {
             $diffMethodLabel .= ' (scelto automaticamente)';
+        }
+
+        // Confronto per oggetti (vedi ObjectChange): riepilogo ed elenco dei
+        // cambiamenti; i rimasti solo nel conteggio.
+        $objectsHtml = '';
+        $objects = $d['objects'] ?? null;
+        if ($objects && empty($objects['available'])) {
+            $objectsHtml = '<h2>Oggetti comparsi e spariti</h2><div class="panel muted">Non disponibile: ' . $e($objects['reason'] ?? '') . '</div>';
+        } elseif ($objects) {
+            $statusLabels = ['appeared' => 'Comparso', 'disappeared' => 'Sparito', 'unchanged' => 'Rimasto'];
+            $rows = '';
+            foreach ($objects['objects'] ?? [] as $o) {
+                if ($o['status'] === 'unchanged') {
+                    continue;
+                }
+                $size = !empty($o['size_m']) ? str_replace('.', ',', $o['size_m'][0] . '×' . $o['size_m'][1]) . ' m' : '—';
+                $rows .= '<tr><td>' . (int) $o['n'] . '</td><td>' . $e($statusLabels[$o['status']] ?? $o['status']) . '</td><td>' . $e($o['label'])
+                    . '</td><td>' . $e($size) . '</td><td>' . $e($o['candidate'] ?? '—') . '</td></tr>';
+            }
+            if ($rows === '') {
+                $rows = '<tr><td colspan="5" class="muted">Nessun oggetto comparso o sparito.</td></tr>';
+            }
+            $objectsHtml = '<h2>Oggetti comparsi e spariti</h2><div class="panel"><p>' . $e(ucfirst($objects['summary'] ?? '')) . '.</p>'
+                . '<p class="muted">Rilevamento automatico su entrambe le riprese (confidenza minima ' . $e(round(($objects['confidence'] ?? 0) * 100)) . '%), '
+                . 'oggetti abbinati per posizione geografica, categoria e dimensioni. I riquadri includono margine e ombra: le dimensioni sono un limite superiore e il tipo compatibile solo un indizio. ' . $e(implode(' ', $objects['notes'] ?? [])) . '</p>'
+                . '<table><thead><tr><th>#</th><th>Stato</th><th>Oggetto</th><th>Dimensioni</th><th>Primo tipo compatibile per dimensioni</th></tr></thead><tbody>' . $rows . '</tbody></table></div>';
         }
 
         $regionsRows = '';
@@ -289,6 +318,8 @@ final class ExportBuilder
     <figure><img src="{$zipNames['capture_a']}" alt="Prima"><figcaption>Originale A — prima</figcaption></figure>
     <figure><img src="{$zipNames['aligned_b']}" alt="Dopo (allineata)"><figcaption>Originale B — dopo (allineata su A)</figcaption></figure>
   </div>
+
+  {$objectsHtml}
 
   <h2>Regioni di cambiamento rilevate</h2>
   <div class="panel">

@@ -42,12 +42,13 @@ final class Comparison
         array $stats,
         array $regions,
         array $resultPaths,
-        array $registration
+        array $registration,
+        ?array $objects = null
     ): int {
         $stmt = Database::get()->prepare(
             'INSERT INTO comparisons
-                (study_id, capture_a_id, capture_b_id, title, params_json, stats_json, regions_json, result_paths_json, registration_json)
-             VALUES (:sid, :a, :b, :title, :params, :stats, :regions, :paths, :reg)'
+                (study_id, capture_a_id, capture_b_id, title, params_json, stats_json, regions_json, result_paths_json, registration_json, objects_json)
+             VALUES (:sid, :a, :b, :title, :params, :stats, :regions, :paths, :reg, :objects)'
         );
         $stmt->execute([
             ':sid' => $studyId,
@@ -59,6 +60,7 @@ final class Comparison
             ':regions' => json_encode($regions),
             ':paths' => json_encode($resultPaths),
             ':reg' => json_encode($registration),
+            ':objects' => $objects !== null ? json_encode($objects) : null,
         ]);
         return (int) Database::get()->lastInsertId();
     }

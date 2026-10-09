@@ -36,6 +36,9 @@ CREATE TABLE IF NOT EXISTS captures (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Colonne aggiunte dopo con le migrazioni (migrations/): objects_json (002).
+-- Non aggiungerle qui: su un database nuovo la migrazione fallirebbe con
+-- "duplicate column".
 CREATE TABLE IF NOT EXISTS comparisons (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     study_id INTEGER NOT NULL REFERENCES studies(id) ON DELETE CASCADE,

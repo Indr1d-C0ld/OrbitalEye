@@ -7,7 +7,7 @@ from ..core import detect as detectmod
 from ..core import diff as diffmod
 from ..core import enhance as enhancemod
 from ..core import spectral as spectralmod
-from ..core.registration import register_auto, register_images, register_with_points
+from ..core.registration import frac_homography, register_auto, register_images, register_with_points
 from ..core.utils import load_image, load_image_with_mask, new_id, safe_storage_path, save_image
 from ..deps import require_service_key
 
@@ -207,7 +207,13 @@ def compare(req: CompareRequest):
             "heatmap": f"results/{result_id}/heatmap.jpg",
             "edges": f"results/{result_id}/edges.jpg",
         },
-        "registration": {"method": reg_method, "confidence": reg_confidence},
+        "registration": {
+            "method": reg_method,
+            "confidence": reg_confidence,
+            # Per riportare nel sistema di A ciò che si trova in B (oggetti
+            # rilevati, vedi ObjectChange.php) con lo stesso allineamento.
+            "b_to_a": frac_homography(reg_result, w, h),
+        },
         "params": req.model_dump(exclude={"enhance_a", "enhance_b"}),
         "stats": stats,
         "regions": [

@@ -571,6 +571,10 @@ require __DIR__ . '/partials/nav.php';
         <label>Opacità overlay <span class="info-tip" tabindex="0" data-tip="Trasparenza del colore usato per evidenziare le zone di cambiamento nell'immagine overlay. Valori più alti rendono l'evidenziazione più marcata.">?</span><span class="val" id="val-alpha" style="margin-left:auto;"><?= e($defaults['default_overlay_alpha']) ?></span></label>
         <input type="range" id="opt-alpha" min="0.05" max="0.9" step="0.05" value="<?= e($defaults['default_overlay_alpha']) ?>">
       </div>
+      <div class="checkbox-row field">
+        <input type="checkbox" id="opt-objects" checked>
+        <label style="margin:0;">Confronta anche gli oggetti (velivoli, navi, veicoli) <span class="info-tip" tabindex="0" data-tip="Usa il rilevamento automatico su entrambe le riprese (lo esegue se manca) e confronta gli oggetti trovati per posizione geografica, categoria e dimensioni: comparsi, spariti, rimasti. Non risente di ombre, colori o trama del terreno. Solo per riprese georiferite più dettagliate di 2 m/pixel; un oggetto spostato di qualche decina di metri risulta sparito da un posto e comparso in un altro.">?</span></label>
+      </div>
       <div class="checkbox-row field" id="opt-align-row">
         <input type="checkbox" id="opt-align" checked>
         <label style="margin:0;">Allinea automaticamente le due riprese prima del confronto <span class="info-tip" tabindex="0" data-tip="Corregge piccoli disallineamenti tra le due riprese (rotazione, traslazione, scala) prima di confrontarle, tramite riconoscimento automatico dei punti in comune (motore ORB+ECC). Consigliato quasi sempre: senza allineamento, anche un piccolo scostamento nell'inquadratura genera falsi cambiamenti lungo tutti i bordi degli oggetti.">?</span></label>
@@ -711,6 +715,12 @@ require __DIR__ . '/partials/nav.php';
       <h3>Regioni di cambiamento rilevate</h3>
       <div class="hint" style="margin-bottom:8px;">Clicca una regione (qui o direttamente il suo riquadro sull'immagine) per ingrandirla automaticamente. "✎ Annota" la trasforma in un'annotazione con un click.</div>
       <div class="region-list" id="region-list"></div>
+      <div id="object-change-section" style="display:none;">
+        <h3 style="margin-top:18px;">Oggetti comparsi e spariti</h3>
+        <div class="hint" id="object-change-hint" style="margin-bottom:8px;"></div>
+        <label class="checkbox-row" style="margin-bottom:8px;"><input type="checkbox" id="show-objects" checked> Mostra sull'immagine <span class="hint">(verde: comparso, rosso: sparito, grigio: rimasto)</span></label>
+        <div class="region-list" id="object-list"></div>
+      </div>
       <h3 style="margin-top:18px;">Annotazioni</h3>
       <div id="annotation-list"></div>
     </div>

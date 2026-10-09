@@ -738,6 +738,7 @@
         open_iterations: 1,
         close_iterations: 2,
         min_blob_area: $('#opt-minarea').value,
+        objects: $('#opt-objects') ? $('#opt-objects').checked : true,
         overlay_alpha: $('#opt-alpha').value,
         title: $('#result-title') ? $('#result-title').value : '',
         enhance: {
@@ -774,6 +775,7 @@
           urls: data.urls,
           registration: data.registration,
           params: data.params,
+          objects: data.objects,
         });
       } catch (err) {
         status.textContent = 'Errore: ' + err.message;
@@ -805,6 +807,7 @@
       urls,
       registration: (() => { try { return JSON.parse(cmp.registration_json || 'null'); } catch (e) { return null; } })(),
       params: (() => { try { return JSON.parse(cmp.params_json || 'null'); } catch (e) { return null; } })(),
+      objects: (() => { try { return JSON.parse(cmp.objects_json || 'null'); } catch (e) { return null; } })(),
     });
     refreshSelectionUI();
     $('#result-title').value = cmp.title || '';
@@ -869,6 +872,141 @@
     return notes;
   }
 
+  // ---------- Confronto per oggetti (vedi ObjectChange.php) ----------
+  const OBJECT_STATUS = {
+    appeared: { label: 'comparso', sign: '+', color: '#3dff8a' },
+    disappeared: { label: 'sparito', sign: '−', color: '#ff3d5a' },
+    unchanged: { label: 'rimasto', sign: '=', color: '#9aa4b2' },
+  };
+  function objectsTile(objects) {
+    if (!objects) return '';
+    if (!objects.available) {
+      return `<div class="stat-tile" title="${esc(objects.reason || '')}"><div class="value" style="font-size:16px; color:var(--text-muted);">non disponibile</div><div class="label">Oggetti</div></div>`;
+    }
+    const n = { appeared: 0, disappeared: 0, unchanged: 0 };
+    (objects.objects || []).forEach((o) => { n[o.status]++; });
+    return `<div class="stat-tile" title="${esc(objects.summary || '')}"><div class="value" style="font-size:16px;">`
+      + `<span style="color:${OBJECT_STATUS.appeared.color};">+${n.appeared}</span> `
+      + `<span style="color:${OBJECT_STATUS.disappeared.color};">−${n.disappeared}</span> `
+      + `<span style="color:${OBJECT_STATUS.unchanged.color};">=${n.unchanged}</span>`
+      + `</div><div class="label">Oggetti</div></div>`;
+  }
+
+  function objectBox(o, img) {
+    const pts = (o.polygon && o.polygon.length ? o.polygon : [o.center]);
+    const xs = pts.map((p) => p[0] * img.naturalWidth);
+    const ys = pts.map((p) => p[1] * img.naturalHeight);
+    // Senza contorno (oggetti rimasti) si inquadra un intorno del centro.
+    const pad = o.polygon && o.polygon.length ? 12 : 60;
+    const x = Math.min(...xs) - pad, y = Math.min(...ys) - pad;
+    return { x, y, w: Math.max(...xs) + pad - x, h: Math.max(...ys) + pad - y };
+  }
+
+  function focusObject(index, view) {
+    const objects = state.currentComparison && state.currentComparison.objects;
+    const o = objects && objects.objects ? objects.objects[index] : null;
+    if (!o) return;
+    if (view) setView(view);
+    whenStageReady(() => {
+      const img = $('#stage-img');
+      const box = objectBox(o, img);
+      flashRegion(box);
+      if (activeZoom && activeZoom.focusRegion) {
+        activeZoom.focusRegion(box.x, box.y, box.w, box.h, img.naturalWidth, img.naturalHeight);
+      }
+      $$('.object-item').forEach((el) => el.classList.toggle('selected', Number(el.dataset.objectIndex) === index));
+    });
+  }
+
+  function renderObjectChange(objects) {
+    const section = $('#object-change-section');
+    if (!section) return;
+    const list = $('#object-list');
+    list.innerHTML = '';
+    if (!objects) {
+      section.style.display = 'none';
+      return;
+    }
+    section.style.display = '';
+    const hint = $('#object-change-hint');
+    if (!objects.available) {
+      hint.textContent = 'Confronto per oggetti non disponibile: ' + (objects.reason || '');
+      return;
+    }
+    hint.textContent = 'Rilevamento automatico su entrambe le riprese, oggetti con confidenza ≥ '
+      + Math.round(objects.confidence * 100) + '%, abbinati per posizione geografica, categoria e dimensioni. '
+      + 'Un oggetto spostato risulta sparito da un posto e comparso in un altro; verifica a vista prima di trarre conclusioni.'
+      + ((objects.notes || []).length ? ' ' + objects.notes.join(' ') : '');
+    if (!(objects.objects || []).length) {
+      list.innerHTML = '<div class="hint">Nessun velivolo, nave o veicolo rilevato nell\'area comune.</div>';
+      return;
+    }
+    objects.objects.forEach((o, i) => {
+      const st = OBJECT_STATUS[o.status] || OBJECT_STATUS.unchanged;
+      const size = o.size_m ? ` ${String(o.size_m[0]).replace('.', ',')}×${String(o.size_m[1]).replace('.', ',')} m` : '';
+      const div = document.createElement('div');
+      div.className = 'region-item object-item';
+      div.dataset.objectIndex = i;
+      div.innerHTML = `
+        <span><span style="color:${st.color}; font-weight:bold;">${st.sign} ${esc(st.label)}</span> — ${esc(o.label)}${esc(size)}`
+        + (o.candidate ? ` <span style="color:var(--text-muted);">(compatibile: ${esc(o.candidate)})</span>` : '')
+        + `</span>
+        <span style="display:flex; gap:4px; flex-wrap:wrap;">
+          <button type="button" class="btn btn-sm" data-object-view="original-a" title="Mostra nella ripresa A (prima)">📷 A</button>
+          <button type="button" class="btn btn-sm" data-object-view="original-b" title="Mostra nella ripresa B (dopo), allineata su A">📷 B</button>
+        </span>`;
+      div.addEventListener('click', (e) => {
+        if (e.target.closest('button')) return;
+        focusObject(i, null);
+      });
+      div.querySelectorAll('[data-object-view]').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          focusObject(i, btn.dataset.objectView);
+        });
+      });
+      list.appendChild(div);
+    });
+  }
+
+  // Disegnati con le annotazioni (vedi redrawAnnotations), nel sistema di
+  // A: lo stesso delle viste del confronto (B è allineata su A).
+  function drawObjectChange(ctx, canvas) {
+    const objects = state.currentComparison && state.currentComparison.objects;
+    const toggle = $('#show-objects');
+    if (!objects || !objects.available || !objects.objects || (toggle && !toggle.checked)) return;
+    ctx.save();
+    ctx.lineWidth = 2;
+    ctx.font = 'bold 12px "Share Tech Mono", monospace';
+    objects.objects.forEach((o) => {
+      const st = OBJECT_STATUS[o.status] || OBJECT_STATUS.unchanged;
+      const pts = o.polygon && o.polygon.length ? o.polygon : null;
+      ctx.strokeStyle = st.color;
+      ctx.fillStyle = st.color;
+      ctx.shadowColor = st.color;
+      ctx.shadowBlur = o.status === 'unchanged' ? 0 : 6;
+      ctx.setLineDash(o.status === 'disappeared' ? [5, 4] : []);
+      if (pts) {
+        ctx.beginPath();
+        pts.forEach((p, k) => (k ? ctx.lineTo(p[0] * canvas.width, p[1] * canvas.height) : ctx.moveTo(p[0] * canvas.width, p[1] * canvas.height)));
+        ctx.closePath();
+        ctx.stroke();
+      } else {
+        // Rimasti: solo il centro.
+        ctx.beginPath();
+        ctx.arc(o.center[0] * canvas.width, o.center[1] * canvas.height, 5, 0, 2 * Math.PI);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+      ctx.shadowBlur = 0;
+      const top = pts ? Math.min(...pts.map((p) => p[1])) : o.center[1];
+      ctx.fillText(st.sign + o.n, o.center[0] * canvas.width - 6, top * canvas.height - 4);
+    });
+    ctx.restore();
+  }
+  const showObjectsToggle = $('#show-objects');
+  if (showObjectsToggle) showObjectsToggle.addEventListener('change', () => redrawAnnotations());
+
   function renderResult(result) {
     state.currentComparison = result;
     $('#results-panel').style.display = '';
@@ -892,6 +1030,7 @@
       ${changedTile}
       ${alignTile(result.registration)}
       ${methodTile(result.params)}
+      ${objectsTile(result.objects)}
     `;
     const relWarn = $('#cmp-reliability-warning');
     if (relWarn) {
@@ -904,6 +1043,7 @@
     }
 
     renderRegionList(result.regions);
+    renderObjectChange(result.objects);
     setView('overlay');
 
     // Didascalia di default per la condivisione (vedi blocco "Condividi
@@ -914,7 +1054,9 @@
     const prov = pairProvenance(result.captureAId, result.captureBId);
     state.currentProvenance = prov;
     if (cmpCaptionEl) {
+      const objs = result.objects && result.objects.available ? result.objects : null;
       cmpCaptionEl.value = `Confronto satellitare — variazione rilevata: ${(s.changed_ratio * 100).toFixed(2)}% (${s.num_regions} regioni) — OrbitalEye`
+        + (objs && objs.summary ? '\nOggetti (rilevamento automatico) — ' + objs.summary + '.' : '')
         + (prov.captionLines ? '\n' + prov.captionLines : '');
     }
     const esriNotice = $('#cmp-esri-notice');
@@ -1647,6 +1789,7 @@
         ctx.fillText(a.label, c.x * canvas.width + 3, c.y * canvas.height - 4);
       }
     });
+    drawObjectChange(ctx, canvas);
   }
 
   function renderAnnotationList() {
