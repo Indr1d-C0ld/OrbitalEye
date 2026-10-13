@@ -81,11 +81,16 @@ Il confronto non è una semplice sovrapposizione: le due immagini vengono prima 
   - Il ritaglio di ogni aereo è orientato lungo la fusoliera e a scala fissa in metri; DINOv2 gira in locale.
   - Su Brize Norton, con 7 riferimenti presi dalla ripresa del 2021, tutti gli A400M e gli A330 della ripresa di oggi hanno come più simile il tipo giusto.
   - Propone solo tipi già identificati almeno una volta.
+- **Classificatore MAR20** (facoltativo): riconosce 20 tipi militari, soprattutto statunitensi e russi (C-130, C-17, C-5, KC-135, KC-10, E-3, E-8, P-3, B-1, B-52, F-15, F-16, F-22, F/A-18, Su-24, Su-34, Su-35, Tu-22M, Tu-95, Tu-160) con le varianti che dall'alto non si distinguono (C-130J, F-15E, Super Hornet, RC-135, Su-27/30), senza bisogno di averli identificati prima ("🛩 MAR20: C-17 95%").
+  - Usa gli stessi vettori DINOv2 della libreria visiva; è addestrato sul dataset pubblico MAR20 e gira in locale.
+  - Sull'insieme di prova ufficiale di MAR20 il tipo giusto è primo nell'80% dei casi e fra i primi tre nel 93%; quando è sicuro almeno al 90% è giusto nel 97–99% dei casi. I caccia sono il punto debole.
+  - Un aereo di un altro tipo (A400M, A330, Eurofighter…) riceve comunque uno dei 20, a volte con probabilità alta. Per questo la ★ compare solo se il tipo è molto probabile **e** le misure della sagoma sono compatibili: su 42 aerei di riprese Esri reali (Mildenhall, Brize Norton) nessuna ★ sbagliata, nessun A330 o A400M scambiato per un tipo MAR20. È un indizio, non un verdetto.
 - **Due modelli di rilevamento**: "veloce" (di serie) e "accurato", con meno frammenti e doppioni ma circa tre volte più lento.
 - **Verifica e qualità del rilevamento**: per ogni oggetto trovato, ✓ conferma (con il tipo del velivolo), ✗ scarta, ✎ corregge classe e tipo; gli oggetti non trovati si aggiungono da un'annotazione. La pagina **Qualità del rilevamento** misura su queste verifiche:
   - precisione e richiamo per classe;
   - precisione per fascia di confidenza, per scegliere la soglia;
-  - quante volte il tipo vero è il primo o fra i primi tre dei compatibili, con le misure della sagoma, con quelle del riquadro e con la libreria visiva (usando solo riferimenti di altre riprese).
+  - quante volte il tipo vero è il primo o fra i primi tre dei compatibili, con le misure della sagoma, con quelle del riquadro e con la libreria visiva (usando solo riferimenti di altre riprese);
+  - per il classificatore MAR20, quante ★ sono state date e quante erano giuste.
 
   Si ricalcola con il codice attuale, quindi ogni miglioramento si misura sugli stessi oggetti.
 - **Confronto per oggetti**: nel confronto fra due riprese, quali aerei, elicotteri, navi e veicoli sono **comparsi, spariti o rimasti** ("aerei: 5 comparsi, 9 spariti, 0 rimasti"). Usa il rilevamento automatico su entrambe le riprese, eseguito se manca. Gli oggetti sono abbinati per posizione, categoria e dimensioni. Le posizioni di B sono riportate su A con lo stesso allineamento delle immagini, quindi lo scarto di georeferenza fra fonti diverse non separa lo stesso oggetto. Le due riprese possono avere aree, rotazioni e risoluzioni diverse. Non risente di ombre, colori o trama del terreno. Elenco con zoom su ciascun oggetto, riquadri verdi e rossi sull'immagine, riepilogo nella didascalia e nel report esportato. Anche gli **alert dei download pianificati** riportano gli oggetti comparsi, spariti e rimasti rispetto alla ripresa precedente
@@ -197,6 +202,7 @@ Lo script scarica YOLO11s-OBB dalle release ufficiali Ultralytics e lo converte 
 Facoltativi anche:
 - **Modello "accurato"** (YOLO11m-OBB, ~80 MB): meno frammenti e doppioni, tempo circa triplo. Si installa con `VARIANT=m bash python-service/tools/fetch_detector_model.sh`. Se il download di PyTorch si interrompe a metà, scarica il file `.whl` con `curl -C -` e passalo con `TORCH_WHEEL=percorso.whl`.
 - **Libreria visiva** (DINOv2-small di Meta, Apache-2.0, 88 MB, da Hugging Face): si installa con `bash python-service/tools/fetch_embedding_model.sh`.
+- **Classificatore MAR20** (richiede la libreria visiva): il dataset [MAR20](https://gcheng-nwpu.github.io/) (1,2 GB, licenza CC BY-NC 4.0, solo uso non commerciale e di ricerca) si scarica a mano dalla pagina degli autori e si estrae fuori dal sito web; poi `python-service/venv/bin/python python-service/tools/train_type_classifier.py /percorso/MAR20` calcola i vettori (un'ora o due di CPU) e crea `python-service/models/mar20-types.npz` (37 KB). Né il dataset né il risultato vanno pubblicati.
 
 Riavvia il servizio di analisi dopo l'installazione.
 
@@ -384,6 +390,8 @@ cd python-service && venv/bin/python -m unittest discover -s tests -t .
 - [Esri World Imagery](https://www.esri.com/) e [World Imagery Wayback](https://livingatlas.arcgis.com/wayback/) — imagery satellitare ad alta risoluzione, attuale e storica
 - [Ultralytics YOLO11](https://docs.ultralytics.com/) — modello di rilevamento orientato (YOLO11s-OBB), licenza AGPL-3.0; non incluso, si installa con `python-service/tools/fetch_detector_model.sh`
 - [DOTA](https://captain-whu.github.io/DOTA/) — dataset di immagini aeree su cui è addestrato il modello: i pesi sono destinati a uso di ricerca, non commerciale
+- [DINOv2](https://github.com/facebookresearch/dinov2) di Meta — vettori della libreria visiva (DINOv2-small, Apache-2.0); non incluso, si installa con `python-service/tools/fetch_embedding_model.sh`
+- [MAR20](https://gcheng-nwpu.github.io/) — dataset di velivoli militari su cui si addestra il classificatore dei tipi, licenza CC BY-NC 4.0 (uso non commerciale e di ricerca); non incluso. W. Yu, G. Cheng, M. Wang, Y. Yao, X. Xie, X. Yao, J. Han, "MAR20: A Benchmark for Military Aircraft Recognition in Remote Sensing Images", *National Remote Sensing Bulletin*, 2022
 - [Wikipedia](https://en.wikipedia.org/) — dimensioni dei velivoli nella tabella `webapp/src/aircraft_types.json`, tratte dalle schede tecniche delle voci indicate per ciascun tipo (testi CC BY-SA 4.0)
 
 ## Licenza

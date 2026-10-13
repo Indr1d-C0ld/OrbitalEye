@@ -105,9 +105,15 @@ final class DetectionRunner
                 if (in_array($d['class'], ['plane', 'helicopter'], true)) {
                     $silOk = $sil && ($sil['quality'] ?? '') === 'ok' && !empty($sil['span_m']) && !empty($sil['length_m']);
                     $o['id_from'] = $silOk ? 'sagoma' : 'riquadro';
-                    $matches = $silOk
-                        ? AircraftCatalog::match((float) $sil['span_m'], (float) $sil['length_m'], $mppMean, 'silhouette', 'ala_fissa', 5)
-                        : AircraftCatalog::match($side1, $side2, $mppMean, 'box', $d['class'] === 'helicopter' ? 'elicottero' : 'ala_fissa', 5);
+                    // Tutti i tipi compatibili: i primi cinque come candidati,
+                    // le distanze per valutare l'indizio MAR20.
+                    $all = $silOk
+                        ? AircraftCatalog::match((float) $sil['span_m'], (float) $sil['length_m'], $mppMean, 'silhouette', 'ala_fissa', PHP_INT_MAX)
+                        : AircraftCatalog::match($side1, $side2, $mppMean, 'box', $d['class'] === 'helicopter' ? 'elicottero' : 'ala_fissa', PHP_INT_MAX);
+                    $matches = array_slice($all, 0, 5);
+                    if ($d['class'] === 'plane' && ($guess = TypeClassifier::assess($d['type_guess'] ?? null, $all))) {
+                        $o['type_guess'] = $guess;
+                    }
                     $o['candidates'] = array_map(fn($c) => [
                         'name' => $c['name'], 'maker' => $c['maker'], 'category' => $c['category'],
                         'compatibility' => $c['compatibility'], 'note' => $c['note'], 'wiki_url' => $c['wiki_url'],
@@ -129,6 +135,8 @@ final class DetectionRunner
             // Spostamento dell'ombra (metri, assi dell'immagine) stimato
             // dalle sagome: uno per ripresa, un solo sole.
             'shadow_m' => $result['shadow_m'] ?? null,
+            // Classificatore dei tipi che ha prodotto i type_guess (se c'era).
+            'type_model' => $result['type_model'] ?? null,
         ];
         // "Oggetti piccoli" registrato solo se l'ingrandimento è stato davvero
         // applicato (non serve sotto 0,5 m/pixel, né senza scala nota).

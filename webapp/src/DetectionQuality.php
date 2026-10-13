@@ -51,7 +51,11 @@ final class DetectionQuality
             $classes[$g] = ['tp' => 0, 'fp' => 0, 'fn' => 0, 'wrong_class' => 0, 'tp_complete' => 0];
         }
         $bands = array_map(fn($b) => ['from' => $b[0], 'to' => min(1.0, $b[1]), 'tp' => 0, 'fp' => 0], self::CONFIDENCE_BANDS);
-        $ident = ['sagoma' => self::rankStats(), 'riquadro' => self::rankStats()];
+        $ident = ['sagoma' => self::rankStats(), 'riquadro' => self::rankStats(), 'mar20' => self::rankStats()];
+        // Indizio MAR20 con ★ (TypeClassifier): quante volte è stato dato
+        // su un velivolo identificato e quante era giusto. Conta anche gli
+        // aerei di tipi che MAR20 non conosce: sono loro il rischio.
+        $mar20Star = ['n' => 0, 'right' => 0];
         $captures = [];
 
         foreach ($reviewsByCapture as $captureId => $reviews) {
@@ -98,6 +102,28 @@ final class DetectionQuality
                     foreach (self::ranks($o, $r['type_name'], $mppMean) as $method => $rank) {
                         self::addRank($ident[$method], $rank);
                     }
+                    // Rivalutato con le soglie e la tabella attuali, come le
+                    // altre righe; una variante (C-130J per "C-130") conta giusta.
+                    $guess = $g === 'plane' ? TypeClassifier::forObject($o, $mppMean) : null;
+                    if ($guess) {
+                        $names = array_column($guess['types'], 'type');
+                        // Posizione solo per i tipi che il classificatore conosce:
+                        // gli altri non possono risultare primi.
+                        if (TypeClassifier::known($r['type_name'])) {
+                            $rank = null;
+                            foreach ($names as $k => $n) {
+                                if (TypeClassifier::sameType($n, $r['type_name'])) {
+                                    $rank = $k + 1;
+                                    break;
+                                }
+                            }
+                            self::addRank($ident['mar20'], $rank);
+                        }
+                        if ($guess['reliable']) {
+                            $mar20Star['n']++;
+                            $mar20Star['right'] += TypeClassifier::sameType($names[0], $r['type_name']) ? 1 : 0;
+                        }
+                    }
                 }
             }
             // Oggetti veri non trovati dal rilevatore (o non più, dopo una
@@ -123,7 +149,7 @@ final class DetectionQuality
             $b['precision'] = $b['tp'] + $b['fp'] ? round($b['tp'] / ($b['tp'] + $b['fp']), 3) : null;
         }
         unset($b);
-        return ['classes' => $classes, 'bands' => $bands, 'identification' => $ident, 'captures' => $captures,
+        return ['classes' => $classes, 'bands' => $bands, 'identification' => $ident, 'mar20_star' => $mar20Star, 'captures' => $captures,
             'complete_captures' => count(array_filter($captures, fn($c) => $c['complete']))];
     }
 

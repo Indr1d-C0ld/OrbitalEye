@@ -1585,6 +1585,17 @@
   const parseM = (v) => { const n = parseFloat(String(v || '').replace(',', '.')); return Number.isFinite(n) && n > 0 ? n : null; };
   function meanMpp() { return mppX && mppY ? (mppX + mppY) / 2 : null; }
 
+  // Classificatore MAR20 (TypeClassifier): i tipi più probabili fra i 20
+  // militari di MAR20, per aspetto. ★ solo se il primo è molto probabile e
+  // le misure sono vicine a quelle del tipo: un aereo di un tipo che MAR20
+  // non conosce riceve comunque uno dei 20.
+  function mar20Html(d, chosen) {
+    const g = d.type_guess;
+    if (!g || !g.types || !g.types.length) return '';
+    const fmtC = (t) => (t.compatibility === null || t.compatibility === undefined ? 'misure incompatibili' : 'compatibilità delle misure ' + Math.round(t.compatibility * 100) + '%');
+    return `<div class="hint" style="margin-top:4px;" title="Classificatore addestrato su MAR20 (Yu, Cheng et al. 2022, licenza CC BY-NC 4.0): conosce 20 tipi militari, soprattutto statunitensi e russi (C-130, C-17, C-5, KC-135, KC-10, E-3, E-8, P-3, B-1, B-52, F-15, F-16, F-22, F/A-18, Su-24, Su-34, Su-35, Tu-22M, Tu-95, Tu-160), con le loro varianti (C-130J, F-15E, Super Hornet, RC-135, Su-27/30). Un aereo di un altro tipo (A400M, A330, Eurofighter…) riceve comunque uno di questi: per questo la ★ compare solo se il primo tipo è molto probabile e le misure sono compatibili. È un indizio, non un verdetto.">🛩 MAR20${g.reliable ? '' : ' (' + escHtml(g.reason || 'indizio debole') + ')'}: ${g.types.map((t, k) => `<button type="button" class="btn btn-sm det-cand-btn${chosen[d.n] === t.type ? ' btn-primary' : ''}" data-n="${d.n}" data-name="${escHtml(t.type)}" title="Probabilità secondo il classificatore MAR20, ${fmtC(t)}. Clic per usarlo come etichetta.">${k === 0 && g.reliable ? '★ ' : ''}${escHtml(t.type)} ${Math.round(t.p * 100)}%</button>`).join(' ')}</div>`;
+  }
+
   function candidatesTable(list, opts = {}) {
     if (!list.length) return '<div class="hint">Nessun tipo compatibile nella tabella.</div>';
     return '<div class="table-responsive pass-table"><table><thead><tr><th>Tipo</th><th>Categoria · ali</th><th>Dimensioni (m)</th><th>Compatibilità</th>'
@@ -1884,7 +1895,8 @@
             : (['plane', 'helicopter'].includes(d.class) && d.size_m ? '<span class="hint">nessuno in tabella</span>' : ''))
             + (visual.length
               ? `<div class="hint" style="margin-top:4px;" title="Libreria visiva: i velivoli che hai già identificato più simili a questo, per aspetto e non per misure. Propone solo tipi già identificati almeno una volta: un tipo mai identificato non può comparire. Le percentuali sono tutte alte anche fra tipi diversi: conta il distacco fra il primo e il secondo; sotto i 5 punti il suggerimento è incerto.">👁 simile a, fra i tipi già identificati${visual.length && !visual[0].clear ? ' (incerto)' : ''}: ${visual.map((v) => `<button type="button" class="btn btn-sm det-cand-btn${chosen[d.n] === v.type ? ' btn-primary' : ''}" data-n="${d.n}" data-name="${escHtml(v.type)}" title="Velivolo identificato più simile di questo tipo: ${escHtml(v.label)} (${escHtml(v.study)}${v.date ? ', ' + escHtml(v.date.split('-').reverse().join('/')) : ''}). Somiglianza dell'immagine, non delle misure. Clic per usarlo come etichetta.">${escHtml(v.type)} ${Math.round(v.similarity * 100)}%</button>`).join(' ')}</div>`
-              : '');
+              : '')
+            + mar20Html(d, chosen);
           return `<tr data-i="${i}" class="det-row" style="cursor:pointer;"><td>${d.n}</td><td>${escHtml(d.label)}</td><td>${Math.round(d.confidence * 100)}%</td>
             <td>${measures}</td><td>${cHtml}</td>
             <td><button type="button" class="btn btn-sm det-annotate-btn" data-i="${i}" title="Salva questo oggetto come annotazione (poligono)">🏷</button></td>

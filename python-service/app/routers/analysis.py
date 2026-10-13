@@ -11,6 +11,7 @@ from ..core import embed as embedmod
 from ..core import enhance as enhancemod
 from ..core import silhouette as silhouettemod
 from ..core import spectral as spectralmod
+from ..core import typeclass as typeclassmod
 from ..core.registration import frac_homography, register_auto, register_images, register_with_points
 from ..core.utils import load_image, load_image_with_mask, new_id, safe_storage_path, save_image
 from ..deps import require_service_key
@@ -358,6 +359,7 @@ def detect_status():
         "available": detectmod.available(),
         "models": {k: detectmod.available(k) for k in detectmod.MODELS},
         "embedding": embedmod.available(),
+        "type_classifier": typeclassmod.available(),
         "classes": [c[1] for c in detectmod.CLASSES],
     }
 
@@ -404,4 +406,13 @@ def detect(req: DetectRequest):
             for i, v in vecs.items():
                 result["detections"][i]["embedding"] = v
             result["embedding_model"] = embedmod.MODEL_NAME if vecs else None
+            # Tipi probabili secondo il classificatore MAR20 (vedi typeclass.py).
+            try:
+                guesses = typeclassmod.classify_objects(result["detections"], vecs)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("Classificatore dei tipi non eseguito: %s", e)
+                guesses = {}
+            for i, g in guesses.items():
+                result["detections"][i]["type_guess"] = g
+            result["type_model"] = typeclassmod.MODEL_NAME if guesses else None
     return result

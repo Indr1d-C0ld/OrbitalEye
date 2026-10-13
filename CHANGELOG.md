@@ -4,6 +4,139 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-10-14 — Classificatore dei tipi MAR20
+
+Fase 3 del piano su riconoscimento e identificazione (punto A4): un
+classificatore che riconosce 20 tipi militari senza che l'analista li abbia
+identificati prima. Licenze verificate prima del download: MAR20 è CC BY-NC
+4.0, solo uso non commerciale e di ricerca (FAIR1M e xView, anch'essi non
+commerciali, non usati: xView non distingue i tipi). Né il dataset né il
+classificatore sono nel repository.
+
+### Classificatore
+
+- **[python-service/app/core/typeclass.py](python-service/app/core/typeclass.py)**
+  (nuovo):
+  - regressione softmax sui vettori DINOv2 della libreria visiva,
+    standardizzati; la probabilità di un aereo è la media sui suoi
+    orientamenti; restituisce i tre tipi più probabili;
+  - solo per gli aerei (non elicotteri), solo se il file del modello c'è;
+  - un file non valido (dimensioni incoerenti, valori non finiti, vettori di
+    un altro modello) è trattato come assente: senza questo controllo un
+    valore NaN avrebbe fatto fallire la risposta JSON dell'intero
+    rilevamento.
+- **[python-service/app/routers/analysis.py](python-service/app/routers/analysis.py)** —
+  il rilevamento aggiunge `type_guess` a ogni aereo con vettori e
+  `type_model` al risultato; `/detect/status` dice se il classificatore è
+  installato. Un errore del classificatore non fa perdere il rilevamento.
+- **[python-service/tools/train_type_classifier.py](python-service/tools/train_type_classifier.py)**
+  (nuovo):
+  - dal dataset MAR20 scaricato a mano (MAR20.zip, 1.207.288.219 byte,
+    SHA-256 1a496875…cdcb4825, dalla pagina degli autori) calcola i vettori
+    con lo stesso ritaglio del servizio (`embed.crop`, quattro orientamenti,
+    dimensione = lato maggiore del riquadro di MAR20, stretto sull'aereo);
+  - campione: 150 aerei per tipo dall'insieme di addestramento, 60 da quello
+    di prova, presi a turno fra le immagini;
+  - i vettori restano in cache per insieme, campione e modello dei vettori;
+  - salva `models/mar20-types.npz` (37 KB) con il nome del modello dei
+    vettori, e stampa la precisione anche con due soli orientamenti.
+- **Codici di MAR20 e tipi della tabella**: le annotazioni hanno solo i
+  codici A1–A20; la corrispondenza con i nomi (Su-35, C-130, C-17, C-5,
+  F-16, Tu-160, E-3, B-52, P-3, B-1, E-8, Tu-22M, F-15, KC-135, F-22,
+  F/A-18, Tu-95, KC-10, Su-34, Su-24) è stata verificata a vista sui
+  ritagli di ciascun codice.
+
+### Quanto è giusto
+
+- **Insieme di prova ufficiale di MAR20** (1.200 aerei, 60 per tipo):
+  - tipo giusto al primo posto nell'80% dei casi, fra i primi tre nel 93%;
+  - con probabilità almeno 0,9 (44% degli aerei) giusto nel 99%; con due
+    soli orientamenti, il caso degli aerei con la sagoma, nel 97–99%;
+  - ricerca del più simile, come la libreria visiva, sugli stessi dati:
+    66%;
+  - punto debole i caccia: F/A-18 38%, F-15 e Su-35 58%.
+- **Prima prova** (provata e scartata): classificatore sui vettori non
+  standardizzati, 82% in validazione incrociata contro il 95% dopo la
+  standardizzazione. Quel 95% era ottimista, perché le immagini della stessa
+  base si somigliano; la misura onesta è l'80% sull'insieme di prova.
+- **Riprese Esri reali** (Mildenhall oggi, Brize Norton oggi e nel 2021),
+  42 aerei con il tipo vero stabilito a vista:
+  - 13 di tipi MAR20 (MC-130J e C-130J, KC-135, C-17): quando il
+    classificatore dà un tipo, è giusto;
+  - 29 di altri tipi (A400M, A330 Voyager, CV-22) o frammenti: ricevono
+    comunque uno dei 20, a volte con probabilità alta (A330 come C-5 o E-8,
+    A400M come C-17);
+  - la somiglianza ai campioni di MAR20 non separa questi casi (un A330
+    somiglia ai C-5 di MAR20 quanto un C-17 vero ai C-17); le misure sì.
+
+### Indizio nell'app
+
+- **[webapp/src/TypeClassifier.php](webapp/src/TypeClassifier.php)** (nuovo):
+  - l'indizio è attendibile (★) solo se il primo tipo ha probabilità almeno
+    0,7 e le misure (sagoma, o riquadro) sono vicine a quelle del tipo:
+    distanza di `AircraftCatalog` al massimo 1,5;
+  - sui 42 aerei reali: 8 ★, tutte giuste; nessuna ★ su A330, A400M o
+    CV-22. Campione piccolo, soglie al limite: è un indizio, non un
+    verdetto;
+  - **varianti**: la classe "C-130" di MAR20 comprende C-130J, C-130J-30 ed
+    EC-130H, "F-15" l'F-15E, "F/A-18" il Super Hornet, "KC-135" l'RC-135,
+    "Su-35" Su-27 e Su-30. Le misure si confrontano con la variante più
+    vicina, e una verifica con la variante conta come tipo giusto.
+- **[webapp/src/DetectionRunner.php](webapp/src/DetectionRunner.php)** —
+  per ogni aereo calcola tutti i tipi compatibili con le misure (i primi
+  cinque restano i candidati) e salva l'indizio valutato; salva anche
+  `type_model`.
+- **[webapp/public/assets/js/analyze.js](webapp/public/assets/js/analyze.js)** —
+  nella tabella del rilevamento la riga "🛩 MAR20: ★ C-17 Globemaster III
+  95%", con il motivo quando non è attendibile ("probabilità bassa",
+  "misure poco compatibili con il tipo"). Clic su un tipo per usarlo come
+  etichetta. Il suggerimento cita MAR20 e la licenza e mostra la
+  compatibilità delle misure in percentuale, come i candidati.
+- **[webapp/src/DetectionQuality.php](webapp/src/DetectionQuality.php)**,
+  **[webapp/public/quality.php](webapp/public/quality.php)**:
+  - nuova riga "Classificatore MAR20": posizione del tipo vero fra i tre
+    proposti, solo per i velivoli dei 20 tipi o loro varianti;
+  - sotto la tabella, quante ★ sono state date sui velivoli identificati e
+    quante erano giuste: qui contano anche gli aerei di altri tipi, che
+    sono il rischio;
+  - gli indizi sono rivalutati con le soglie e la tabella attuali, come le
+    altre righe;
+  - intestazioni "Metodo" e "Tipo vero assente", adatte a tutte le righe.
+
+### Test e prove
+
+- **[webapp/tests/TypeClassifierTest.php](webapp/tests/TypeClassifierTest.php)**
+  (nuovo): ★ solo con probabilità alta e misure compatibili, A330 non
+  scambiato per C-5, varianti, nomi presenti nella tabella, input non
+  validi, statistiche della qualità.
+- **[python-service/tests/test_typeclass.py](python-service/tests/test_typeclass.py)**
+  (nuovo), con un modello finto: ordine e numero dei tipi, media sugli
+  orientamenti, solo aerei, modello assente o non valido.
+- Test: PHP 69, Python 41, tutti superati.
+- **Prova in ambiente isolato**:
+  - copia della webapp con Telegram disattivato e servizio di analisi su
+    una porta separata;
+  - rilevamento eseguito sulle cinque riprese di prova: le stesse 8 ★,
+    tutte giuste;
+  - nel browser: riga MAR20 nella tabella, scelta del tipo con un clic,
+    verifica ✓ registrata nella pagina della qualità.
+- **Revisione indipendente**: nessun bug di correttezza. Correzioni
+  applicate:
+  - controllo del file del modello;
+  - statistiche rivalutate dal vivo;
+  - posizione contata solo sui tipi noti;
+  - cache dei vettori legata ai parametri;
+  - compatibilità in percentuale invece della distanza;
+  - citazione nella pagina;
+  - test con più di tre tipi.
+
+  Le varianti sono emerse nella stessa revisione.
+
+### README
+
+- Nuova voce "Classificatore MAR20" fra le funzionalità, istruzioni di
+  installazione facoltativa e crediti (MAR20 con la citazione, DINOv2).
+
 ## 2026-10-13 (2) — Libreria visiva dei velivoli e rilevatore "accurato"
 
 Fase 2 del piano su riconoscimento e identificazione. Download autorizzati

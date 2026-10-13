@@ -72,18 +72,20 @@ require __DIR__ . '/partials/nav.php';
 
   <div class="panel">
     <h2>Identificazione dei velivoli</h2>
-    <div class="hint" style="margin-bottom:8px;">Per i velivoli confermati con il tipo: quante volte il tipo vero è il primo dei compatibili, fra i primi tre, o non compare. <strong>Sagoma</strong>: apertura e lunghezza misurate sul contorno dell'aereo, con l'ombra tolta. <strong>Riquadro</strong>: i lati del riquadro del rilevamento, che includono margine e ombra (il metodo precedente). Lo stesso aereo conta in entrambe le righe se ha entrambe le misure. <strong>Libreria visiva</strong>: per ogni velivolo identificato, il tipo dei più simili fra quelli identificati in <em>altre</em> riprese (somiglianza dell'immagine, non delle misure); "non compatibile" vuol dire che il tipo vero non è fra i primi tre. Conta solo i tipi identificati in almeno due riprese.</div>
+    <div class="hint" style="margin-bottom:8px;">Per i velivoli confermati con il tipo: quante volte il tipo vero è il primo dei compatibili, fra i primi tre, o non compare. <strong>Sagoma</strong>: apertura e lunghezza misurate sul contorno dell'aereo, con l'ombra tolta. <strong>Riquadro</strong>: i lati del riquadro del rilevamento, che includono margine e ombra (il metodo precedente). Lo stesso aereo conta in entrambe le righe se ha entrambe le misure. <strong>Libreria visiva</strong>: per ogni velivolo identificato, il tipo dei più simili fra quelli identificati in <em>altre</em> riprese (somiglianza dell'immagine, non delle misure); "tipo vero assente" vuol dire che non è fra i primi tre. Conta solo i tipi identificati in almeno due riprese. <strong>Classificatore MAR20</strong>: il tipo vero fra i tre più probabili dei 20 militari di MAR20, per aspetto; conta solo i velivoli di quei 20 tipi (o loro varianti, come il C-130J per il C-130). Gli aerei di altri tipi contano nella riga sotto la tabella.</div>
     <div class="table-responsive">
     <table>
-      <thead><tr><th>Misure da</th><th>Velivoli</th><th>Primo</th><th>Fra i primi 3</th><th>Non compatibile</th></tr></thead>
+      <thead><tr><th>Metodo</th><th>Velivoli</th><th>Primo</th><th>Fra i primi 3</th><th>Tipo vero assente</th></tr></thead>
       <tbody>
-        <?php foreach (['sagoma' => 'Sagoma', 'riquadro' => 'Riquadro', 'libreria' => 'Libreria visiva'] as $k => $label): $s = $q['identification'][$k]; ?>
+        <?php foreach (['sagoma' => 'Sagoma', 'riquadro' => 'Riquadro', 'libreria' => 'Libreria visiva', 'mar20' => 'Classificatore MAR20'] as $k => $label): $s = $q['identification'][$k]; ?>
           <tr><td><?= e($label) ?></td><td><?= (int) $s['n'] ?></td><td><?= (int) $s['top1'] ?> (<?= e($share($s['top1'], $s['n'])) ?>)</td>
             <td><?= (int) $s['top3'] ?> (<?= e($share($s['top3'], $s['n'])) ?>)</td><td><?= (int) $s['absent'] ?></td></tr>
         <?php endforeach; ?>
       </tbody>
     </table>
     </div>
+    <?php $star = $q['mar20_star']; ?>
+    <div class="hint" style="margin-top:8px;">★ MAR20 (tipo molto probabile e misure compatibili) data su <?= (int) $star['n'] ?> <?= $star['n'] === 1 ? 'velivolo identificato' : 'velivoli identificati' ?><?= $star['n'] ? ', giusta ' . (int) $star['right'] . ($star['right'] === 1 ? ' volta' : ' volte') . ' (' . e($share($star['right'], $star['n'])) . ')' : '' ?>. Gli errori qui sono soprattutto aerei di tipi che MAR20 non conosce scambiati per uno dei suoi 20.</div>
   </div>
 
   <div class="panel">
