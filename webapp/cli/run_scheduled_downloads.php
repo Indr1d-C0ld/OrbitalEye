@@ -212,12 +212,28 @@ foreach ($due as $sched) {
         continue;
     }
 
+    // Oggetti comparsi e spariti (vedi ObjectChange): solo per una ripresa
+    // che si tiene, e senza far perdere l'alert se il rilevamento non riesce.
+    $objectLine = function () use ($prevCapture, $newCaptureId, $cmp): string {
+        try {
+            $new = Capture::find($newCaptureId);
+            $line = $new ? ObjectChange::alertLine($prevCapture, $new, $cmp['registration']['b_to_a'] ?? null) : null;
+            if ($line) {
+                sched_log('  ' . $line);
+            }
+            return $line ? ' ' . $line : '';
+        } catch (Throwable $e) {
+            sched_log('  Confronto per oggetti non riuscito: ' . $e->getMessage());
+            return '';
+        }
+    };
+
     if ($knownChange) {
         // Nuovo passaggio o nuova immagine Esri: è un dato nuovo in ogni
         // caso, si tiene anche se la variazione è minima.
         sched_log(sprintf('  %s. Variazione rilevata %.4f%%: tenuta, genero alert.', $newInfo, $changedRatio * 100));
         ScheduledDownload::recordRun($id, 'new', $newCaptureId);
-        Alert::create($studyId, $newCaptureId, $id, sprintf('%s. Variazione rilevata rispetto alla ripresa precedente: %.2f%%.', $newInfo, $changedRatio * 100));
+        Alert::create($studyId, $newCaptureId, $id, sprintf('%s. Variazione rilevata rispetto alla ripresa precedente: %.2f%%.', $newInfo, $changedRatio * 100) . $objectLine());
         continue;
     }
 
@@ -229,7 +245,7 @@ foreach ($due as $sched) {
     } else {
         sched_log(sprintf('  Ripresa diversa (variazione %.4f%% >= soglia %.4f%%): tenuta, genero alert.', $changedRatio * 100, $threshold * 100));
         ScheduledDownload::recordRun($id, 'new', $newCaptureId);
-        Alert::create($studyId, $newCaptureId, $id, sprintf('Nuova ripresa diversa dalla precedente (variazione rilevata: %.2f%%).', $changedRatio * 100));
+        Alert::create($studyId, $newCaptureId, $id, sprintf('Nuova ripresa diversa dalla precedente (variazione rilevata: %.2f%%).', $changedRatio * 100) . $objectLine());
     }
 }
 

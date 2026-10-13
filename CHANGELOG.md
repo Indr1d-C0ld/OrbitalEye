@@ -4,6 +4,172 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-10-13 — Riconoscimento dei velivoli dalla sagoma, verifica e qualità del rilevamento, alert sugli oggetti
+
+Fase 1 del nuovo piano su riconoscimento e identificazione dei mezzi.
+
+### Sagoma dei velivoli (metodo WEFT, prima parte)
+
+Il punto di partenza, sulle riprese reali di Brize Norton (5 A400M, 3 A330
+Voyager, 2 C-17): i lati del riquadro del rilevatore erano più grandi del
+15–25% (margine e ombra) e non dicevano quale fosse l'apertura. Il tipo
+giusto non compariva mai fra i primi tre candidati:
+
+| Tipo vero | Candidati dal riquadro |
+|---|---|
+| A400M | KC-135 e B-1 |
+| C-17 | 767 e B-52 |
+| A330 | Tu-160 e KC-10 |
+
+- **[python-service/app/core/silhouette.py](python-service/app/core/silhouette.py)**
+  (nuovo), per ogni aereo:
+  - ritaglio a pixel quadrati in metri, perché le riprese in gradi hanno
+    scale diverse sui due assi;
+  - separazione dallo sfondo in L\*a\*b\*, rispetto a un anello intorno
+    al riquadro, e dell'ombra portata, molto più scura;
+  - componente connessa al centro, per lasciare fuori aerei vicini e mezzi
+    di servizio;
+  - asse della fusoliera per simmetria della sola parte chiara: l'ombra,
+    da un lato solo, sposterebbe l'asse verso di sé;
+  - ombra stimata una volta per ripresa, perché il sole è uno solo:
+    mediana degli spostamenti che portano ogni aereo sulla propria ombra
+    senza finire sullo sfondo libero (correlazione via FFT). Si toglie
+    tutta dall'apertura e per metà dalla lunghezza (il muso è più basso
+    delle ali, la deriva più alta);
+  - controlli di attendibilità (simmetria, riempimento, aereo tagliato dal
+    bordo dell'immagine), oltre i quali si ripiega sul riquadro dicendo
+    perché;
+  - limiti di lavoro: niente sagoma per riquadri oltre 110 m, e al massimo
+    60 s per tutte le sagome di un rilevamento. Gli aerei che restano usano
+    il riquadro: il rilevamento non deve scadere per questo;
+  - contorno della sagoma riportato sulla ripresa.
+- **Risultati su Brize Norton**, 9 aerei con sagoma attendibile:
+  - errore medio del 2,5% sull'apertura e del 3,0% sulla lunghezza
+    (massimi 5,0% e 9,9%);
+  - a Bergamo, con le ombre lunghe di febbraio, un Boeing 757 misura 37,3
+    × 48,9 m (38,1 × 47,3 reali);
+  - tempo: circa 3 s per 12 aerei su questa CPU; 100 aerei sintetici su
+    2500 × 2500 px in 11,5 s.
+- **Identificazione:**
+  - **A400M:** 2° candidato. Il primo è il B-1, che con le ali aperte ha
+    quasi le stesse dimensioni (41,8 × 44,5 m): con le sole misure non si
+    separano, lo si vede dal contorno.
+  - **A330:** fra i primi tre, accanto al 787-9 di dimensioni simili.
+  - **C-17:** 3°.
+- **Provata e scartata:** la freccia alare dalla linea a metà corda. A
+  questa risoluzione motori, eliche e piani di coda falsano la corda:
+  - A400M: 30° misurati, circa 12–15° attesi;
+  - C-17: 40° misurati, circa 22° attesi;
+  - quattro aerei dello stesso tipo a Bergamo: fra 5° e 18°.
+
+  Non entra nella classifica: avrebbe peggiorato i risultati.
+- **[python-service/app/routers/analysis.py](python-service/app/routers/analysis.py)** —
+  il rilevamento riceve la scala per asse e restituisce la sagoma di ogni
+  aereo e lo spostamento dell'ombra. Un errore nella sagoma non fa perdere
+  il rilevamento.
+- **[webapp/src/DetectionRunner.php](webapp/src/DetectionRunner.php)**,
+  **[webapp/src/AircraftCatalog.php](webapp/src/AircraftCatalog.php)**:
+  - con una sagoma attendibile, i tipi compatibili si cercano con apertura
+    e lunghezza al loro posto, nuova modalità `silhouette` (incertezza del
+    5–6% più due pixel);
+  - altrimenti si usano i lati del riquadro, come prima;
+  - ogni oggetto dice da dove vengono le misure (`id_from`).
+
+### Verifica e qualità del rilevamento (banco di prova)
+
+- **[webapp/migrations/003_detection_reviews.sql](webapp/migrations/003_detection_reviews.sql)**,
+  **[webapp/src/DetectionReview.php](webapp/src/DetectionReview.php)**,
+  **[webapp/public/api/detection_reviews.php](webapp/public/api/detection_reviews.php)**
+  (nuovi):
+  - la verifica dell'analista: oggetto confermato con la classe vera e,
+    per i velivoli, il tipo dalla tabella, oppure scartato;
+  - gli oggetti che il rilevatore non ha trovato;
+  - la segnalazione "verifica completa" di una ripresa;
+  - ogni verifica è legata a una posizione, non al numero dell'oggetto:
+    rieseguendo il rilevamento resta sullo stesso oggetto;
+  - due posizioni sono lo stesso oggetto solo con dimensioni confrontabili
+    (raggi entro 2,5 volte) e centri entro il 60% del raggio minore, e vale
+    la più vicina. Così un veicolo segnato sotto l'ala di un aereo non
+    sostituisce la verifica dell'aereo;
+  - i punti di un riquadro oltre il bordo di un ritaglio piccolo vengono
+    riportati nell'immagine.
+- **[webapp/src/DetectionQuality.php](webapp/src/DetectionQuality.php)**,
+  **[webapp/public/quality.php](webapp/public/quality.php)** (nuovi, voce
+  "Qualità rilevamento" nel menu):
+  - precisione per classe (veicoli grandi e piccoli insieme), con le
+    classi sbagliate;
+  - richiamo, solo sulle riprese verificate per intero: altrove gli
+    oggetti sfuggiti non si possono contare;
+  - precisione per fascia di confidenza;
+  - per i velivoli confermati con il tipo, quante volte il tipo vero è il
+    primo o fra i primi tre dei compatibili, con la sagoma e con il
+    riquadro;
+  - si ricalcola sull'ultimo rilevamento con il codice attuale.
+- **[webapp/public/analyze_capture.php](webapp/public/analyze_capture.php)**,
+  **[webapp/public/assets/js/analyze.js](webapp/public/assets/js/analyze.js)**:
+  - nella tabella del rilevamento, misure "sagoma" (apertura × lunghezza)
+    o "riquadro", con il motivo se la sagoma non è attendibile;
+  - contorno della sagoma sulla ripresa;
+  - colonna "Verifica": ✓ conferma, col tipo scelto fra i compatibili;
+    ✗ scarta; ✎ corregge classe e tipo, con la tabella dei tipi come
+    suggerimenti; ↺ annulla;
+  - casella "verifica completa";
+  - 🎯 nell'elenco delle annotazioni, per aggiungere un oggetto non
+    rilevato.
+
+### Alert dei download pianificati con gli oggetti
+
+- **[webapp/src/ObjectChange.php](webapp/src/ObjectChange.php)** (`alertLine`),
+  **[webapp/cli/run_scheduled_downloads.php](webapp/cli/run_scheduled_downloads.php)** —
+  quando una ripresa pianificata ad alta risoluzione viene tenuta, il
+  cron:
+  - esegue i rilevamenti mancanti;
+  - confronta gli oggetti con la ripresa precedente, con lo stesso
+    allineamento delle immagini;
+  - aggiunge all'alert una riga come "aerei: 3 comparsi, 10 spariti, 9
+    rimasti" (Brize Norton, 2021 contro 2025: 27 s compreso il
+    rilevamento sulla ripresa vecchia).
+
+  Non lo fa per i duplicati scartati. Se il rilevamento non riesce, l'alert
+  parte senza la riga e il motivo finisce nel log.
+
+### Test
+
+- [python-service/tests/test_silhouette.py](python-service/tests/test_silhouette.py)
+  (nuovo), su aerei sintetici con ombre e pixel non quadrati:
+  - apertura e lunghezza entro il 7–8%;
+  - vettore dell'ombra;
+  - una macchia segnata come non attendibile;
+  - nessuna misura senza scala o oltre 1 m/pixel.
+
+  Il test ha trovato un difetto reale nella prima stima dell'ombra
+  (penalizzava la sovrapposizione con l'aereo invece che con lo sfondo).
+- [webapp/tests/DetectionQualityTest.php](webapp/tests/DetectionQualityTest.php)
+  (nuovo):
+  - tipi dalla sagoma contro riquadro;
+  - salvataggio, aggiornamento ed eliminazione delle verifiche;
+  - dati non validi;
+  - precisione, classe sbagliata e richiamo solo sulle riprese complete;
+  - posizioni del tipo vero;
+  - nessuna riga d'alert per riprese troppo poco dettagliate.
+- Totali: 59 test PHP, 33 Python.
+
+Revisione indipendente: nessun problema critico, 7 punti, tutti corretti.
+I due bug veri:
+- una verifica poteva finire sull'oggetto sbagliato;
+- un aereo tagliato dal bordo risultava attendibile con la lunghezza
+  sbagliata.
+
+Il rischio di prestazioni: 100 aerei richiedevano 67 s e fino a 2 GB di
+memoria. Ora la simmetria si cerca sul quadrato della sagoma, il colore
+si converte solo sulle finestre degli aerei e i buchi si riempiono in una
+passata.
+
+Gli altri:
+- 🎯 non funzionava sulle annotazioni salvate prima dei tipi di forma;
+- un input non testuale dava errore 500 invece di 400;
+- un motivo di scarto era fuorviante.
+
 ## 2026-10-09 (4) — Confronto per oggetti: velivoli, navi e veicoli comparsi, spariti, rimasti
 
 Secondo passo dopo il confronto robusto: il confronto per pixel dice dove

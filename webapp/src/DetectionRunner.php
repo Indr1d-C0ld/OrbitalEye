@@ -48,6 +48,9 @@ final class DetectionRunner
             $result = (new PythonServiceClient())->post('/analysis/detect', [
                 'capture_path' => $capture['relative_path'],
                 'mpp' => $mppMean,
+                // Per asse: servono alla sagoma dei velivoli (silhouette.py).
+                'mpp_x' => $mppX,
+                'mpp_y' => $mppY,
                 'confidence' => $confidence,
                 'small_objects' => $smallObjects,
             ], 300);
@@ -79,12 +82,32 @@ final class DetectionRunner
                 $side1 = $d['w'] * hypot($mppX * cos($a), $mppY * sin($a));
                 $side2 = $d['h'] * hypot($mppX * sin($a), $mppY * cos($a));
                 $o['size_m'] = [round(max($side1, $side2), 1), round(min($side1, $side2), 1)];
+                // Sagoma (solo aerei): apertura e lunghezza vere, ciascuna al
+                // suo posto, e il contorno da mostrare. Se è attendibile, i
+                // tipi compatibili si cercano con quelle; altrimenti con i
+                // lati del riquadro, come prima.
+                $sil = is_array($d['silhouette'] ?? null) ? $d['silhouette'] : null;
+                if ($sil) {
+                    $o['silhouette'] = [
+                        'quality' => $sil['quality'] ?? 'bassa',
+                        'reason' => $sil['reason'] ?? null,
+                        'span_m' => $sil['span_m'] ?? null,
+                        'length_m' => $sil['length_m'] ?? null,
+                        'symmetry' => $sil['symmetry'] ?? null,
+                        'outline' => array_map(fn($p) => [round($p[0] / $w, 6), round($p[1] / $h, 6)], $sil['outline'] ?? []),
+                    ];
+                }
                 if (in_array($d['class'], ['plane', 'helicopter'], true)) {
+                    $silOk = $sil && ($sil['quality'] ?? '') === 'ok' && !empty($sil['span_m']) && !empty($sil['length_m']);
+                    $o['id_from'] = $silOk ? 'sagoma' : 'riquadro';
+                    $matches = $silOk
+                        ? AircraftCatalog::match((float) $sil['span_m'], (float) $sil['length_m'], $mppMean, 'silhouette', 'ala_fissa', 5)
+                        : AircraftCatalog::match($side1, $side2, $mppMean, 'box', $d['class'] === 'helicopter' ? 'elicottero' : 'ala_fissa', 5);
                     $o['candidates'] = array_map(fn($c) => [
                         'name' => $c['name'], 'maker' => $c['maker'], 'category' => $c['category'],
                         'compatibility' => $c['compatibility'], 'note' => $c['note'], 'wiki_url' => $c['wiki_url'],
                         'span_m' => $c['span_m'], 'length_m' => $c['length_m'], 'rotor_m' => $c['rotor_m'],
-                    ], AircraftCatalog::match($side1, $side2, $mppMean, 'box', $d['class'] === 'helicopter' ? 'elicottero' : 'ala_fissa', 5));
+                    ], $matches);
                 }
             }
             $objects[] = $o;
@@ -95,6 +118,9 @@ final class DetectionRunner
             'upscale' => $result['upscale'] ?? 1,
             'tiles' => $result['tiles'] ?? 1,
             'mpp' => $mpp,
+            // Spostamento dell'ombra (metri, assi dell'immagine) stimato
+            // dalle sagome: uno per ripresa, un solo sole.
+            'shadow_m' => $result['shadow_m'] ?? null,
         ];
         // "Oggetti piccoli" registrato solo se l'ingrandimento è stato davvero
         // applicato (non serve sotto 0,5 m/pixel, né senza scala nota).

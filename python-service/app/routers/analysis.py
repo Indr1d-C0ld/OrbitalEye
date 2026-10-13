@@ -1,3 +1,5 @@
+import logging
+
 import numpy as np
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -6,10 +8,13 @@ from ..config import settings
 from ..core import detect as detectmod
 from ..core import diff as diffmod
 from ..core import enhance as enhancemod
+from ..core import silhouette as silhouettemod
 from ..core import spectral as spectralmod
 from ..core.registration import frac_homography, register_auto, register_images, register_with_points
 from ..core.utils import load_image, load_image_with_mask, new_id, safe_storage_path, save_image
 from ..deps import require_service_key
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/analysis", tags=["analysis"], dependencies=[Depends(require_service_key)])
 
@@ -335,6 +340,10 @@ class DetectRequest(BaseModel):
     # Metri/pixel della ripresa, se noti: servono solo all'ingrandimento
     # facoltativo per gli oggetti piccoli.
     mpp: float | None = Field(None, gt=0)
+    # Scala per asse (le riprese in gradi l'hanno diversa sui due assi): con
+    # queste, per gli aerei si misura anche la sagoma (vedi silhouette.py).
+    mpp_x: float | None = Field(None, gt=0)
+    mpp_y: float | None = Field(None, gt=0)
     confidence: float = Field(0.25, ge=0.05, le=0.95)
     small_objects: bool = False
 
@@ -365,4 +374,15 @@ def detect(req: DetectRequest):
     result["width"] = int(img.shape[1])
     result["height"] = int(img.shape[0])
     result["model"] = detectmod.MODEL_PATH.stem
+    if req.mpp_x and req.mpp_y:
+        # Apertura e lunghezza dalla sagoma, al posto dei lati del riquadro.
+        # Un errore qui non deve far perdere il rilevamento.
+        try:
+            sil = silhouettemod.analyze(img, result["detections"], req.mpp_x, req.mpp_y)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Analisi delle sagome non riuscita: %s", e)
+            sil = {"objects": {}, "shadow_m": None}
+        for i, info in sil["objects"].items():
+            result["detections"][i]["silhouette"] = info
+        result["shadow_m"] = sil["shadow_m"]
     return result

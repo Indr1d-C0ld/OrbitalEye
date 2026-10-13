@@ -34,6 +34,7 @@ $pendingPublications = Publication::pendingCount();
         <span class="icon">📤</span> Pubblicazioni
         <?php if ($pendingPublications > 0): ?><span class="badge badge-amber" style="margin-left:6px;" title="In attesa di revisione"><?= $pendingPublications ?></span><?php endif; ?>
       </a>
+      <a href="quality.php" class="<?= $activeNav === 'quality' ? 'active' : '' ?>"><span class="icon">🎯</span> Qualità rilevamento</a>
       <a href="settings.php" class="<?= $activeNav === 'settings' ? 'active' : '' ?>"><span class="icon">⚙</span> Impostazioni</a>
     </nav>
     <div class="sidebar-footer">

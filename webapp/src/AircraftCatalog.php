@@ -39,6 +39,15 @@ final class AircraftCatalog
     private const BOX_CENTER = 0.87;
     private const BOX_REL_BELOW = 0.12;
     private const BOX_REL_ABOVE = 0.07;
+    /**
+     * Misure dalla sagoma (vedi python-service/app/core/silhouette.py):
+     * apertura e lunghezza vere, ciascuna al suo posto. Su A400M, C-17 e
+     * A330 a Brize Norton l'errore medio è stato del 2,5% sull'apertura e
+     * del 3,0% sulla lunghezza (massimi 5,0% e 9,9%).
+     */
+    private const PX_SILHOUETTE = 2.0;
+    private const REL_SIL_SPAN = 0.05;
+    private const REL_SIL_LENGTH = 0.06;
     /** Lunghezza degli elicotteri: nelle schede a volte con i rotori, a volte senza. */
     private const REL_HELI_LENGTH = 0.18;
     /** Oltre questa distanza normalizzata (≈ 3 deviazioni standard) un tipo non è compatibile. */
@@ -70,7 +79,8 @@ final class AircraftCatalog
      * @param float|null $span   apertura alare (o diametro del rotore), m
      * @param float|null $length lunghezza, m
      * @param float|null $mpp    metri/pixel della ripresa (incertezza di risoluzione)
-     * @param string     $mode   'measure' (misure fatte a mano, dimensioni ordinate) o
+     * @param string     $mode   'measure' (misure fatte a mano, dimensioni ordinate),
+     *                           'silhouette' (dalla sagoma di un rilevamento, dimensioni ordinate) o
      *                           'box' (lati del riquadro di un rilevamento: non si sa quale sia l'apertura)
      * @param string|null $filter categoria, oppure 'ala_fissa' / 'elicottero'
      * @param string|null $wing   forma delle ali (freccia, dritta, delta, geometria variabile, tutt'ala)
@@ -82,8 +92,9 @@ final class AircraftCatalog
             return [];
         }
         $box = $mode === 'box';
-        $px = ($box ? self::PX_BOX : self::PX_MEASURE) * max(0.0, (float) $mpp);
-        $rel = self::REL_MEASURE;
+        $sil = $mode === 'silhouette';
+        $px = ($box ? self::PX_BOX : ($sil ? self::PX_SILHOUETTE : self::PX_MEASURE)) * max(0.0, (float) $mpp);
+        $rel = $sil ? self::REL_SIL_SPAN : self::REL_MEASURE;
         $sigma = fn(float $v, float $relative) => sqrt($px * $px + ($relative * $v) ** 2) ?: 0.01;
         // Scarto normalizzato fra una dimensione misurata e quella di riferimento.
         $z = function (float $measured, float $ref, float $relative) use ($box, $px, $sigma): float {
@@ -131,7 +142,7 @@ final class AircraftCatalog
                     $refs[] = [(float) $t['span_min_m'], isset($t['length_m']) ? (float) $t['length_m'] : null, 'ali a freccia'];
                 }
             }
-            $lenRel = $isHeli ? max($rel, self::REL_HELI_LENGTH) : $rel;
+            $lenRel = $isHeli ? max($rel, self::REL_HELI_LENGTH) : ($sil ? self::REL_SIL_LENGTH : $rel);
 
             $best = null;
             foreach ($refs as [$refW, $refL, $note]) {

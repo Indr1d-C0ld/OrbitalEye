@@ -537,6 +537,8 @@
   let detections = [];
   let showDetections = true;
   let selectedDetection = -1;
+  // Esito della verifica per oggetto (indice → '✓' | '✗'), per l'etichetta sulla ripresa.
+  let detectionReviewMarks = {};
   const canvas = $('#an-annotate-canvas');
 
   // ---------- Colore corrente per nuove annotazioni/misurazioni ----------
@@ -960,10 +962,21 @@
       ctx.closePath();
       ctx.stroke();
       ctx.setLineDash([]);
+      // Sagoma misurata (silhouette.py): il contorno da cui vengono apertura
+      // e lunghezza, per giudicare a vista se la misura è credibile.
+      if (d.silhouette && d.silhouette.quality === 'ok' && d.silhouette.outline && d.silhouette.outline.length > 2) {
+        const so = d.silhouette.outline.map(([fx, fy]) => [fx * targetW, fy * targetH]);
+        ctx.lineWidth = (sel ? 2 : 1) * k;
+        ctx.beginPath();
+        ctx.moveTo(so[0][0], so[0][1]);
+        for (let j = 1; j < so.length; j++) ctx.lineTo(so[j][0], so[j][1]);
+        ctx.closePath();
+        ctx.stroke();
+      }
       ctx.font = (10 * k) + 'px "Share Tech Mono", monospace';
       ctx.fillStyle = col;
       const top = pts.reduce((a, b) => (b[1] < a[1] ? b : a));
-      ctx.fillText('#' + d.n, top[0] + 2 * k, top[1] - 3 * k);
+      ctx.fillText('#' + d.n + (detectionReviewMarks[i] ? ' ' + detectionReviewMarks[i] : ''), top[0] + 2 * k, top[1] - 3 * k);
     });
   }
 
@@ -1236,6 +1249,17 @@
       del.addEventListener('click', () => removeAnnotation(a));
       right.appendChild(dot);
       right.appendChild(edit);
+      // Un oggetto che il rilevamento non ha trovato, segnato a mano: conta
+      // nella verifica (vedi DetectionReview e il pannello del rilevamento).
+      if ((a.shape_type === 'rect' || a.shape_type === 'polygon' || !a.shape_type) && window.markMissedObject) {
+        const miss = document.createElement('button');
+        miss.type = 'button';
+        miss.className = 'btn btn-sm';
+        miss.textContent = '🎯';
+        miss.title = 'Segna come oggetto non trovato dal rilevamento automatico (per misurarne la qualità)';
+        miss.addEventListener('click', () => window.markMissedObject(a, div));
+        right.appendChild(miss);
+      }
       right.appendChild(del);
       div.appendChild(left);
       div.appendChild(right);
@@ -1683,15 +1707,133 @@
     confIn.addEventListener('input', () => { confOut.textContent = String(confIn.value).replace('.', ','); });
     $('#an-detect-show').addEventListener('change', (e) => { showDetections = e.target.checked; redrawAnnotations(); });
     const chosen = {}; // n -> nome del tipo scelto fra i compatibili
+    const reviewBox = $('#an-review-box'), completeIn = $('#an-review-complete'), manualBox = $('#an-review-manual');
+    const REVIEW_CLASSES = CFG.reviewClasses || {};
+    let reviews = [];
+    let lastDet = null;
+    let editing = null; // n dell'oggetto in correzione
+    const typesList = $('#an-aircraft-types');
+    if (typesList) typesList.innerHTML = (CFG.aircraftTypes || []).map((t) => `<option value="${escHtml(t)}">`).join('');
 
     function labelFor(d) {
       return chosen[d.n] ? chosen[d.n] + '?' : d.label;
     }
 
+    // Stesso abbinamento di DetectionReview::match (PHP): una verifica sta su
+    // una posizione, non su un numero di oggetto.
+    function circleOf(poly) {
+      // Punti riportati nell'immagine, come in DetectionReview::polygon.
+      const cl = (v) => Math.max(0, Math.min(1, v));
+      const xs = poly.map((p) => cl(p[0])), ys = poly.map((p) => cl(p[1]));
+      return [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2,
+        Math.max(0.004, Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) / 2)];
+    }
+    function matchReviews() {
+      const pairs = [];
+      detections.forEach((d, i) => {
+        const [ox, oy, or] = circleOf(d.polygon);
+        reviews.forEach((r, j) => {
+          // Raggi confrontabili e centri vicini (vedi DetectionReview::sameObject).
+          if (Math.max(or, r.radius) > 2.5 * Math.min(or, r.radius)) return;
+          const dist = Math.hypot(ox - r.center_x, oy - r.center_y);
+          if (dist <= Math.min(or, r.radius) * 0.6) pairs.push([dist, i, j]);
+        });
+      });
+      pairs.sort((a, b) => a[0] - b[0]);
+      const byObj = {}, used = {};
+      pairs.forEach(([, i, j]) => { if (byObj[i] === undefined && !used[j]) { byObj[i] = j; used[j] = true; } });
+      return byObj;
+    }
+
+    async function reviewRequest(payload) {
+      const res = await fetch('api/detection_reviews.php', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Errore ' + res.status);
+      return data;
+    }
+    async function saveReview(payload) {
+      try {
+        const data = await reviewRequest({ action: 'save', capture_id: CFG.captureId, ...payload });
+        reviews = data.reviews || [];
+        editing = null;
+        render(lastDet);
+      } catch (err) {
+        status.textContent = 'Verifica non salvata: ' + err.message;
+      }
+    }
+    async function deleteReview(id) {
+      try {
+        const data = await reviewRequest({ action: 'delete', id });
+        reviews = data.reviews || [];
+        render(lastDet);
+      } catch (err) {
+        status.textContent = 'Errore: ' + err.message;
+      }
+    }
+    completeIn.addEventListener('change', async () => {
+      try {
+        const data = await reviewRequest({ action: 'complete', capture_id: CFG.captureId, complete: completeIn.checked });
+        completeIn.checked = !!data.complete;
+      } catch (err) {
+        completeIn.checked = !completeIn.checked;
+        status.textContent = 'Errore: ' + err.message;
+      }
+    });
+
+    function reviewLabel(r) {
+      if (r.verdict === 'rejected') return '<span class="badge badge-magenta">✗ falso</span>';
+      return `<span class="badge badge-green">✓ ${escHtml(REVIEW_CLASSES[r.class] || r.class)}${r.type_name ? ' · ' + escHtml(r.type_name) : ''}</span>`;
+    }
+    function classOptions(selected) {
+      return Object.entries(REVIEW_CLASSES).map(([k, v]) => `<option value="${escHtml(k)}"${k === selected ? ' selected' : ''}>${escHtml(v)}</option>`).join('');
+    }
+
+    // Oggetto non trovato dal rilevamento, da un'annotazione (rettangolo o
+    // poligono): vedi renderAnnotationList.
+    window.markMissedObject = function (a, container) {
+      // Rettangoli (anche quelli salvati prima che esistesse shape_type) e poligoni.
+      const poly = a.shape_type !== 'polygon'
+        ? [[a.coords.x, a.coords.y], [a.coords.x + a.coords.w, a.coords.y], [a.coords.x + a.coords.w, a.coords.y + a.coords.h], [a.coords.x, a.coords.y + a.coords.h]]
+        : (a.coords.points || []);
+      if (poly.length < 3) return;
+      container.querySelectorAll('.missed-form').forEach((f) => f.remove());
+      const form = document.createElement('div');
+      form.className = 'missed-form tag-row';
+      form.style.marginTop = '6px';
+      form.style.flexBasis = '100%';
+      form.innerHTML = `<select class="mf-class">${classOptions('plane')}</select>
+        <input class="mf-type" list="an-aircraft-types" placeholder="tipo (facoltativo)" style="max-width:200px;">
+        <button type="button" class="btn btn-sm btn-primary mf-save">Aggiungi come oggetto non rilevato</button>`;
+      form.querySelector('.mf-save').addEventListener('click', () => saveReview({
+        verdict: 'confirmed', source: 'manual', polygon: poly,
+        class: form.querySelector('.mf-class').value, type_name: form.querySelector('.mf-type').value.trim(),
+      }));
+      container.appendChild(form);
+    };
+
+    function renderManual(matched) {
+      const usedIdx = new Set(Object.values(matched));
+      const manual = reviews.map((r, j) => [r, j]).filter(([r, j]) => !usedIdx.has(j));
+      manualBox.innerHTML = manual.length
+        ? '<div class="hint">Verifiche senza un rilevamento corrispondente (oggetti aggiunti a mano o non più trovati):</div>'
+          + manual.map(([r]) => `<div class="tag-row" style="margin-top:4px;">${reviewLabel(r)} <span class="hint">${r.source === 'manual' ? 'aggiunto a mano' : 'non più rilevato'}</span>
+            <button type="button" class="btn btn-sm rv-del" data-id="${r.id}" title="Elimina questa verifica">↺</button></div>`).join('')
+        : '';
+      manualBox.querySelectorAll('.rv-del').forEach((b) => b.addEventListener('click', () => deleteReview(+b.dataset.id)));
+    }
+
     function render(det) {
+      lastDet = det;
       detections = (det && det.result && det.result.objects) || [];
       selectedDetection = -1;
+      const matched = matchReviews();
+      detectionReviewMarks = {};
+      Object.entries(matched).forEach(([i, j]) => { detectionReviewMarks[i] = reviews[j].verdict === 'rejected' ? '✗' : '✓'; });
       redrawAnnotations();
+      reviewBox.style.display = det ? '' : 'none';
+      if (det) renderManual(matched);
       if (!det) { summary.innerHTML = ''; list.innerHTML = ''; annotateAll.style.display = 'none'; return; }
       const counts = {};
       detections.forEach((d) => { counts[d.label] = (counts[d.label] || 0) + 1; });
@@ -1703,16 +1845,60 @@
         + (det.small_objects ? ' · oggetti piccoli' : '') + (det.result.mpp ? '' : ' · scala non nota: niente misure né tipi');
       const relevant = detections.filter((d) => ['plane', 'helicopter', 'ship'].includes(d.class));
       annotateAll.style.display = relevant.length ? '' : 'none';
-      list.innerHTML = detections.length ? '<div class="table-responsive pass-table"><table><thead><tr><th>#</th><th>Oggetto</th><th>Conf.</th><th>Misure (m)</th><th>Tipi compatibili</th><th></th></tr></thead><tbody>'
+      list.innerHTML = detections.length ? '<div class="table-responsive pass-table"><table><thead><tr><th>#</th><th>Oggetto</th><th>Conf.</th><th>Misure (m)</th><th>Tipi compatibili</th><th></th><th>Verifica</th></tr></thead><tbody>'
         + detections.map((d, i) => {
           const cands = (d.candidates || []).slice(0, 3);
+          const sil = d.silhouette;
+          const silOk = sil && sil.quality === 'ok';
+          // Dalla sagoma: apertura × lunghezza vere; altrimenti i lati del
+          // riquadro, che includono margine e ombra.
+          const measures = silOk
+            ? `${fmtM(sil.span_m)} × ${fmtM(sil.length_m)} <span class="hint" title="Apertura × lunghezza misurate sulla sagoma (contorno sulla ripresa), con l'ombra tolta">sagoma</span>`
+            : (d.size_m ? `${fmtM(d.size_m[0])} × ${fmtM(d.size_m[1])} <span class="hint" title="Lati del riquadro del rilevamento: includono margine e ombra, e non dicono quale sia l'apertura${sil && sil.reason ? '. Sagoma non usata: ' + escHtml(sil.reason) : ''}">riquadro</span>` : '—');
+          const j = matched[i];
+          const r = j !== undefined ? reviews[j] : null;
+          const reviewCell = r
+            ? `${reviewLabel(r)} <button type="button" class="btn btn-sm rv-del" data-id="${r.id}" title="Annulla la verifica">↺</button>`
+            : `<button type="button" class="btn btn-sm rv-ok" data-i="${i}" title="Conferma: oggetto giusto${['plane', 'helicopter'].includes(d.class) ? ' (con il tipo scelto fra i compatibili, se c\'è)' : ''}">✓</button>
+               <button type="button" class="btn btn-sm rv-no" data-i="${i}" title="Falso: qui non c'è questo oggetto">✗</button>
+               <button type="button" class="btn btn-sm rv-edit" data-i="${i}" title="Correggi classe o tipo">✎</button>`;
+          const editRow = editing === d.n
+            ? `<tr class="rv-edit-row"><td></td><td colspan="6"><div class="tag-row"><select class="rv-class">${classOptions(REVIEW_CLASSES[d.class] ? d.class : 'other')}</select>
+                <input class="rv-type" list="an-aircraft-types" placeholder="tipo (facoltativo)" value="${escHtml(chosen[d.n] || '')}" style="max-width:220px;">
+                <button type="button" class="btn btn-sm btn-primary rv-save" data-i="${i}">Salva verifica</button>
+                <button type="button" class="btn btn-sm rv-cancel">Annulla</button></div></td></tr>`
+            : '';
           const cHtml = cands.length
             ? cands.map((c) => `<button type="button" class="btn btn-sm det-cand-btn${chosen[d.n] === c.name ? ' btn-primary' : ''}" data-n="${d.n}" data-name="${escHtml(c.name)}" title="${escHtml(((c.maker || '') + ' ' + c.name).trim())} — compatibilità ${Math.round(c.compatibility * 100)}%${c.note ? ' (' + escHtml(c.note) + ')' : ''}. Clic per usarlo come etichetta.">${escHtml(c.name)} ${Math.round(c.compatibility * 100)}%</button>`).join(' ')
             : (['plane', 'helicopter'].includes(d.class) && d.size_m ? '<span class="hint">nessuno in tabella</span>' : '');
           return `<tr data-i="${i}" class="det-row" style="cursor:pointer;"><td>${d.n}</td><td>${escHtml(d.label)}</td><td>${Math.round(d.confidence * 100)}%</td>
-            <td>${d.size_m ? fmtM(d.size_m[0]) + ' × ' + fmtM(d.size_m[1]) : '—'}</td><td>${cHtml}</td>
-            <td><button type="button" class="btn btn-sm det-annotate-btn" data-i="${i}" title="Salva questo oggetto come annotazione (poligono)">🏷</button></td></tr>`;
+            <td>${measures}</td><td>${cHtml}</td>
+            <td><button type="button" class="btn btn-sm det-annotate-btn" data-i="${i}" title="Salva questo oggetto come annotazione (poligono)">🏷</button></td>
+            <td style="white-space:nowrap;">${reviewCell}</td></tr>${editRow}`;
         }).join('') + '</tbody></table></div>' : '';
+      const stop = (e) => e.stopPropagation();
+      list.querySelectorAll('.rv-ok').forEach((b) => b.addEventListener('click', (e) => {
+        stop(e);
+        const d = detections[+b.dataset.i];
+        saveReview({ verdict: 'confirmed', class: REVIEW_CLASSES[d.class] ? d.class : 'other', type_name: chosen[d.n] || '', polygon: d.polygon });
+      }));
+      list.querySelectorAll('.rv-no').forEach((b) => b.addEventListener('click', (e) => {
+        stop(e);
+        saveReview({ verdict: 'rejected', polygon: detections[+b.dataset.i].polygon });
+      }));
+      list.querySelectorAll('.rv-edit').forEach((b) => b.addEventListener('click', (e) => {
+        stop(e);
+        editing = detections[+b.dataset.i].n;
+        render(lastDet);
+      }));
+      list.querySelectorAll('.rv-save').forEach((b) => b.addEventListener('click', (e) => {
+        stop(e);
+        const row = b.closest('tr');
+        saveReview({ verdict: 'confirmed', class: row.querySelector('.rv-class').value, type_name: row.querySelector('.rv-type').value.trim(), polygon: detections[+b.dataset.i].polygon });
+      }));
+      list.querySelectorAll('.rv-cancel').forEach((b) => b.addEventListener('click', (e) => { stop(e); editing = null; render(lastDet); }));
+      list.querySelectorAll('.rv-del').forEach((b) => b.addEventListener('click', (e) => { stop(e); deleteReview(+b.dataset.id); }));
+      list.querySelectorAll('.rv-edit-row').forEach((row) => row.addEventListener('click', stop));
       list.querySelectorAll('.det-row').forEach((row) => row.addEventListener('click', () => {
         selectedDetection = +row.dataset.i === selectedDetection ? -1 : +row.dataset.i;
         list.querySelectorAll('.det-row').forEach((r) => r.classList.toggle('active', +r.dataset.i === selectedDetection));
@@ -1803,10 +1989,14 @@
         + ' m/pixel): serve una ripresa più dettagliata, fino a 2 m/pixel.';
     }
 
-    fetch('api/detect.php?capture_id=' + encodeURIComponent(CFG.captureId))
-      .then((r) => r.json())
-      .then((data) => { if (data.detection) render(data.detection); })
-      .catch(() => {});
+    Promise.all([
+      fetch('api/detect.php?capture_id=' + encodeURIComponent(CFG.captureId)).then((r) => r.json()),
+      fetch('api/detection_reviews.php?capture_id=' + encodeURIComponent(CFG.captureId)).then((r) => r.json()).catch(() => ({})),
+    ]).then(([data, rv]) => {
+      reviews = rv.reviews || [];
+      completeIn.checked = !!rv.complete;
+      if (data.detection) render(data.detection);
+    }).catch(() => {});
   })();
 
   // ---------- Ritaglio per ricerca inversa per immagini ----------

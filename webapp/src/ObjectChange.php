@@ -169,6 +169,39 @@ final class ObjectChange
         return $result;
     }
 
+    /**
+     * Riga per gli alert dei download pianificati (cli/run_scheduled_downloads.php):
+     * gli oggetti comparsi, spariti e rimasti fra la ripresa precedente e la
+     * nuova, eseguendo i rilevamenti che mancano. Null se il confronto non si
+     * può fare (risoluzione oltre Detection::MAX_MPP, niente coordinate).
+     * Le eccezioni del rilevamento (rilevatore assente o occupato) passano al
+     * chiamante, che le registra senza perdere l'alert.
+     *
+     * @param array|null $bToA registration.b_to_a del confronto fra le due
+     */
+    public static function alertLine(array $previous, array $new, ?array $bToA): ?string
+    {
+        foreach ([$previous, $new] as $c) {
+            $mpp = Detection::resolveMpp($c);
+            if (!$mpp || ($mpp['mpp_x'] + $mpp['mpp_y']) / 2 > Detection::MAX_MPP) {
+                return null;
+            }
+        }
+        $dets = [];
+        foreach ([$previous, $new] as $c) {
+            $det = Detection::forCapture((int) $c['id']) ?? DetectionRunner::run(['capture_id' => (int) $c['id']]);
+            if (!$det) {
+                return null;
+            }
+            $dets[] = $det;
+        }
+        $r = self::compare($previous, $new, $dets[0], $dets[1], $bToA);
+        if (empty($r['available'])) {
+            return null;
+        }
+        return 'Oggetti (rilevamento automatico, da verificare): ' . $r['summary'] . '.';
+    }
+
     /** Riassunto per didascalie e report: "aerei: 3 comparsi, 2 spariti, 5 rimasti". */
     public static function summary(array $result): string
     {

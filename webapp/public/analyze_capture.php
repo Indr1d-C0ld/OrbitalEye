@@ -424,6 +424,12 @@ require __DIR__ . '/partials/nav.php';
   <span class="hint" id="an-detect-status"></span>
   <div id="an-detect-summary" class="tag-row" style="margin-top:8px;"></div>
   <div id="an-detect-list" style="margin-top:8px;"></div>
+  <div id="an-review-box" style="display:none; margin-top:10px;">
+    <div class="hint" style="margin-bottom:6px;">Verifica: ✓ conferma l'oggetto (con il tipo scelto fra i compatibili, se è un velivolo), ✗ lo segna come falso, ✎ corregge classe e tipo. Gli oggetti che il rilevamento non ha trovato si aggiungono da un'annotazione (🎯 nell'elenco delle annotazioni). Le verifiche misurano quanto sbaglia il rilevamento: vedi <a href="quality.php">Qualità del rilevamento</a>.</div>
+    <label class="checkbox-row" style="margin:0;"><input type="checkbox" id="an-review-complete"> Verifica completa di questa ripresa <span class="info-tip" tabindex="0" data-tip="Segnala che hai giudicato ogni rilevamento e aggiunto gli oggetti mancati: solo così la ripresa conta per misurare quanti oggetti veri sfuggono al rilevamento.">?</span></label>
+    <div id="an-review-manual" style="margin-top:6px;"></div>
+  </div>
+  <datalist id="an-aircraft-types"></datalist>
 </div>
 
 <div class="panel">
@@ -537,6 +543,10 @@ window.ORBITALEYE_ANALYZE = {
   // Metri/pixel medi con cui il server decide se il rilevamento automatico
   // è possibile (vedi Detection::resolveMpp, fino a 2 m/pixel).
   detectMpp: <?php $dm = Detection::resolveMpp($capture); echo $dm ? json_encode(($dm['mpp_x'] + $dm['mpp_y']) / 2) : 'null'; ?>,
+  // Verifica dei rilevamenti (DetectionReview): tipi della tabella dei
+  // velivoli e classi che si possono indicare come vere.
+  aircraftTypes: <?= json_encode(array_column(AircraftCatalog::types(), 'name')) ?>,
+  reviewClasses: <?= json_encode(DetectionReview::CLASSES) ?>,
   // Data e ora esatte del passaggio, se note (Sentinel): l'ora pre-compila
   // la stima dell'altezza da ombra.
   captureDatetime: <?= json_encode($captureMeta['s2_pass']['datetime'] ?? $captureMeta['s1_pass']['datetime'] ?? null) ?>,
