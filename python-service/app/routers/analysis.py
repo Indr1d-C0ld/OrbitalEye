@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from ..config import settings
 from ..core import detect as detectmod
 from ..core import diff as diffmod
+from ..core import embed as embedmod
 from ..core import enhance as enhancemod
 from ..core import silhouette as silhouettemod
 from ..core import spectral as spectralmod
@@ -346,11 +347,19 @@ class DetectRequest(BaseModel):
     mpp_y: float | None = Field(None, gt=0)
     confidence: float = Field(0.25, ge=0.05, le=0.95)
     small_objects: bool = False
+    # Modello: "s" (veloce) o "m" (meno frammenti e doppioni, tre volte
+    # più lento; vedi detect.py).
+    model: str = Field("s", pattern="^(s|m)$")
 
 
 @router.get("/detect/status")
 def detect_status():
-    return {"available": detectmod.available(), "classes": [c[1] for c in detectmod.CLASSES]}
+    return {
+        "available": detectmod.available(),
+        "models": {k: detectmod.available(k) for k in detectmod.MODELS},
+        "embedding": embedmod.available(),
+        "classes": [c[1] for c in detectmod.CLASSES],
+    }
 
 
 @router.post("/detect")
@@ -368,12 +377,12 @@ def detect(req: DetectRequest):
         img = img.copy()
         img[mask == 0] = 114  # zone senza dati: grigio neutro, come il riempimento del modello
     try:
-        result = detectmod.detect(img, req.mpp if req.small_objects else None, req.confidence)
+        result = detectmod.detect(img, req.mpp if req.small_objects else None, req.confidence, req.model)
     except (detectmod.DetectorUnavailable, detectmod.DetectorBusy) as e:
         raise HTTPException(status_code=503, detail=str(e))
     result["width"] = int(img.shape[1])
     result["height"] = int(img.shape[0])
-    result["model"] = detectmod.MODEL_PATH.stem
+    result["model"] = detectmod.MODELS[req.model].stem
     if req.mpp_x and req.mpp_y:
         # Apertura e lunghezza dalla sagoma, al posto dei lati del riquadro.
         # Un errore qui non deve far perdere il rilevamento.
@@ -385,4 +394,14 @@ def detect(req: DetectRequest):
         for i, info in sil["objects"].items():
             result["detections"][i]["silhouette"] = info
         result["shadow_m"] = sil["shadow_m"]
+        # Vettori per la libreria visiva (vedi embed.py), se il modello c'è.
+        if embedmod.available():
+            try:
+                vecs = embedmod.embed_objects(img, result["detections"], sil["objects"], req.mpp_x, req.mpp_y)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("Vettori per la libreria visiva non calcolati: %s", e)
+                vecs = {}
+            for i, v in vecs.items():
+                result["detections"][i]["embedding"] = v
+            result["embedding_model"] = embedmod.MODEL_NAME if vecs else None
     return result

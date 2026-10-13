@@ -416,6 +416,10 @@ require __DIR__ . '/partials/nav.php';
     <label class="checkbox-row" style="margin:0;">
       <input type="checkbox" id="an-detect-show" checked> Mostra sulla ripresa
     </label>
+    <div class="field">
+      <label>Modello <span class="info-tip" tabindex="0" data-tip="Veloce: il modello di serie. Accurato: un modello più grande che trova gli stessi aerei con meno frammenti e doppioni (sulle riprese di prova 3 in meno su 52), ma impiega circa tre volte il tempo. Va installato a parte: python-service/tools/fetch_detector_model.sh con VARIANT=m.">?</span></label>
+      <select id="an-detect-model"><option value="s">Veloce</option><option value="m">Accurato (circa 3× più lento)</option></select>
+    </div>
   </div>
   <div class="tag-row" style="margin-top:8px;">
     <button type="button" class="btn btn-primary btn-sm" id="an-detect-btn">🎯 Rileva oggetti</button>

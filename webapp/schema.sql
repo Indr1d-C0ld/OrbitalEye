@@ -147,6 +147,8 @@ CREATE TABLE IF NOT EXISTS shares (
 -- l'elenco degli oggetti (classe, confidenza, riquadro orientato, misure in
 -- metri, tipi di velivolo compatibili) in result_json e i conteggi per
 -- classe in counts_json, da cui lo storico dell'area di uno studio.
+-- Colonne aggiunte dopo con le migrazioni (migrations/): embeddings_json
+-- (004), visual_json (005). Non aggiungerle qui.
 CREATE TABLE IF NOT EXISTS detections (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     capture_id INTEGER NOT NULL REFERENCES captures(id) ON DELETE CASCADE,

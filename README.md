@@ -77,10 +77,15 @@ Il confronto non è una semplice sovrapposizione: le due immagini vengono prima 
 **Identificazione**
 - **Identificatore di velivoli dalle misure**: misuri apertura alare (o diametro del rotore) e lunghezza, e la piattaforma propone i tipi compatibili da una **tabella locale di 166 velivoli** militari e civili frequenti nelle basi (caccia, addestratori, bombardieri, trasporti e aerocisterne, sorveglianza, executive, linea, droni, elicotteri), con link alla scheda tecnica di ciascuno. La compatibilità tiene conto della risoluzione della ripresa; per i velivoli a geometria variabile si considera anche l'apertura ad ali a freccia, la configurazione tipica a terra; un filtro sulla **forma delle ali** (freccia, dritta, delta…) separa tipi di dimensioni simili. Tutto offline
 - **Rilevamento automatico** di aerei, elicotteri, navi, veicoli e altri oggetti con un modello di intelligenza artificiale che gira sul tuo server (YOLO11s-OBB, dataset DOTA): nessuna immagine lascia la piattaforma. Riquadri orientati disegnati sulla ripresa. Per ogni aereo, apertura e lunghezza misurate sulla **sagoma**, con l'ombra tolta: contorno, separazione dallo sfondo, asse di simmetria della fusoliera, spostamento dell'ombra stimato una volta per ripresa. Su A400M, C-17 e A330 l'errore medio è del 2,5–3%, contro il +15–25% dei lati del riquadro, che non dicono nemmeno quale sia l'apertura. Con queste misure i tipi compatibili mettono in cima quello giusto, o lo affiancano ai pochi tipi di dimensioni identiche. Dove la sagoma non è attendibile (sfondo misto, aereo coperto) lo dice e usa il riquadro. Con un clic diventano annotazioni con il tipo scelto. Per riprese dettagliate (fino a 2 m/pixel)
+- **Libreria visiva**: ogni velivolo che identifichi diventa un riferimento. Per ogni aereo o elicottero rilevato la piattaforma propone i tipi più simili per aspetto, non per misure ("👁 simile a: A400M 92%"), e segna con ★ il candidato per misure che è anche il più simile. Separa tipi di dimensioni quasi identiche, come A400M e B-1 ad ali aperte o A330 e 787.
+  - Il ritaglio di ogni aereo è orientato lungo la fusoliera e a scala fissa in metri; DINOv2 gira in locale.
+  - Su Brize Norton, con 7 riferimenti presi dalla ripresa del 2021, tutti gli A400M e gli A330 della ripresa di oggi hanno come più simile il tipo giusto.
+  - Propone solo tipi già identificati almeno una volta.
+- **Due modelli di rilevamento**: "veloce" (di serie) e "accurato", con meno frammenti e doppioni ma circa tre volte più lento.
 - **Verifica e qualità del rilevamento**: per ogni oggetto trovato, ✓ conferma (con il tipo del velivolo), ✗ scarta, ✎ corregge classe e tipo; gli oggetti non trovati si aggiungono da un'annotazione. La pagina **Qualità del rilevamento** misura su queste verifiche:
   - precisione e richiamo per classe;
   - precisione per fascia di confidenza, per scegliere la soglia;
-  - quante volte il tipo vero è il primo o fra i primi tre dei compatibili, con le misure della sagoma e con quelle del riquadro.
+  - quante volte il tipo vero è il primo o fra i primi tre dei compatibili, con le misure della sagoma, con quelle del riquadro e con la libreria visiva (usando solo riferimenti di altre riprese).
 
   Si ricalcola con il codice attuale, quindi ogni miglioramento si misura sugli stessi oggetti.
 - **Confronto per oggetti**: nel confronto fra due riprese, quali aerei, elicotteri, navi e veicoli sono **comparsi, spariti o rimasti** ("aerei: 5 comparsi, 9 spariti, 0 rimasti"). Usa il rilevamento automatico su entrambe le riprese, eseguito se manca. Gli oggetti sono abbinati per posizione, categoria e dimensioni. Le posizioni di B sono riportate su A con lo stesso allineamento delle immagini, quindi lo scarto di georeferenza fra fonti diverse non separa lo stesso oggetto. Le due riprese possono avere aree, rotazioni e risoluzioni diverse. Non risente di ombre, colori o trama del terreno. Elenco con zoom su ciascun oggetto, riquadri verdi e rossi sull'immagine, riepilogo nella didascalia e nel report esportato. Anche gli **alert dei download pianificati** riportano gli oggetti comparsi, spariti e rimasti rispetto alla ripresa precedente
@@ -188,6 +193,12 @@ bash python-service/tools/fetch_detector_model.sh
 ```
 
 Lo script scarica YOLO11s-OBB dalle release ufficiali Ultralytics e lo converte in ONNX, eseguito poi con OpenCV senza dipendenze aggiuntive. La conversione usa PyTorch in un ambiente temporaneo (~300 MB scaricati, ~1,5 GB su disco) che lo script cancella alla fine. Senza il modello tutto il resto funziona; il pannello di rilevamento risponde che il modello non è installato.
+
+Facoltativi anche:
+- **Modello "accurato"** (YOLO11m-OBB, ~80 MB): meno frammenti e doppioni, tempo circa triplo. Si installa con `VARIANT=m bash python-service/tools/fetch_detector_model.sh`. Se il download di PyTorch si interrompe a metà, scarica il file `.whl` con `curl -C -` e passalo con `TORCH_WHEEL=percorso.whl`.
+- **Libreria visiva** (DINOv2-small di Meta, Apache-2.0, 88 MB, da Hugging Face): si installa con `bash python-service/tools/fetch_embedding_model.sh`.
+
+Riavvia il servizio di analisi dopo l'installazione.
 
 Per tenerlo sempre attivo è incluso un unit systemd già pronto (adatta `User=` e i percorsi al tuo ambiente prima di installarlo — vedi il commento nel file):
 

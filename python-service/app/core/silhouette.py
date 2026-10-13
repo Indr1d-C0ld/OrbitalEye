@@ -383,9 +383,18 @@ def analyze(image: np.ndarray, detections: list, mpp_x: float, mpp_y: float) -> 
         if contours:
             cnt = cv2.approxPolyDP(max(contours, key=cv2.contourArea), 1.0, True).reshape(-1, 2).astype(float)
             outline = [[round(float(x), 1), round(float(y), 1)] for x, y in c.to_image(cnt)]
+        # Direzione della fusoliera nel sistema dell'immagine a pixel
+        # quadrati (gradi, 0-180): serve a ritagliare l'aereo sempre
+        # orientato allo stesso modo (vedi embed.py).
+        dr = (0.0, 1.0) if transposed else (1.0, 0.0)
+        cb, sb = math.cos(b), math.sin(b)
+        d_crop = np.array([cb * dr[0] - sb * dr[1], sb * dr[0] + cb * dr[1]])
+        d_img = c.vector_to_image(d_crop)
+        axis_deg = math.degrees(math.atan2(d_img[1], d_img[0])) % 180
         out["objects"][i] = {
             "quality": "bassa" if reason else "ok",
             "reason": reason,
+            "axis_deg": round(axis_deg, 1),
             "span_m": round(float(span), 1),
             "length_m": round(float(length), 1),
             "symmetry": round(score, 2),

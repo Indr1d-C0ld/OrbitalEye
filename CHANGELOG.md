@@ -4,6 +4,137 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-10-13 (2) — Libreria visiva dei velivoli e rilevatore "accurato"
+
+Fase 2 del piano su riconoscimento e identificazione. Download autorizzati
+dall'utente: DINOv2-small (88,5 MB) e YOLO11m-OBB (42,4 MB, convertito in
+ONNX in un ambiente PyTorch temporaneo poi rimosso). Nessuno dei due è nei
+repository.
+
+### Libreria visiva (A3)
+
+- **[python-service/app/core/embed.py](python-service/app/core/embed.py)**
+  (nuovo):
+  - ogni aereo o elicottero rilevato diventa un vettore di 384 numeri con
+    DINOv2 ViT-S/14 di Meta (Apache-2.0), eseguito in locale con il modulo
+    DNN di OpenCV, senza dipendenze nuove;
+  - il ritaglio ha la fusoliera orizzontale (asse della sagoma), una
+    finestra di 1,3 volte la dimensione maggiore e una scala fissa in
+    metri;
+  - due orientamenti, perché il muso può stare da una parte o dall'altra;
+    senza sagoma attendibile, quattro dal riquadro;
+  - i vettori sono salvati in int8 (384 byte), con la scala che porta la
+    componente più grande a ±127. Con una scala fissa si perdeva quasi
+    tutta la precisione, perché le componenti restano sotto ~0,2.
+- **Prova su 24 aerei di 6 tipi** (Brize Norton nel 2021 e oggi, Bergamo,
+  Sigonella), cercando il più simile da un'altra ripresa:
+  - token CLS con lo sfondo originale: tipo giusto in 20 casi su 20, la
+    scelta adottata;
+  - sfondo neutralizzato fuori dalla sagoma: 18 su 20;
+  - media dei token: 15–18 su 20.
+- **[python-service/app/core/silhouette.py](python-service/app/core/silhouette.py)** —
+  restituisce anche la direzione della fusoliera (`axis_deg`).
+- **[webapp/migrations/004_visual_library.sql](webapp/migrations/004_visual_library.sql)**,
+  **[webapp/src/Detection.php](webapp/src/Detection.php)**,
+  **[webapp/src/DetectionRunner.php](webapp/src/DetectionRunner.php)**:
+  - i vettori sono salvati a parte (`detections.embeddings_json`) e non
+    arrivano mai alla pagina (`Detection::forClient`);
+  - una verifica con il tipo confermato copia il vettore dell'oggetto
+    (`detection_reviews.embedding_json`) e diventa un riferimento;
+  - i riferimenti si riallineano quando il rilevamento viene rieseguito;
+    un rilevamento senza vettori (modello assente, tempo esaurito) non li
+    cancella;
+  - `DetectionRunner::run` restituisce il rilevamento grezzo, e la
+    versione per la pagina si prepara solo dove serve: API e lavoro in
+    background, non il cron.
+- **[webapp/src/VisualLibrary.php](webapp/src/VisualLibrary.php)** (nuovo):
+  - per ogni aereo, i tipi più simili fra quelli già identificati, con
+    la somiglianza, la ripresa del riferimento e la data reale
+    dell'immagine;
+  - l'oggetto non propone mai sé stesso;
+  - suggerimento "chiaro" solo se il primo tipo stacca il secondo di
+    almeno 0,05: le somiglianze assolute sono alte anche fra tipi diversi,
+    conta il distacco;
+  - al massimo 20 riferimenti per tipo, i più recenti;
+  - suggerimenti salvati con il rilevamento (migrazione 005,
+    `detections.visual_json`) e ricalcolati solo quando la libreria
+    cambia. Su questa CPU una libreria di 500 riferimenti costava 4–8 s a
+    ogni apertura della pagina; con la cache la richiesta scende a 0,02 s;
+  - valutazione sui riferimenti solo con quelli di altre acquisizioni
+    (copie, ritagli e riscaricamenti della stessa foto contano come la
+    stessa), anch'essa in cache.
+- **[webapp/public/assets/js/analyze.js](webapp/public/assets/js/analyze.js)**:
+  - riga "👁 simile a, fra i tipi già identificati", con pulsanti per
+    usare il tipo come etichetta o per confermarlo con ✓;
+  - ★ sul candidato per misure che è anche il più simile per aspetto,
+    solo se il suggerimento è chiaro; altrimenti "(incerto)";
+  - dopo ogni verifica i suggerimenti si aggiornano, perché un tipo
+    confermato è un nuovo riferimento.
+- **[webapp/public/quality.php](webapp/public/quality.php)** — riga
+  "Libreria visiva" nell'identificazione dei velivoli.
+- **Prova completa nella copia isolata.** 7 conferme sulla ripresa di
+  Brize Norton del 2021 (4 A400M, 3 A330). Sulla ripresa di oggi:
+  - A400M: tutti e 5 con l'A400M come più simile (87–93%, contro il
+    76–83% dell'A330), mentre per misure il primo candidato era il B-1;
+  - A330: tutti e 4 con l'A330 come più simile;
+  - C-17: i 2 C-17, tipo mai identificato, ricevono "A330". Uno risulta
+    "incerto"; l'altro supera la soglia di poco (0,053). Misure e aspetto
+    però non concordano, e il ★ non compare. È il limite di fondo: la
+    libreria propone solo tipi già identificati.
+
+  La pagina della qualità, con altre 2 conferme sulla ripresa di oggi, dà
+  9 su 9 al primo posto.
+
+### Rilevatore "accurato" (A5)
+
+- **[python-service/app/core/detect.py](python-service/app/core/detect.py)**,
+  **[routers/analysis.py](python-service/app/routers/analysis.py)**,
+  **[tools/fetch_detector_model.sh](python-service/tools/fetch_detector_model.sh)**,
+  **[tools/fetch_embedding_model.sh](python-service/tools/fetch_embedding_model.sh)** (nuovo):
+  - modello "m" accanto a "s", scelto per ogni rilevamento;
+  - lo script installa l'una o l'altra variante (`VARIANT`) e accetta un
+    PyTorch già scaricato (`TORCH_WHEEL`): qui il download si
+    interrompeva sempre a 113,8 MB su 196, e pip non riusciva a
+    riprendere.
+- **Confronto sulle 5 riprese di prova:**
+  - il modello "m" trova gli stessi aerei con 3 frammenti o doppioni in
+    meno su 52, in un tempo circa triplo (120 s contro 40 in totale);
+  - la ripetizione del rilevamento sull'immagine specchiata e trasposta
+    (test-time augmentation) non ha migliorato nulla, a un costo da 3 a 4
+    volte maggiore: provata e tolta.
+- **[webapp/public/analyze_capture.php](webapp/public/analyze_capture.php)**,
+  **analyze.js** — scelta "Veloce" / "Accurato (circa 3× più lento)" nel
+  pannello del rilevamento. Per il modello accurato il servizio ha 15
+  minuti.
+
+### Test
+
+- [python-service/tests/test_embed.py](python-service/tests/test_embed.py)
+  (nuovo):
+  - codifica dei vettori;
+  - ritaglio con la fusoliera orizzontale;
+  - somiglianza, saltata se il modello non è installato, come in CI.
+- [webapp/tests/VisualLibraryTest.php](webapp/tests/VisualLibraryTest.php)
+  (nuovo):
+  - somiglianza fra orientamenti;
+  - suggerimenti ed esclusioni;
+  - valutazione solo su altre riprese;
+  - una verifica che diventa un riferimento, senza vettori nella pagina;
+  - un rilevamento senza vettori che non cancella il riferimento;
+  - cache ricalcolata quando la libreria cambia, e suggerimento "chiaro".
+- Totali: 65 test PHP, 36 Python (uno saltato in CI senza modello).
+
+Revisione indipendente: nessun errore di correttezza grave, 7 punti, tutti
+corretti. I principali:
+- tempi di calcolo a regime;
+- riferimenti cancellati in silenzio;
+- valutazione gonfiata da copie e ritagli;
+- percentuali e ★ fuorvianti;
+- precisione dell'int8;
+- revisione e impronta fissate nello script di DINOv2 (revisione
+  `c2bb04a5`, SHA-256 verificato);
+- data dell'immagine nelle etichette.
+
 ## 2026-10-13 — Riconoscimento dei velivoli dalla sagoma, verifica e qualità del rilevamento, alert sugli oggetti
 
 Fase 1 del nuovo piano su riconoscimento e identificazione dei mezzi.

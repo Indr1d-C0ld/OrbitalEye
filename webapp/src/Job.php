@@ -23,7 +23,7 @@ final class Job
         return [
             'fetch' => fn(array $p, callable $progress) => CaptureFetcher::fetchAndSave($p, null, $progress),
             'compare' => fn(array $p, callable $progress) => ComparisonRunner::run($p, $progress),
-            'detect' => fn(array $p, callable $progress) => ['detection' => DetectionRunner::run($p, $progress)],
+            'detect' => fn(array $p, callable $progress) => ['detection' => Detection::forClient(DetectionRunner::run($p, $progress))],
             'detail' => fn(array $p, callable $progress) => DetailFetcher::run($p, $progress),
         ];
     }

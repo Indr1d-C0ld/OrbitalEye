@@ -7,6 +7,7 @@ Auth::requireLogin();
  * (vedi DetectionQuality e DetectionReview).
  */
 $q = DetectionQuality::compute();
+$q['identification']['libreria'] = VisualLibrary::evaluation();
 $captureInfo = [];
 foreach ($q['captures'] as $c) {
     $cap = Capture::find($c['capture_id']);
@@ -71,12 +72,12 @@ require __DIR__ . '/partials/nav.php';
 
   <div class="panel">
     <h2>Identificazione dei velivoli</h2>
-    <div class="hint" style="margin-bottom:8px;">Per i velivoli confermati con il tipo: quante volte il tipo vero è il primo dei compatibili, fra i primi tre, o non compare. <strong>Sagoma</strong>: apertura e lunghezza misurate sul contorno dell'aereo, con l'ombra tolta. <strong>Riquadro</strong>: i lati del riquadro del rilevamento, che includono margine e ombra (il metodo precedente). Lo stesso aereo conta in entrambe le righe se ha entrambe le misure.</div>
+    <div class="hint" style="margin-bottom:8px;">Per i velivoli confermati con il tipo: quante volte il tipo vero è il primo dei compatibili, fra i primi tre, o non compare. <strong>Sagoma</strong>: apertura e lunghezza misurate sul contorno dell'aereo, con l'ombra tolta. <strong>Riquadro</strong>: i lati del riquadro del rilevamento, che includono margine e ombra (il metodo precedente). Lo stesso aereo conta in entrambe le righe se ha entrambe le misure. <strong>Libreria visiva</strong>: per ogni velivolo identificato, il tipo dei più simili fra quelli identificati in <em>altre</em> riprese (somiglianza dell'immagine, non delle misure); "non compatibile" vuol dire che il tipo vero non è fra i primi tre. Conta solo i tipi identificati in almeno due riprese.</div>
     <div class="table-responsive">
     <table>
       <thead><tr><th>Misure da</th><th>Velivoli</th><th>Primo</th><th>Fra i primi 3</th><th>Non compatibile</th></tr></thead>
       <tbody>
-        <?php foreach (['sagoma' => 'Sagoma', 'riquadro' => 'Riquadro'] as $k => $label): $s = $q['identification'][$k]; ?>
+        <?php foreach (['sagoma' => 'Sagoma', 'riquadro' => 'Riquadro', 'libreria' => 'Libreria visiva'] as $k => $label): $s = $q['identification'][$k]; ?>
           <tr><td><?= e($label) ?></td><td><?= (int) $s['n'] ?></td><td><?= (int) $s['top1'] ?> (<?= e($share($s['top1'], $s['n'])) ?>)</td>
             <td><?= (int) $s['top3'] ?> (<?= e($share($s['top3'], $s['n'])) ?>)</td><td><?= (int) $s['absent'] ?></td></tr>
         <?php endforeach; ?>

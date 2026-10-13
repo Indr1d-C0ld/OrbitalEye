@@ -41,6 +41,9 @@ final class DetectionRunner
         }
 
         $confidence = max(0.05, min(0.95, (float) ($body['confidence'] ?? 0.25)));
+        // Modello: "s" veloce (di serie) o "m", con meno frammenti e doppioni
+        // ma tre volte più lento (vedi python-service/app/core/detect.py).
+        $model = ($body['model'] ?? 's') === 'm' ? 'm' : 's';
         $progress(10, 'Rilevamento in corso sul server…');
         $smallObjects = !empty($body['small_objects']);
 
@@ -53,7 +56,8 @@ final class DetectionRunner
                 'mpp_y' => $mppY,
                 'confidence' => $confidence,
                 'small_objects' => $smallObjects,
-            ], 300);
+                'model' => $model,
+            ], $model === 'm' ? 900 : 300);
         } catch (PythonServiceException $e) {
             throw new DetectionException($e->getMessage(), 502);
         }
@@ -63,6 +67,7 @@ final class DetectionRunner
         $h = max(1, (int) ($result['height'] ?? $capture['height']));
         $counts = [];
         $objects = [];
+        $embeddings = [];
         foreach ($result['detections'] ?? [] as $i => $d) {
             $counts[$d['class']] = ($counts[$d['class']] ?? 0) + 1;
             $o = [
@@ -110,6 +115,9 @@ final class DetectionRunner
                     ], $matches);
                 }
             }
+            if (!empty($d['embedding']) && is_array($d['embedding'])) {
+                $embeddings[$o['n']] = array_values(array_filter($d['embedding'], 'is_string'));
+            }
             $objects[] = $o;
         }
 
@@ -125,7 +133,12 @@ final class DetectionRunner
         // "Oggetti piccoli" registrato solo se l'ingrandimento è stato davvero
         // applicato (non serve sotto 0,5 m/pixel, né senza scala nota).
         Detection::save($captureId, (int) $capture['study_id'], (string) ($result['model'] ?? 'yolo11s-obb'), $confidence,
-            $smallObjects && (float) ($result['upscale'] ?? 1) > 1, $mppMean, $stored, $counts);
+            $smallObjects && (float) ($result['upscale'] ?? 1) > 1, $mppMean, $stored, $counts, $embeddings ?: null);
+        // I tipi già confermati su questa ripresa restano riferimenti della
+        // libreria visiva, con i vettori del nuovo rilevamento.
+        DetectionReview::refreshEmbeddings($captureId);
+        // Grezzo: chi lo manda alla pagina passa da Detection::forClient
+        // (niente vettori, suggerimenti della libreria visiva).
         return Detection::forCapture($captureId);
     }
 }

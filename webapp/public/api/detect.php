@@ -22,7 +22,7 @@ if (!$capture) {
 }
 
 if ($method === 'GET') {
-    respond_json(['detection' => Detection::forCapture($captureId)]);
+    respond_json(['detection' => Detection::forClient(Detection::forCapture($captureId))]);
 }
 if ($method !== 'POST') {
     respond_json(['error' => 'Metodo non consentito'], 405);
@@ -30,7 +30,7 @@ if ($method !== 'POST') {
 
 // La logica sta in DetectionRunner, condivisa con i lavori in background.
 try {
-    respond_json(['detection' => DetectionRunner::run($body)]);
+    respond_json(['detection' => Detection::forClient(DetectionRunner::run($body))]);
 } catch (DetectionException $e) {
     respond_json(['error' => $e->getMessage()], $e->httpStatus);
 }

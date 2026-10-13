@@ -22,7 +22,11 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-MODEL_PATH = Path(__file__).resolve().parents[2] / "models" / "yolo11s-obb.onnx"
+MODEL_DIR = Path(__file__).resolve().parents[2] / "models"
+# Varianti del modello: "s" (veloce, di serie) e "m" (più accurato, circa tre
+# volte più lento), installate con tools/fetch_detector_model.sh.
+MODELS = {"s": MODEL_DIR / "yolo11s-obb.onnx", "m": MODEL_DIR / "yolo11m-obb.onnx"}
+MODEL_PATH = MODELS["s"]
 INPUT = 1024
 # Sovrapposizione fra tasselli: un oggetto più piccolo di così sta sempre
 # per intero in almeno un tassello (un C-17 a 0,15 m/pixel è ~350 pixel).
@@ -52,7 +56,7 @@ CLASSES = [
     ("swimming pool", "piscina"),
 ]
 
-_net = None
+_nets = {}
 _lock = threading.Lock()
 
 
@@ -64,20 +68,22 @@ class DetectorBusy(RuntimeError):
     pass
 
 
-def available() -> bool:
-    return MODEL_PATH.is_file()
+def available(variant: str = "s") -> bool:
+    return variant in MODELS and MODELS[variant].is_file()
 
 
-def _get_net():
-    global _net
-    if _net is None:
-        if not MODEL_PATH.is_file():
+def _get_net(variant: str = "s"):
+    if variant not in MODELS:
+        raise DetectorUnavailable(f"Modello di rilevamento sconosciuto: {variant}")
+    if variant not in _nets:
+        path = MODELS[variant]
+        if not path.is_file():
             raise DetectorUnavailable(
-                "Modello di rilevamento non installato (python-service/models/yolo11s-obb.onnx): "
+                f"Modello di rilevamento non installato (python-service/models/{path.name}): "
                 "vedi python-service/tools/fetch_detector_model.sh"
             )
-        _net = cv2.dnn.readNetFromONNX(str(MODEL_PATH))
-    return _net
+        _nets[variant] = cv2.dnn.readNetFromONNX(str(path))
+    return _nets[variant]
 
 
 def _infer_tile(net, tile: np.ndarray, conf: float):
@@ -130,9 +136,15 @@ def _tile_origins(size: int) -> list:
     return sorted(set(origins))
 
 
-def detect(image: np.ndarray, mpp: float | None, conf: float = 0.25) -> dict:
+def detect(image: np.ndarray, mpp: float | None, conf: float = 0.25, variant: str = "s") -> dict:
     """image: BGR (o BGRA: le zone trasparenti diventano grigie). mpp:
     metri/pixel della ripresa, se noto (decide l'eventuale ingrandimento).
+    variant: modello, "s" (veloce) o "m". Sulle riprese di prova (Brize
+    Norton 2021 e oggi, Bergamo, Sigonella 2022 e 2024) il modello "m" ha
+    trovato gli stessi aerei con 3 frammenti o doppioni in meno su 52, in un
+    tempo tre volte maggiore. Ripetere il rilevamento sull'immagine
+    specchiata e trasposta (test-time augmentation) non ha migliorato nulla,
+    a un costo da 3 a 4 volte maggiore: non è previsto.
     Ritorna rilevamenti in pixel dell'immagine originale."""
     if image.ndim == 3 and image.shape[2] == 4:
         alpha = image[:, :, 3:4].astype(np.float32) / 255.0
@@ -157,7 +169,7 @@ def detect(image: np.ndarray, mpp: float | None, conf: float = 0.25) -> dict:
     if not _lock.acquire(timeout=LOCK_WAIT):
         raise DetectorBusy("Un altro rilevamento è in corso: riprova fra poco.")
     try:
-        net = _get_net()
+        net = _get_net(variant)
         for oy in _tile_origins(H):
             for ox in _tile_origins(W):
                 t = _infer_tile(net, work[oy:oy + INPUT, ox:ox + INPUT], conf)

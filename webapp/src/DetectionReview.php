@@ -81,12 +81,51 @@ final class DetectionReview
             $db->prepare("UPDATE detection_reviews SET verdict = :v, class = :c, type_name = :t, center_x = :x, center_y = :y, radius = :r,
                     polygon_json = :p, source = :s, updated_at = datetime('now') WHERE id = :id")
                 ->execute($values + [':id' => $existing['id']]);
-            return (int) $existing['id'];
+            $id = (int) $existing['id'];
+        } else {
+            $db->prepare('INSERT INTO detection_reviews (capture_id, study_id, verdict, class, type_name, center_x, center_y, radius, polygon_json, source)
+                    VALUES (:cap, :st, :v, :c, :t, :x, :y, :r, :p, :s)')
+                ->execute($values + [':cap' => $captureId, ':st' => (int) $capture['study_id']]);
+            $id = (int) $db->lastInsertId();
         }
-        $db->prepare('INSERT INTO detection_reviews (capture_id, study_id, verdict, class, type_name, center_x, center_y, radius, polygon_json, source)
-                VALUES (:cap, :st, :v, :c, :t, :x, :y, :r, :p, :s)')
-            ->execute($values + [':cap' => $captureId, ':st' => (int) $capture['study_id']]);
-        return (int) $db->lastInsertId();
+        self::refreshEmbeddings($captureId);
+        return $id;
+    }
+
+    /**
+     * Vettori della libreria visiva (VisualLibrary) per le verifiche con il
+     * tipo confermato di una ripresa: quelli dell'oggetto del rilevamento
+     * corrispondente; nessuno per le altre verifiche, o se l'oggetto non c'è
+     * più. Da richiamare dopo ogni verifica e ogni nuovo rilevamento.
+     */
+    public static function refreshEmbeddings(int $captureId): void
+    {
+        $reviews = self::forCapture($captureId);
+        if (!$reviews) {
+            return;
+        }
+        $det = Detection::forCapture($captureId);
+        $objects = $det['result']['objects'] ?? [];
+        $vectors = $det['embeddings'] ?? [];
+        $byReview = array_flip(self::match($objects, $reviews));
+        // updated_at cambia con i vettori: la versione della libreria visiva
+        // (e le sue cache) ne dipende.
+        $set = Database::get()->prepare("UPDATE detection_reviews SET embedding_json = :e, updated_at = datetime('now')
+            WHERE id = :id AND embedding_json IS NOT :e");
+        foreach ($reviews as $j => $r) {
+            if ($r['verdict'] !== 'confirmed' || empty($r['type_name'])) {
+                // Non è (più) un riferimento.
+                $set->execute([':e' => null, ':id' => $r['id']]);
+                continue;
+            }
+            $n = isset($byReview[$j]) ? ($objects[$byReview[$j]]['n'] ?? null) : null;
+            // Solo se il rilevamento attuale ha i vettori di quell'oggetto: un
+            // rilevamento rieseguito senza (modello assente, tempo esaurito,
+            // oggetto non più trovato) non deve cancellare un riferimento.
+            if ($n !== null && !empty($vectors[$n])) {
+                $set->execute([':e' => json_encode($vectors[$n]), ':id' => $r['id']]);
+            }
+        }
     }
 
     public static function delete(int $id): void
@@ -240,7 +279,9 @@ final class DetectionReview
     private static function decode(array $row): array
     {
         $row['polygon'] = json_decode($row['polygon_json'] ?? 'null', true) ?: [];
-        unset($row['polygon_json']);
+        // I vettori restano sul server (vedi VisualLibrary::references).
+        $row['has_embedding'] = !empty($row['embedding_json']);
+        unset($row['polygon_json'], $row['embedding_json']);
         return $row;
     }
 }

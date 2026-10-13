@@ -1758,7 +1758,10 @@
         const data = await reviewRequest({ action: 'save', capture_id: CFG.captureId, ...payload });
         reviews = data.reviews || [];
         editing = null;
-        render(lastDet);
+        // Un tipo confermato è un nuovo riferimento della libreria visiva:
+        // i suggerimenti degli altri oggetti possono cambiare.
+        const fresh = await fetch('api/detect.php?capture_id=' + encodeURIComponent(CFG.captureId)).then((r) => r.json()).catch(() => ({}));
+        render(fresh.detection || lastDet);
       } catch (err) {
         status.textContent = 'Verifica non salvata: ' + err.message;
       }
@@ -1868,9 +1871,20 @@
                 <button type="button" class="btn btn-sm btn-primary rv-save" data-i="${i}">Salva verifica</button>
                 <button type="button" class="btn btn-sm rv-cancel">Annulla</button></div></td></tr>`
             : '';
-          const cHtml = cands.length
-            ? cands.map((c) => `<button type="button" class="btn btn-sm det-cand-btn${chosen[d.n] === c.name ? ' btn-primary' : ''}" data-n="${d.n}" data-name="${escHtml(c.name)}" title="${escHtml(((c.maker || '') + ' ' + c.name).trim())} — compatibilità ${Math.round(c.compatibility * 100)}%${c.note ? ' (' + escHtml(c.note) + ')' : ''}. Clic per usarlo come etichetta.">${escHtml(c.name)} ${Math.round(c.compatibility * 100)}%</button>`).join(' ')
-            : (['plane', 'helicopter'].includes(d.class) && d.size_m ? '<span class="hint">nessuno in tabella</span>' : '');
+          // Libreria visiva (VisualLibrary): i tipi dei velivoli già
+          // identificati più simili a questo. ★ sul candidato per misure che
+          // è anche il più simile per aspetto.
+          const visual = d.visual || [];
+          // ★ solo se il più simile stacca chiaramente il secondo tipo
+          // (VisualLibrary::CLEAR_MARGIN): le somiglianze assolute sono
+          // tutte alte, conta il distacco.
+          const topVisual = visual.length && visual[0].clear ? visual[0].type : null;
+          const cHtml = (cands.length
+            ? cands.map((c) => `<button type="button" class="btn btn-sm det-cand-btn${chosen[d.n] === c.name ? ' btn-primary' : ''}" data-n="${d.n}" data-name="${escHtml(c.name)}" title="${escHtml(((c.maker || '') + ' ' + c.name).trim())} — compatibilità ${Math.round(c.compatibility * 100)}%${c.note ? ' (' + escHtml(c.note) + ')' : ''}${c.name === topVisual ? '. È anche il più simile nella libreria visiva' : ''}. Clic per usarlo come etichetta.">${c.name === topVisual ? '★ ' : ''}${escHtml(c.name)} ${Math.round(c.compatibility * 100)}%</button>`).join(' ')
+            : (['plane', 'helicopter'].includes(d.class) && d.size_m ? '<span class="hint">nessuno in tabella</span>' : ''))
+            + (visual.length
+              ? `<div class="hint" style="margin-top:4px;" title="Libreria visiva: i velivoli che hai già identificato più simili a questo, per aspetto e non per misure. Propone solo tipi già identificati almeno una volta: un tipo mai identificato non può comparire. Le percentuali sono tutte alte anche fra tipi diversi: conta il distacco fra il primo e il secondo; sotto i 5 punti il suggerimento è incerto.">👁 simile a, fra i tipi già identificati${visual.length && !visual[0].clear ? ' (incerto)' : ''}: ${visual.map((v) => `<button type="button" class="btn btn-sm det-cand-btn${chosen[d.n] === v.type ? ' btn-primary' : ''}" data-n="${d.n}" data-name="${escHtml(v.type)}" title="Velivolo identificato più simile di questo tipo: ${escHtml(v.label)} (${escHtml(v.study)}${v.date ? ', ' + escHtml(v.date.split('-').reverse().join('/')) : ''}). Somiglianza dell'immagine, non delle misure. Clic per usarlo come etichetta.">${escHtml(v.type)} ${Math.round(v.similarity * 100)}%</button>`).join(' ')}</div>`
+              : '');
           return `<tr data-i="${i}" class="det-row" style="cursor:pointer;"><td>${d.n}</td><td>${escHtml(d.label)}</td><td>${Math.round(d.confidence * 100)}%</td>
             <td>${measures}</td><td>${cHtml}</td>
             <td><button type="button" class="btn btn-sm det-annotate-btn" data-i="${i}" title="Salva questo oggetto come annotazione (poligono)">🏷</button></td>
@@ -1967,7 +1981,8 @@
       status.textContent = 'Rilevamento in corso sul server' + (small ? ' (oggetti piccoli: può richiedere un paio di minuti)' : ' (da qualche secondo a un minuto)') + '…';
       try {
         // Lavoro in background, con avanzamento (vedi Job.php).
-        const data = await runJob('detect', { capture_id: CFG.captureId, confidence: parseFloat(confIn.value), small_objects: small, label: 'Rilevamento' }, status);
+        const model = $('#an-detect-model') ? $('#an-detect-model').value : 's';
+        const data = await runJob('detect', { capture_id: CFG.captureId, confidence: parseFloat(confIn.value), small_objects: small, model, label: 'Rilevamento' }, status);
         Object.keys(chosen).forEach((k) => delete chosen[k]);
         render(data.detection);
         if (small && !data.detection.small_objects) {
