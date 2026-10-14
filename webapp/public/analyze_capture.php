@@ -551,6 +551,7 @@ window.ORBITALEYE_ANALYZE = {
   // velivoli e classi che si possono indicare come vere.
   aircraftTypes: <?= json_encode(array_column(AircraftCatalog::types(), 'name')) ?>,
   reviewClasses: <?= json_encode(DetectionReview::CLASSES) ?>,
+  reviewTypes: <?= json_encode(DetectionReview::typesByClass()) ?>,
   // Data e ora esatte del passaggio, se note (Sentinel): l'ora pre-compila
   // la stima dell'altezza da ombra.
   captureDatetime: <?= json_encode($captureMeta['s2_pass']['datetime'] ?? $captureMeta['s1_pass']['datetime'] ?? null) ?>,

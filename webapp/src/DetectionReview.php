@@ -25,6 +25,40 @@ final class DetectionReview
         'other' => 'altro',
     ];
 
+    /**
+     * Tipi ammessi per classe: un tipo si conferma solo nell'ambito della sua
+     * classe (un aereo con un tipo d'aereo, non una nave con "C-17"). Per gli
+     * aerei tutti i velivoli tranne gli elicotteri; per gli elicotteri anche
+     * i convertiplani, che il rilevatore può vedere come elicotteri. Le altre
+     * classi per ora non hanno una tabella dei tipi.
+     */
+    public static function typesFor(?string $class): array
+    {
+        if ($class !== 'plane' && $class !== 'helicopter') {
+            return [];
+        }
+        $out = [];
+        foreach (AircraftCatalog::types() as $t) {
+            $heli = in_array($t['category'], ['elicottero', 'convertiplano'], true);
+            if ($class === 'helicopter' ? $heli : $t['category'] !== 'elicottero') {
+                $out[] = $t['name'];
+            }
+        }
+        return $out;
+    }
+
+    /** Tipi ammessi per ogni classe che ne ha (per la pagina). */
+    public static function typesByClass(): array
+    {
+        $out = [];
+        foreach (array_keys(self::CLASSES) as $c) {
+            if ($types = self::typesFor($c)) {
+                $out[$c] = $types;
+            }
+        }
+        return $out;
+    }
+
     /** Raggio minimo (frazione del lato maggiore) entro cui due posizioni sono lo stesso oggetto. */
     private const MIN_RADIUS = 0.004;
     /** Rapporto massimo fra i raggi di due posizioni dello stesso oggetto. */
@@ -57,8 +91,13 @@ final class DetectionReview
             throw new InvalidArgumentException('Tipo non valido');
         }
         $type = trim((string) $typeIn);
-        if ($type !== '' && !in_array($type, array_column(AircraftCatalog::types(), 'name'), true)) {
-            throw new InvalidArgumentException('Tipo non presente nella tabella dei velivoli');
+        if ($type !== '' && $verdict === 'confirmed') {
+            if (!in_array($type, array_column(AircraftCatalog::types(), 'name'), true)) {
+                throw new InvalidArgumentException('Tipo non presente nella tabella dei velivoli');
+            }
+            if (!in_array($type, self::typesFor($class), true)) {
+                throw new InvalidArgumentException('Tipo non valido per la classe "' . (self::CLASSES[$class] ?? $class) . '"');
+            }
         }
         $polygon = self::polygon($data['polygon'] ?? null);
         if (!$polygon) {

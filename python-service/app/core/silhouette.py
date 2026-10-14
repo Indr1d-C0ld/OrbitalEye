@@ -272,13 +272,15 @@ def _image_shadow(iso: np.ndarray, center_px, radius: int):
     return _shadow_shift(bright, shadow & ~bright, radius // 2)
 
 
-def analyze(image: np.ndarray, detections: list, mpp_x: float, mpp_y: float) -> dict:
+def analyze(image: np.ndarray, detections: list, mpp_x: float, mpp_y: float, budget_s: float = TIME_BUDGET_S) -> dict:
     """Misure dalla sagoma per i rilevamenti di classe "plane".
 
     image: BGR; detections: come da detect.detect (pixel dell'immagine).
     Ritorna {"objects": {indice: risultato}, "shadow_m": [dx, dy] | None}.
     Il risultato ha span_m, length_m, quality ("ok" o "bassa"), reason,
     symmetry, fill e outline (contorno della sagoma, pixel dell'immagine).
+    budget_s: tempo massimo (di serie TIME_BUDGET_S; il chiamante lo riduce
+    se il rilevamento ha già consumato parte del suo tempo).
     """
     out = {"objects": {}, "shadow_m": None}
     if not mpp_x or not mpp_y or (mpp_x + mpp_y) / 2 > MAX_MPP:
@@ -303,11 +305,18 @@ def analyze(image: np.ndarray, detections: list, mpp_x: float, mpp_y: float) -> 
         else:
             usable.append(i)
     planes = usable
+    if budget_s <= 0:
+        # Il rilevamento ha già consumato il tempo della richiesta.
+        for i in planes:
+            out["objects"][i] = {"quality": "bassa", "reason": "tempo esaurito: il rilevamento ha usato tutto il tempo disponibile"}
+        return out
 
     # Un solo sole per ripresa: spostamento dell'ombra stimato su ciascun
     # aereo, poi la mediana (metri, assi dell'immagine).
     vecs = []
     for i in planes:
+        if time.monotonic() - started > budget_s / 2:
+            break  # bastano gli aerei già visti; il resto del tempo alle sagome
         d = detections[i]
         poly = np.array(d["polygon"], float) * [fx, fy]
         radius = int(np.ptp(poly, axis=0).max() * 0.8)
@@ -319,7 +328,7 @@ def analyze(image: np.ndarray, detections: list, mpp_x: float, mpp_y: float) -> 
         out["shadow_m"] = [round(float(shadow_m[0]), 2), round(float(shadow_m[1]), 2)]
 
     for i in planes:
-        if time.monotonic() - started > TIME_BUDGET_S:
+        if time.monotonic() - started > budget_s:
             out["objects"][i] = {"quality": "bassa", "reason": "tempo esaurito: troppi aerei nella ripresa"}
             continue
         try:

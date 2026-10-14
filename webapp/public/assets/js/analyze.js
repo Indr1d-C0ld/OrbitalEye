@@ -1725,6 +1725,29 @@
     let editing = null; // n dell'oggetto in correzione
     const typesList = $('#an-aircraft-types');
     if (typesList) typesList.innerHTML = (CFG.aircraftTypes || []).map((t) => `<option value="${escHtml(t)}">`).join('');
+    // Tipi ammessi per classe (DetectionReview::typesFor): un elenco per
+    // classe; per le classi senza tabella dei tipi il campo è disattivato.
+    const REVIEW_TYPES = CFG.reviewTypes || {};
+    const typesListId = (c) => 'an-types-' + String(c).replace(/[^a-z0-9]+/gi, '-');
+    if (typesList) {
+      typesList.insertAdjacentHTML('afterend', Object.entries(REVIEW_TYPES).map(([c, names]) =>
+        `<datalist id="${typesListId(c)}">${names.map((t) => `<option value="${escHtml(t)}">`).join('')}</datalist>`).join(''));
+    }
+    function bindTypeInput(select, input) {
+      const update = () => {
+        const has = !!REVIEW_TYPES[select.value];
+        input.disabled = !has;
+        if (has) {
+          input.setAttribute('list', typesListId(select.value));
+        } else {
+          input.value = '';
+          input.removeAttribute('list');
+        }
+        input.placeholder = has ? 'tipo (facoltativo)' : 'nessun tipo per questa classe';
+      };
+      select.addEventListener('change', update);
+      update();
+    }
 
     function labelFor(d) {
       return chosen[d.n] ? chosen[d.n] + '?' : d.label;
@@ -1818,8 +1841,9 @@
       form.style.marginTop = '6px';
       form.style.flexBasis = '100%';
       form.innerHTML = `<select class="mf-class">${classOptions('plane')}</select>
-        <input class="mf-type" list="an-aircraft-types" placeholder="tipo (facoltativo)" style="max-width:200px;">
+        <input class="mf-type" placeholder="tipo (facoltativo)" style="max-width:200px;">
         <button type="button" class="btn btn-sm btn-primary mf-save">Aggiungi come oggetto non rilevato</button>`;
+      bindTypeInput(form.querySelector('.mf-class'), form.querySelector('.mf-type'));
       form.querySelector('.mf-save').addEventListener('click', () => saveReview({
         verdict: 'confirmed', source: 'manual', polygon: poly,
         class: form.querySelector('.mf-class').value, type_name: form.querySelector('.mf-type').value.trim(),
@@ -1878,7 +1902,7 @@
                <button type="button" class="btn btn-sm rv-edit" data-i="${i}" title="Correggi classe o tipo">✎</button>`;
           const editRow = editing === d.n
             ? `<tr class="rv-edit-row"><td></td><td colspan="6"><div class="tag-row"><select class="rv-class">${classOptions(REVIEW_CLASSES[d.class] ? d.class : 'other')}</select>
-                <input class="rv-type" list="an-aircraft-types" placeholder="tipo (facoltativo)" value="${escHtml(chosen[d.n] || '')}" style="max-width:220px;">
+                <input class="rv-type" placeholder="tipo (facoltativo)" value="${escHtml(chosen[d.n] || '')}" style="max-width:220px;">
                 <button type="button" class="btn btn-sm btn-primary rv-save" data-i="${i}">Salva verifica</button>
                 <button type="button" class="btn btn-sm rv-cancel">Annulla</button></div></td></tr>`
             : '';
@@ -1924,7 +1948,10 @@
       }));
       list.querySelectorAll('.rv-cancel').forEach((b) => b.addEventListener('click', (e) => { stop(e); editing = null; render(lastDet); }));
       list.querySelectorAll('.rv-del').forEach((b) => b.addEventListener('click', (e) => { stop(e); deleteReview(+b.dataset.id); }));
-      list.querySelectorAll('.rv-edit-row').forEach((row) => row.addEventListener('click', stop));
+      list.querySelectorAll('.rv-edit-row').forEach((row) => {
+        row.addEventListener('click', stop);
+        bindTypeInput(row.querySelector('.rv-class'), row.querySelector('.rv-type'));
+      });
       list.querySelectorAll('.det-row').forEach((row) => row.addEventListener('click', () => {
         selectedDetection = +row.dataset.i === selectedDetection ? -1 : +row.dataset.i;
         list.querySelectorAll('.det-row').forEach((r) => r.classList.toggle('active', +r.dataset.i === selectedDetection));

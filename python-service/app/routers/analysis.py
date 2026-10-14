@@ -1,4 +1,5 @@
 import logging
+import time
 
 import numpy as np
 from fastapi import APIRouter, Depends, HTTPException
@@ -339,8 +340,9 @@ def spectral_view(req: SpectralViewRequest):
 
 class DetectRequest(BaseModel):
     capture_path: str
-    # Metri/pixel della ripresa, se noti: servono solo all'ingrandimento
-    # facoltativo per gli oggetti piccoli.
+    # Metri/pixel della ripresa, se noti: servono all'ingrandimento
+    # facoltativo per gli oggetti piccoli e alla passata per gli oggetti
+    # grandi (vedi detect.py).
     mpp: float | None = Field(None, gt=0)
     # Scala per asse (le riprese in gradi l'hanno diversa sui due assi): con
     # queste, per gli aerei si misura anche la sagoma (vedi silhouette.py).
@@ -351,6 +353,9 @@ class DetectRequest(BaseModel):
     # Modello: "s" (veloce) o "m" (meno frammenti e doppioni, tre volte
     # più lento; vedi detect.py).
     model: str = Field("s", pattern="^(s|m)$")
+    # Tempo a disposizione dell'intera richiesta, entro il timeout di chi
+    # chiama: rilevamento, poi sagome e vettori con quello che resta.
+    time_budget_s: float = Field(240, ge=30, le=1800)
 
 
 @router.get("/detect/status")
@@ -374,12 +379,14 @@ def detect(req: DetectRequest):
         raise HTTPException(status_code=400, detail="Percorso non valido")
     if not src.is_file():
         raise HTTPException(status_code=404, detail="Immagine non trovata")
+    started = time.monotonic()
     img, mask = load_image_with_mask(src)
     if mask is not None:
         img = img.copy()
         img[mask == 0] = 114  # zone senza dati: grigio neutro, come il riempimento del modello
     try:
-        result = detectmod.detect(img, req.mpp if req.small_objects else None, req.confidence, req.model)
+        mpp = req.mpp or ((req.mpp_x + req.mpp_y) / 2 if req.mpp_x and req.mpp_y else None)
+        result = detectmod.detect(img, mpp, req.confidence, req.model, small_objects=req.small_objects)
     except (detectmod.DetectorUnavailable, detectmod.DetectorBusy) as e:
         raise HTTPException(status_code=503, detail=str(e))
     result["width"] = int(img.shape[1])
@@ -388,8 +395,16 @@ def detect(req: DetectRequest):
     if req.mpp_x and req.mpp_y:
         # Apertura e lunghezza dalla sagoma, al posto dei lati del riquadro.
         # Un errore qui non deve far perdere il rilevamento.
+        # Tempo rimasto dopo il rilevamento: metà alle sagome (tutto, se i
+        # vettori non si calcolano), il resto ai vettori, ciascuno entro il
+        # proprio tetto (TIME_BUDGET_S).
+        def remaining():
+            return max(0.0, req.time_budget_s - (time.monotonic() - started))
+
         try:
-            sil = silhouettemod.analyze(img, result["detections"], req.mpp_x, req.mpp_y)
+            sil = silhouettemod.analyze(img, result["detections"], req.mpp_x, req.mpp_y,
+                                        budget_s=min(silhouettemod.TIME_BUDGET_S,
+                                                     remaining() / 2 if embedmod.available() else remaining()))
         except Exception as e:  # noqa: BLE001
             logger.warning("Analisi delle sagome non riuscita: %s", e)
             sil = {"objects": {}, "shadow_m": None}
@@ -399,7 +414,8 @@ def detect(req: DetectRequest):
         # Vettori per la libreria visiva (vedi embed.py), se il modello c'è.
         if embedmod.available():
             try:
-                vecs = embedmod.embed_objects(img, result["detections"], sil["objects"], req.mpp_x, req.mpp_y)
+                vecs = embedmod.embed_objects(img, result["detections"], sil["objects"], req.mpp_x, req.mpp_y,
+                                              budget_s=min(embedmod.TIME_BUDGET_S, remaining()))
             except Exception as e:  # noqa: BLE001
                 logger.warning("Vettori per la libreria visiva non calcolati: %s", e)
                 vecs = {}

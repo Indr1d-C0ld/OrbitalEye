@@ -47,6 +47,9 @@ final class DetectionRunner
         $progress(10, 'Rilevamento in corso sul server…');
         $smallObjects = !empty($body['small_objects']);
 
+        // Il servizio distribuisce il tempo fra rilevamento, sagome e vettori
+        // in modo da rispondere entro il timeout, con un minuto di margine.
+        $timeout = $model === 'm' ? 900 : 300;
         try {
             $result = (new PythonServiceClient())->post('/analysis/detect', [
                 'capture_path' => $capture['relative_path'],
@@ -57,7 +60,8 @@ final class DetectionRunner
                 'confidence' => $confidence,
                 'small_objects' => $smallObjects,
                 'model' => $model,
-            ], $model === 'm' ? 900 : 300);
+                'time_budget_s' => $timeout - 60,
+            ], $timeout);
         } catch (PythonServiceException $e) {
             throw new DetectionException($e->getMessage(), 502);
         }
@@ -137,6 +141,8 @@ final class DetectionRunner
             'shadow_m' => $result['shadow_m'] ?? null,
             // Classificatore dei tipi che ha prodotto i type_guess (se c'era).
             'type_model' => $result['type_model'] ?? null,
+            // Oggetti grandi presi dalla passata ridotta (vedi detect.py).
+            'large_objects' => (int) ($result['large_objects'] ?? 0),
         ];
         // "Oggetti piccoli" registrato solo se l'ingrandimento è stato davvero
         // applicato (non serve sotto 0,5 m/pixel, né senza scala nota).

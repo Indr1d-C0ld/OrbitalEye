@@ -37,13 +37,19 @@ final class VisualLibrary
      */
     public const CLEAR_MARGIN = 0.05;
 
+    /**
+     * Versione della logica dei suggerimenti: cambiandola, le cache salvate
+     * con i rilevamenti si ricalcolano (3: riferimenti solo dello stesso ambito).
+     */
+    private const LOGIC = 3;
+
     private static ?array $cache = null;
     private static ?string $versionCache = null;
 
     /**
      * Riferimenti: verifiche confermate con tipo e vettori.
      *
-     * @return array<int,array{id:int, capture_id:int, type:string, vectors:array, label:string, study:string, date:?string}>
+     * @return array<int,array{id:int, capture_id:int, class:?string, type:string, vectors:array, label:string, study:string, date:?string}>
      */
     public static function references(bool $refresh = false): array
     {
@@ -51,7 +57,7 @@ final class VisualLibrary
             return self::$cache;
         }
         $rows = Database::get()->query(
-            "SELECT r.id, r.capture_id, r.type_name, r.embedding_json, s.title AS study
+            "SELECT r.id, r.capture_id, r.class, r.type_name, r.embedding_json, s.title AS study
                FROM detection_reviews r JOIN studies s ON s.id = r.study_id
               WHERE r.verdict = 'confirmed' AND r.type_name IS NOT NULL AND r.embedding_json IS NOT NULL
               ORDER BY r.id DESC"
@@ -63,6 +69,11 @@ final class VisualLibrary
             if (($perType[$row['type_name']] ?? 0) >= self::MAX_PER_TYPE) {
                 continue;
             }
+            // Verifiche salvate prima del controllo per classe: un tipo fuori
+            // dall'ambito della sua classe non è un riferimento valido.
+            if (!in_array($row['type_name'], DetectionReview::typesFor($row['class']), true)) {
+                continue;
+            }
             $vectors = array_values(array_filter(array_map([self::class, 'decode'], json_decode($row['embedding_json'], true) ?: [])));
             if (!$vectors) {
                 continue;
@@ -70,7 +81,7 @@ final class VisualLibrary
             $perType[$row['type_name']] = ($perType[$row['type_name']] ?? 0) + 1;
             $cid = (int) $row['capture_id'];
             $captureInfo[$cid] ??= self::captureInfo($cid);
-            $out[] = ['id' => (int) $row['id'], 'capture_id' => $cid, 'type' => $row['type_name'], 'vectors' => $vectors,
+            $out[] = ['id' => (int) $row['id'], 'capture_id' => $cid, 'class' => $row['class'], 'type' => $row['type_name'], 'vectors' => $vectors,
                 'study' => $row['study']] + $captureInfo[$cid];
         }
         return self::$cache = $out;
@@ -111,7 +122,7 @@ final class VisualLibrary
               WHERE verdict = 'confirmed' AND type_name IS NOT NULL AND embedding_json IS NOT NULL"
         )->fetch();
         // updated_at cambia anche quando cambiano i vettori (refreshEmbeddings).
-        return self::$versionCache = md5(implode('|', [$row['n'], $row['m'], $row['u'], self::MAX_PER_TYPE]));
+        return self::$versionCache = md5(implode('|', [$row['n'], $row['m'], $row['u'], self::MAX_PER_TYPE, self::LOGIC]));
     }
 
     /** Vettore int8 in base64 (embed.py) → numeri normalizzati, o null. */
@@ -143,18 +154,29 @@ final class VisualLibrary
     }
 
     /**
+     * Ambito di una classe per la libreria: aerei ed elicotteri insieme (il
+     * rilevatore scambia spesso un elicottero grande per un aereo, e un
+     * convertiplano può essere l'uno o l'altro), le altre classi a sé: una
+     * nave non riceve mai "simile a C-17".
+     */
+    public static function domain(?string $class): ?string
+    {
+        return in_array($class, ['plane', 'helicopter'], true) ? 'aircraft' : $class;
+    }
+
+    /**
      * Tipi più simili: per ogni tipo il riferimento più vicino, dal più
-     * simile.
+     * simile. Con $domain, solo i riferimenti di quell'ambito (vedi domain).
      *
      * @param array $vectors vettori dell'oggetto (già decodificati)
      * @param array<int,bool> $excludeIds riferimenti da non usare (l'oggetto stesso)
      * @return array<int,array{type:string, similarity:float, capture_id:int, label:string, study:string, date:?string}>
      */
-    public static function suggest(array $vectors, array $references, array $excludeIds = [], int $limit = self::SUGGESTIONS): array
+    public static function suggest(array $vectors, array $references, array $excludeIds = [], int $limit = self::SUGGESTIONS, ?string $domain = null): array
     {
         $byType = [];
         foreach ($references as $ref) {
-            if (isset($excludeIds[$ref['id']])) {
+            if (isset($excludeIds[$ref['id']]) || ($domain !== null && self::domain($ref['class'] ?? null) !== $domain)) {
                 continue;
             }
             $sim = self::similarity($vectors, $ref['vectors']);
@@ -193,7 +215,10 @@ final class VisualLibrary
                     continue;
                 }
                 $exclude = isset($own[$i]) ? [(int) $reviews[$own[$i]]['id'] => true] : [];
-                $list = self::suggest($vs, $refs, $exclude);
+                // Ambito dalla verifica dell'oggetto, se c'è (la classe
+                // corretta dall'analista), altrimenti dal rilevatore.
+                $class = isset($own[$i]) ? ($reviews[$own[$i]]['class'] ?? null) : null;
+                $list = self::suggest($vs, $refs, $exclude, self::SUGGESTIONS, self::domain($class ?? ($o['class'] ?? null)));
                 // Chiaro solo se il primo tipo stacca il secondo; con un solo
                 // tipo in libreria non c'è termine di paragone.
                 $clear = count($list) >= 2 && $list[0]['similarity'] - $list[1]['similarity'] >= self::CLEAR_MARGIN;
@@ -233,7 +258,8 @@ final class VisualLibrary
     {
         $stats = ['n' => 0, 'top1' => 0, 'top3' => 0, 'absent' => 0];
         foreach ($references as $ref) {
-            $others = array_values(array_filter($references, fn($r) => $r['acquisition'] !== $ref['acquisition']));
+            $others = array_values(array_filter($references, fn($r) => $r['acquisition'] !== $ref['acquisition']
+                && self::domain($r['class'] ?? null) === self::domain($ref['class'] ?? null)));
             if (!array_filter($others, fn($r) => $r['type'] === $ref['type'])) {
                 continue;
             }

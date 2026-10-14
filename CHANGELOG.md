@@ -4,6 +4,133 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-10-14 (2) — Fondamenta per navi e veicoli: rilevamento nei porti, navi grandi, tipi per ambito
+
+Fase 1 del piano per estendere il riconoscimento a navi e veicoli. Nessun
+dataset scaricato. Prima, una ricerca a più agenti su dataset, licenze e
+codice (FAIR1M, dataset di navi e veicoli, pratica degli analisti). Ha
+trovato nel codice i problemi che questa fase corregge.
+
+### Rilevamento (python-service/app/core/detect.py)
+
+- **Navi dentro un porto**: un riquadro coperto per oltre il 60% da uno più
+  sicuro veniva tolto come frammento qualunque fosse la classe. Una nave
+  dentro un riquadro "porto" poteva sparire. Ora la soppressione vale solo
+  fra classi dello stesso gruppo:
+  - le classi d'area (porto, ponte, campi sportivi, rotatoria, piscina)
+    non sopprimono gli oggetti che contengono, né ne sono soppresse;
+  - fra oggetti di classi diverse il frammento si toglie ancora.
+- **Navi grandi**:
+  - **Il problema.** I tasselli da 1024 pixel si sovrappongono di 384. Un
+    oggetto più lungo (119 m a 0,31 m/pixel, 60 m con l'ingrandimento per
+    gli oggetti piccoli) poteva non stare intero in nessun tassello e
+    arrivare a pezzi.
+  - **La passata ridotta.** Con la scala nota, una seconda passata
+    sull'immagine ridotta a 1 m/pixel trova intere navi, aerei grandi e
+    serbatoi.
+  - **Quando si usa il riquadro grande.** Sostituisce i pezzi solo se la
+    passata normale non ha l'oggetto intero.
+  - **Quando un riquadro è un pezzo.** Si tolgono solo i veri pezzi:
+    - della stessa classe;
+    - contenuti nel grande;
+    - larghi almeno metà del grande, perché una barca affiancata è più
+      stretta;
+    - tagliati al bordo di un tassello, oppure meno sicuri del grande.
+  - **Limiti della passata.**
+    - I riquadri grandi sotto il 35% di confidenza sono ignorati: a 1
+      m/pixel una fila di barche può diventare una "nave".
+    - La passata si fa solo se riduce davvero (almeno a 0,6 della scala di
+      lavoro), mai ingrandendo.
+    - Il lavoro totale resta entro il tetto di 25 tasselli.
+- `detect()` riceve la scala sempre; l'ingrandimento resta legato
+  all'opzione "oggetti piccoli". Il risultato riporta `large_objects` e i
+  tasselli di entrambe le passate.
+- **Prova su riprese Esri reali**, nell'ambiente isolato: Norfolk (due
+  aree), La Spezia, Portsmouth (due aree), Taranto. Per ogni ripresa il
+  rilevamento di prima e quello di adesso:
+  - Norfolk: una portaerei (341 m) prima quasi assente e una nave anfibia
+    prima in due pezzi, ora intere;
+  - Norfolk sud: un incrociatore o cacciatorpediniere di 148 m, prima in
+    tre pezzi;
+  - Portsmouth: un Type 45 di 144 m, prima in due pezzi;
+  - La Spezia e Taranto: nessun cambiamento sulle navi; più riquadri
+    "porto" conservati;
+  - tempo: da 3 a 5 secondi in più per ripresa;
+  - verificate a vista tutte le navi aggiunte.
+- **Limiti trovati**:
+  - il riquadro della passata ridotta è grossolano (la nave anfibia
+    risulta 310 m contro circa 257): la misura precisa dello scafo è della
+    fase 2;
+  - una seconda portaerei a Norfolk e la Queen Elizabeth a Portsmouth (con
+    tende e strutture sul ponte) non sono riconosciute in nessun modo:
+    limite del modello;
+  - provata e scartata la passata a 1,5 m/pixel: trova una nave in più ma
+    allunga i riquadri (389 m per una portaerei di 333);
+  - a Tolone la base navale è sfocata nelle immagini Esri.
+
+### Budget di tempo
+
+- **[python-service/app/routers/analysis.py](python-service/app/routers/analysis.py)**:
+  - nuovo `time_budget_s` per l'intera richiesta;
+  - dopo il rilevamento il tempo rimasto va per metà alle sagome (tutto,
+    se i vettori non si calcolano) e il resto ai vettori, ciascuno entro i
+    suoi 60 secondi.
+  - Prima i tre passi potevano superare insieme il timeout.
+- **[silhouette.py](python-service/app/core/silhouette.py)**,
+  **[embed.py](python-service/app/core/embed.py)**:
+  - ricevono il loro budget;
+  - se il rilevamento ha già usato tutto il tempo, le sagome lo dicono
+    ("il rilevamento ha usato tutto il tempo disponibile") invece di
+    "troppi aerei";
+  - la stima dell'ombra si ferma a metà del budget.
+- **[webapp/src/DetectionRunner.php](webapp/src/DetectionRunner.php)** —
+  manda il budget (timeout meno un minuto) e salva `large_objects`.
+
+### Tipi per ambito
+
+- **[webapp/src/DetectionReview.php](webapp/src/DetectionReview.php)**:
+  - un tipo confermato deve appartenere all'ambito della classe
+    (`typesFor`): aerei con tutti i velivoli tranne gli elicotteri,
+    elicotteri con elicotteri e convertiplani;
+  - le altre classi per ora non hanno tipi: prima una nave poteva essere
+    confermata come "C-17".
+- **[webapp/public/assets/js/analyze.js](webapp/public/assets/js/analyze.js)**,
+  **[analyze_capture.php](webapp/public/analyze_capture.php)** — un elenco
+  di tipi per classe nella correzione (✎) e negli oggetti non rilevati (🎯).
+  Il campo si disattiva per le classi senza tipi.
+- **[webapp/src/VisualLibrary.php](webapp/src/VisualLibrary.php)**:
+  - **Suggerimenti per ambito.** Aerei ed elicotteri insieme, perché il
+    rilevatore li scambia, le altre classi a sé: una nave non riceverà mai
+    "simile a C-17". L'ambito viene dalla verifica dell'oggetto, se c'è,
+    altrimenti dal rilevatore.
+  - **Valutazione.** Confronta solo riferimenti dello stesso ambito.
+  - **Riferimenti scartati.** Non sono riferimenti le verifiche con un tipo
+    fuori dall'ambito della loro classe.
+  - **Cache.** Le cache dei suggerimenti si ricalcolano.
+
+### Test e revisione
+
+- Test:
+  - `test_detect.py`: nave dentro un porto; passata ridotta, cioè pezzi
+    sostituiti, barche affiancate conservate, riquadri poco sicuri
+    ignorati, condizioni e tetto; bordi dei tasselli;
+  - `DetectionQualityTest.php`: tipi per classe;
+  - `VisualLibraryTest.php`: ambito e riferimenti non validi.
+- In tutto: PHP 72, Python 45, tutti superati.
+- **Revisione indipendente**: nessun errore nei calcoli. Correzioni
+  applicate:
+  - la passata ridotta poteva raddoppiare il lavoro o ingrandire invece
+    di ridurre;
+  - poteva togliere oggetti veri contenuti nel riquadro grande;
+  - un riquadro intero leggermente ruotato veniva sostituito da quello
+    grossolano;
+  - la libreria filtrava per classe del rilevatore invece che per ambito;
+  - casi limite del budget di tempo;
+  - riferimenti con tipi non più validi.
+- Prova nel browser (ambiente isolato): il tipo si disattiva per le navi,
+  e passando a elicottero o aereo compare l'elenco giusto (38 e 129 tipi);
+  verifica di una nave senza tipo salvata.
+
 ## 2026-10-14 — Classificatore dei tipi MAR20
 
 Fase 3 del piano su riconoscimento e identificazione (punto A4): un

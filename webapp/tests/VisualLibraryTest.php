@@ -121,3 +121,33 @@ test('libreria: suggerimenti in cache finché la libreria non cambia, "chiaro" s
     assert_true($row['visual_cache']['key'] !== Detection::forCapture($query)['visual_cache']['key']);
     assert_true($second[0]['clear'], 'il primo tipo stacca il secondo: dovrebbe essere chiaro');
 });
+
+test('libreria: suggerimenti solo da riferimenti dello stesso ambito', function () {
+    $plane = vl_ref(1, 10, 'C-17 Globemaster III', 1, 31) + ['class' => 'plane'];
+    $heli = vl_ref(2, 11, 'CH-47 Chinook', 1, 32) + ['class' => 'helicopter'];
+    $ship = vl_ref(3, 12, 'Nave di prova', 1, 33) + ['class' => 'ship'];
+    $q = [VisualLibrary::decode(vl_vec(1, 34, 0.3))];
+    // Aerei ed elicotteri sono lo stesso ambito: un CH-47 visto come "aereo"
+    // può ancora ricevere il suggerimento giusto. Una nave no.
+    $aircraft = array_column(VisualLibrary::suggest($q, [$plane, $heli, $ship], [], 3, VisualLibrary::domain('plane')), 'type');
+    sort($aircraft);
+    assert_same(['C-17 Globemaster III', 'CH-47 Chinook'], $aircraft);
+    assert_same(['Nave di prova'], array_column(VisualLibrary::suggest($q, [$plane, $heli, $ship], [], 3, VisualLibrary::domain('ship')), 'type'));
+    // Valutazione: una nave non conta come riferimento per un aereo.
+    $plane2 = vl_ref(4, 13, 'C-17 Globemaster III', 1, 35) + ['class' => 'plane'];
+    $ship2 = vl_ref(5, 14, 'C-17 Globemaster III', 1, 36) + ['class' => 'ship'];
+    assert_same(2, VisualLibrary::leaveOneOut([$plane, $plane2, $ship2])['n']);
+});
+
+test('libreria: una verifica con un tipo fuori dall\'ambito della classe non è un riferimento', function () {
+    $cap = Capture::create(test_study(), 'Libreria ambito', 'esri', '2025-01-01', 'raw/inesistente.jpg', 1000, 1000, ['bbox' => [10.0, 45.0, 10.005, 45.004]]);
+    $poly = [[0.3, 0.3], [0.35, 0.3], [0.35, 0.35], [0.3, 0.35]];
+    Detection::save($cap, test_study(), 'yolo11s-obb', 0.25, false, 0.4,
+        ['objects' => [['n' => 1, 'class' => 'plane', 'label' => 'aereo', 'confidence' => 0.9, 'center' => [0.325, 0.325], 'polygon' => $poly]]],
+        ['plane' => 1], [1 => [vl_vec(60)]]);
+    $id = DetectionReview::save($cap, ['verdict' => 'confirmed', 'class' => 'plane', 'type_name' => 'C-17 Globemaster III', 'polygon' => $poly]);
+    // Come una verifica salvata prima del controllo: aereo con tipo d'elicottero.
+    Database::get()->prepare("UPDATE detection_reviews SET type_name = 'CH-47 Chinook' WHERE id = :id")->execute([':id' => $id]);
+    assert_same([], array_values(array_filter(VisualLibrary::references(true), fn($r) => $r['id'] === $id)));
+});
+

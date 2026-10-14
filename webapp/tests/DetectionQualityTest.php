@@ -131,3 +131,22 @@ test('verifica: riquadro oltre il bordo riportato nell\'immagine, input non test
     assert_throws(InvalidArgumentException::class, fn() => DetectionReview::save($cap, ['verdict' => 'confirmed', 'class' => ['plane'], 'polygon' => dq_square(0.5, 0.5)]));
     assert_throws(InvalidArgumentException::class, fn() => DetectionReview::save($cap, ['verdict' => ['rejected'], 'polygon' => dq_square(0.5, 0.5)]));
 });
+
+test('verifica: il tipo solo nell\'ambito della classe (niente "C-17" per una nave o un elicottero)', function () {
+    $cap = dq_capture();
+    assert_throws(InvalidArgumentException::class, fn() => DetectionReview::save($cap, ['verdict' => 'confirmed', 'class' => 'ship', 'type_name' => 'C-17 Globemaster III', 'polygon' => dq_square(0.2, 0.2)]));
+    assert_throws(InvalidArgumentException::class, fn() => DetectionReview::save($cap, ['verdict' => 'confirmed', 'class' => 'helicopter', 'type_name' => 'C-17 Globemaster III', 'polygon' => dq_square(0.2, 0.2)]));
+    assert_throws(InvalidArgumentException::class, fn() => DetectionReview::save($cap, ['verdict' => 'confirmed', 'class' => 'plane', 'type_name' => 'CH-47 Chinook', 'polygon' => dq_square(0.2, 0.2)]));
+    // Un convertiplano può essere visto come elicottero o come aereo.
+    DetectionReview::save($cap, ['verdict' => 'confirmed', 'class' => 'helicopter', 'type_name' => 'V-22 Osprey', 'polygon' => dq_square(0.4, 0.4)]);
+    DetectionReview::save($cap, ['verdict' => 'confirmed', 'class' => 'plane', 'type_name' => 'V-22 Osprey', 'polygon' => dq_square(0.6, 0.6)]);
+    // Una nave senza tipo va bene; una scartata con un tipo qualsiasi lo ignora.
+    DetectionReview::save($cap, ['verdict' => 'confirmed', 'class' => 'ship', 'polygon' => dq_square(0.8, 0.8)]);
+    $types = array_column(DetectionReview::forCapture($cap), 'type_name');
+    sort($types);
+    assert_same([null, 'V-22 Osprey', 'V-22 Osprey'], $types);
+    $byClass = DetectionReview::typesByClass();
+    assert_same(['plane', 'helicopter'], array_keys($byClass));
+    assert_true(in_array('CH-47 Chinook', $byClass['helicopter'], true) && !in_array('CH-47 Chinook', $byClass['plane'], true));
+});
+

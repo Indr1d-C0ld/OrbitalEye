@@ -94,9 +94,11 @@ def decode(b64: str) -> np.ndarray:
     return v / max(1e-9, float(np.linalg.norm(v)))
 
 
-def embed_objects(image: np.ndarray, detections: list, silhouettes: dict, mpp_x: float, mpp_y: float) -> dict:
+def embed_objects(image: np.ndarray, detections: list, silhouettes: dict, mpp_x: float, mpp_y: float,
+                  budget_s: float = TIME_BUDGET_S) -> dict:
     """Vettori degli aerei e degli elicotteri rilevati: {indice: [b64, ...]}
-    (un vettore per orientamento)."""
+    (un vettore per orientamento). budget_s: tempo massimo (vedi
+    TIME_BUDGET_S)."""
     out = {}
     if not available() or not mpp_x or not mpp_y:
         return out
@@ -107,7 +109,7 @@ def embed_objects(image: np.ndarray, detections: list, silhouettes: dict, mpp_x:
     for i, d in enumerate(detections):
         if d.get("class") not in CLASSES:
             continue
-        if time.monotonic() - started > TIME_BUDGET_S:
+        if time.monotonic() - started > budget_s:
             break
         if iso is None:
             iso = cv2.resize(image, (round(image.shape[1] * fx), round(image.shape[0] * fy)), interpolation=cv2.INTER_AREA)
