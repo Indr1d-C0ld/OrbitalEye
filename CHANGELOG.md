@@ -4,6 +4,33 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-10-15 — README aggiornato: piattaforma conclusa
+
+Solo documentazione, nessuna modifica al codice.
+
+- **[README.md](README.md)**:
+  - **Descrizione iniziale:** menziona il riconoscimento di velivoli, navi
+    e veicoli.
+  - **Architettura:** nuovi moduli del servizio (sagoma, scafo, vettori
+    della libreria visiva, classificatore dei tipi), modelli non versionati
+    e script di addestramento.
+  - **Guida all'uso:** "Identificare velivoli, navi e veicoli", con:
+    - le tre righe di indizi sul tipo (misure, "👁 simile a", "🛩 MAR20")
+      e la ★;
+    - le misure dello scafo e le classi navali;
+    - la classe di lunghezza dei veicoli;
+    - le verifiche (✓ ✗ ✎ 🎯) e la pagina della qualità;
+    - le zone di conteggio nello storico dell'area.
+  - **"Stato del progetto"** (nuova sezione, anche nell'indice):
+    - la piattaforma è completa per l'uso previsto;
+    - limiti noti: riquadro grossolano delle navi grandi, alcune portaerei
+      non riconosciute, classi navali con le stesse misure, tipi conosciuti
+      da MAR20, veicoli, basi sfocate in Esri, misure di qualità che
+      richiedono verifiche;
+    - sviluppi valutati e non realizzati, con le licenze: tipi di velivolo
+      mancanti, taratura della sagoma con RarePlanes, classificatori per
+      aerei civili e navi, altre fonti d'immagine, AIS.
+
 ## 2026-10-14 (3) — Navi e veicoli senza ML: misura dello scafo, classi navali, categorie dei veicoli, zone di conteggio
 
 Fase 2 del piano per navi e veicoli. Nessun dataset scaricato: la tabella

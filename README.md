@@ -1,6 +1,6 @@
 # ◈ OrbitalEye
 
-**Piattaforma self-hosted per l'analisi comparativa di immagini satellitari** — allineamento automatico, rilevamento dei cambiamenti nel tempo con filtri anti-rumore, enhancement dell'immagine, annotazioni e libreria degli studi, con un'interfaccia ispirata alle console di analisi/intelligence.
+**Piattaforma self-hosted per l'analisi comparativa di immagini satellitari** — allineamento automatico, rilevamento dei cambiamenti nel tempo con filtri anti-rumore, riconoscimento di velivoli, navi e veicoli con misure e identificazione del tipo, enhancement dell'immagine, annotazioni e libreria degli studi, con un'interfaccia ispirata alle console di analisi/intelligence.
 
 Pensata per essere installata ed eseguita su un proprio server (VPS, homelab, NAS), senza dipendere da servizi cloud di terze parti per l'elaborazione.
 
@@ -22,6 +22,7 @@ Pensata per essere installata ed eseguita su un proprio server (VPS, homelab, NA
 - [Sicurezza](#sicurezza)
 - [Struttura del progetto](#struttura-del-progetto)
 - [Librerie e servizi di terze parti](#librerie-e-servizi-di-terze-parti)
+- [Stato del progetto](#stato-del-progetto)
 - [Licenza](#licenza)
 
 ---
@@ -126,10 +127,12 @@ Il confronto non è una semplice sovrapposizione: le due immagini vengono prima 
 orbitaleye/
 ├── python-service/       Motore di analisi immagini (FastAPI + OpenCV/NumPy)
 │   └── app/
-│       ├── core/          registrazione, diff, enhancement, rilevamento oggetti, client Copernicus/Esri/Wayback
+│       ├── core/          registrazione, diff, enhancement, rilevamento oggetti, sagoma dei velivoli,
+│       │                   scafo delle navi, vettori della libreria visiva, classificatore dei tipi,
+│       │                   client Copernicus/Esri/Wayback
 │       └── routers/        /fetch/*, /analysis/compare, /analysis/enhance, /analysis/detect
-│   ├── models/            modello di rilevamento (non versionato, vedi Installazione)
-│   └── tools/             script di installazione del modello
+│   ├── models/            modelli di rilevamento, libreria visiva e classificatore (non versionati, vedi Installazione)
+│   └── tools/             script di installazione dei modelli e di addestramento del classificatore
 ├── webapp/                 Frontend PHP (autenticazione, libreria, annotazioni, DB SQLite)
 │   ├── public/               document root del webserver
 │   ├── src/                   classi applicative
@@ -297,12 +300,19 @@ Apri il sito: verrai reindirizzato a `setup.php` per creare l'account operatore 
 - **Esri, versioni storiche**: **🕰 Versioni storiche** elenca le immagini diverse disponibili nell'archivio Wayback per l'area, con data reale, sensore e risoluzione; le versioni dell'archivio che contengono la stessa acquisizione sono raggruppate ("+N"). Le immagini storiche e quella attuale della stessa area sono già allineate pixel per pixel. Il confronto automatico tra immagini sub-metriche di anni e sensori diversi è sensibile a ombre, colori e vegetazione: usa soglie più alte e un'area minima più grande, o guarda le immagini affiancate con lo slider prima/dopo.
 - Se due riprese sono **la stessa acquisizione** (stesso passaggio, o la stessa immagine Esri scaricata due volte o in due versioni dell'archivio), il confronto lo dice: le differenze misurate vengono solo da risoluzione, ritaglio o elaborazione.
 
-### Identificare velivoli
+### Identificare velivoli, navi e veicoli
 
 - **Dalle misure**: nella vista di analisi, con lo strumento Misura traccia l'apertura alare (da un'estremità all'altra delle ali; per un elicottero il diametro del rotore) e la lunghezza (dal muso alla coda). Etichettandole "apertura alare" e "lunghezza" vengono scelte da sole nel riquadro **Identifica velivolo dalle misure**. Scegli la forma delle ali che vedi sulla ripresa e premi **Trova tipi compatibili**. Con **🏷 Annota** il tipo scelto diventa un'annotazione intorno al velivolo, con un punto di domanda: è un'ipotesi da confermare guardando motori, impennaggi, forma della fusoliera.
 - **Automaticamente**: **🎯 Rileva oggetti** trova aerei, elicotteri, navi e veicoli. I lati dei riquadri sono un limite superiore delle dimensioni (includono margine e spesso l'ombra), e i tipi compatibili ne tengono conto. Scegli un tipo fra quelli proposti e salva come annotazioni. Il modello può sbagliare o mancare oggetti, soprattutto piccoli: l'opzione **Cerca anche oggetti piccoli** ingrandisce l'immagine prima del rilevamento ed è più lenta (su un processore desktop di qualche anno, da qualche secondo a un paio di minuti).
+- **Il tipo, dal rilevamento**: nella tabella degli oggetti rilevati, per ogni velivolo, compaiono tre righe:
+  - i tipi compatibili con le misure della sagoma;
+  - "👁 simile a": i tipi più simili per aspetto fra quelli che hai già identificato;
+  - "🛩 MAR20": per i 20 tipi militari che il classificatore conosce.
+
+  La ★ segna l'indizio più forte. Per una nave ci sono le misure dello scafo e le classi navali compatibili; per un veicolo la classe di lunghezza. Clic su un tipo per usarlo come etichetta.
+- **Verifica**: ✓ conferma un oggetto (con il tipo scelto), ✗ lo scarta, ✎ corregge classe e tipo, 🎯 su un'annotazione segna un oggetto che il rilevamento non ha trovato. Le verifiche alimentano la libreria visiva e la pagina **Qualità del rilevamento**, che misura sui tuoi dati quanto rilevamento e identificazione sono affidabili.
 - **Fra due date**: nel confronto, con l'opzione "Confronta anche gli oggetti" (attiva di serie), il riquadro **Oggetti** e l'elenco **Oggetti comparsi e spariti** dicono cosa è cambiato oggetto per oggetto. Un velivolo spostato di qualche decina di metri risulta sparito da un posto e comparso in un altro. Uno diverso nella stessa piazzola, con dimensioni diverse, risulta sostituito.
-- **Nel tempo**: il pannello **Storico dell'area** dello studio riassume, data per data, conteggi e tipi identificati; **Rileva sulle riprese mancanti** esegue il rilevamento su tutte le riprese adatte, e **CSV** esporta la tabella.
+- **Nel tempo**: il pannello **Storico dell'area** dello studio riassume, data per data, conteggi e tipi identificati; **Rileva sulle riprese mancanti** esegue il rilevamento su tutte le riprese adatte, e **CSV** esporta la tabella. Con ▦ su un rettangolo o un poligono disegnato su una ripresa crei una **zona di conteggio** (un piazzale, una banchina, un deposito): lo storico conta gli oggetti al suo interno in ogni ripresa dello studio.
 
 ### Annotazioni, misurazioni e regioni
 
@@ -400,6 +410,31 @@ cd python-service && venv/bin/python -m unittest discover -s tests -t .
 - [MAR20](https://gcheng-nwpu.github.io/) — dataset di velivoli militari su cui si addestra il classificatore dei tipi, licenza CC BY-NC 4.0 (uso non commerciale e di ricerca); non incluso. W. Yu, G. Cheng, M. Wang, Y. Yao, X. Xie, X. Yao, J. Han, "MAR20: A Benchmark for Military Aircraft Recognition in Remote Sensing Images", *National Remote Sensing Bulletin*, 2022
 - [Wikipedia](https://en.wikipedia.org/) — dimensioni dei velivoli nella tabella `webapp/src/aircraft_types.json`, tratte dalle schede tecniche delle voci indicate per ciascun tipo (testi CC BY-SA 4.0)
 - [Wikipedia](https://en.wikipedia.org/) — dimensioni delle classi navali nella tabella `webapp/src/ship_types.json`, tratte dalle schede (infobox) delle voci della Wikipedia in inglese indicate per ciascuna classe, con la revisione letta; la tabella è un adattamento distribuito con la stessa licenza (CC BY-SA 4.0)
+
+## Stato del progetto
+
+La piattaforma è completa per l'uso previsto. Il registro delle modifiche, con le prove fatte per ogni funzione, è in [CHANGELOG.md](CHANGELOG.md).
+
+**Limiti noti**
+- **Navi grandi:** sono rilevate intere da una seconda passata a 1 m/pixel, il cui riquadro è grossolano; la misura dello scafo lo corregge quasi sempre, con errori fino al 6% sulla lunghezza.
+- **Portaerei con strutture sul ponte:** alcune (per esempio con tende o lavori in corso) non sono riconosciute dal modello di rilevamento.
+- **Classi navali con le stesse misure:** navi di dimensioni simili (a ~150 m molte classi) restano un gruppo di candidati; l'identificazione finale è dell'analista.
+- **Classificatore MAR20:** conosce solo 20 tipi militari, soprattutto statunitensi e russi; per gli altri valgono misure e libreria visiva. I caccia sono il suo punto debole.
+- **Veicoli:** a 0,3–0,5 m/pixel il modello esatto non si riconosce. Le soglie delle classi di lunghezza sono da tarare sulle verifiche.
+- **Immagini Esri:** alcune basi sono sfocate dal fornitore (per esempio la base navale di Tolone).
+- **Misure di qualità:** precisione del rilevamento e dell'identificazione si misurano sulle verifiche dell'analista: la pagina **Qualità del rilevamento** dice quanto sono affidabili sui propri dati solo dopo alcune decine di verifiche.
+
+**Sviluppi possibili** (valutati, non realizzati)
+- **Tipi di velivolo mancanti:** completare la tabella con A220, C919, ARJ21, 747-8 e 777-200.
+- **Taratura della sagoma:** con RarePlanes (CC BY-SA 4.0).
+- **Altri classificatori:**
+  - aerei civili, con MTARSI-INNAR (CC BY 4.0) o FAIR1M (uso accademico, registrazione);
+  - classi navali, con ShipRSImageNet (uso accademico).
+- **Altre fonti d'immagine:**
+  - radar ad alta risoluzione gratuito sui siti scelti dal fornitore (Umbra Open Data, CC BY 4.0);
+  - ortofoto nazionali;
+  - acquisti mirati, che però rivelano area d'interesse e identità.
+- **Correlazione AIS** con archivi scaricabili in blocco (solo alcune acque, senza le navi militari).
 
 ## Licenza
 
