@@ -19,6 +19,39 @@ final class DetectionException extends RuntimeException
  */
 final class DetectionRunner
 {
+    /** Navi più corte di così: niente classi navali (barche, rimorchiatori). */
+    private const SHIP_MIN_M = 20.0;
+
+    /**
+     * Categorie dei veicoli per lunghezza, dal lato lungo del riquadro
+     * (che include un po' di margine e d'ombra: ~0,9). Soglie da tarare
+     * sulle verifiche; a 0,3–0,5 m/pixel un'auto è 9–15 pixel, quindi il
+     * tipo esatto non è riconoscibile, la classe di lunghezza sì.
+     */
+    public const VEHICLE_SIZES = [
+        [0.0, 6.0, 'piccolo', 'auto o furgone'],
+        [6.0, 8.5, 'medio', 'furgone grande, minibus o mezzo leggero'],
+        [8.5, 14.0, 'grande', 'camion, autobus o mezzo pesante'],
+        [14.0, INF, 'molto grande', 'autoarticolato o rimorchio lungo'],
+    ];
+    /** Oltre questa risoluzione le categorie dei veicoli non si danno. */
+    public const VEHICLE_MAX_MPP = 0.6;
+
+    /** Categoria di un veicolo dalla lunghezza del riquadro, o null se la ripresa è troppo grossolana. */
+    public static function vehicleSize(float $boxLength, ?float $mpp): ?array
+    {
+        if ($mpp === null || $mpp > self::VEHICLE_MAX_MPP || $boxLength <= 0) {
+            return null;
+        }
+        $len = $boxLength * 0.9;
+        foreach (self::VEHICLE_SIZES as [$from, $to, $key, $label]) {
+            if ($len >= $from && $len < $to) {
+                return ['key' => $key, 'label' => $label, 'length_m' => round($len, 1)];
+            }
+        }
+        return null;
+    }
+
     /** @param callable|null $progress fn(int $percent, string $message) */
     public static function run(array $body, ?callable $progress = null): ?array
     {
@@ -123,6 +156,44 @@ final class DetectionRunner
                         'compatibility' => $c['compatibility'], 'note' => $c['note'], 'wiki_url' => $c['wiki_url'],
                         'span_m' => $c['span_m'], 'length_m' => $c['length_m'], 'rotor_m' => $c['rotor_m'],
                     ], $matches);
+                }
+                if ($d['class'] === 'ship') {
+                    // Scafo (hull.py): lunghezza e larghezza separate
+                    // dall'acqua. Classi navali compatibili con quelle se la
+                    // misura è attendibile (con qualità "media" solo la
+                    // lunghezza), altrimenti con i lati del riquadro; nessuna
+                    // per le barche (sotto i 20 m).
+                    $hull = is_array($d['hull'] ?? null) ? $d['hull'] : null;
+                    if ($hull) {
+                        $o['hull'] = [
+                            'quality' => $hull['quality'] ?? 'bassa',
+                            'reason' => $hull['reason'] ?? null,
+                            'length_m' => $hull['length_m'] ?? null,
+                            'beam_m' => $hull['beam_m'] ?? null,
+                            'outline' => array_map(fn($p) => [round($p[0] / $w, 6), round($p[1] / $h, 6)], $hull['outline'] ?? []),
+                        ];
+                    }
+                    $hullQ = $hull['quality'] ?? null;
+                    if (in_array($hullQ, ['ok', 'media'], true) && !empty($hull['length_m'])) {
+                        $o['id_from'] = 'scafo';
+                        $ships = ShipCatalog::match((float) $hull['length_m'], isset($hull['beam_m']) ? (float) $hull['beam_m'] : null,
+                            $mppMean, $hullQ === 'ok' ? 'hull' : 'hull_length', 5);
+                    } elseif (max($side1, $side2) >= self::SHIP_MIN_M) {
+                        $o['id_from'] = 'riquadro';
+                        $ships = ShipCatalog::match(max($side1, $side2), min($side1, $side2), $mppMean, 'box', 5);
+                    } else {
+                        $ships = null;
+                    }
+                    if ($ships !== null) {
+                        $o['candidates'] = array_map(fn($c) => [
+                            'name' => $c['name'], 'maker' => implode(', ', $c['navies']), 'category' => $c['category'],
+                            'compatibility' => $c['compatibility'], 'note' => null, 'wiki_url' => $c['wiki_url'],
+                            'length_m' => $c['length_m'], 'beam_m' => $c['beam_m'], 'deck_width_m' => $c['deck_width_m'],
+                        ], $ships);
+                    }
+                }
+                if (in_array($d['class'], ['small vehicle', 'large vehicle'], true)) {
+                    $o['vehicle_size'] = self::vehicleSize(max($side1, $side2), $mppMean);
                 }
             }
             if (!empty($d['embedding']) && is_array($d['embedding'])) {

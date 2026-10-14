@@ -1,0 +1,2640 @@
+{
+ "_fonte": "Lunghezza fuori tutto e larghezza massima dalle schede (infobox) delle voci della Wikipedia in inglese (https://en.wikipedia.org/wiki/<wiki>, revisione indicata in 'revision'), testi disponibili con licenza CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Questa tabella ne è un adattamento con la stessa licenza. deck_width_m: larghezza del ponte di volo, dove la voce la riporta.",
+ "types": [
+  {
+   "name": "Frankenthal (Type 332)",
+   "category": "cacciamine",
+   "navies": [
+    "Germania"
+   ],
+   "length_m": 54.4,
+   "beam_m": 9.2,
+   "deck_width_m": null,
+   "wiki": "Frankenthal-class_minehunter",
+   "revision": 1343967503,
+   "note": ""
+  },
+  {
+   "name": "Gaeta",
+   "category": "cacciamine",
+   "navies": [
+    "Italia"
+   ],
+   "length_m": 52.5,
+   "beam_m": 9.56,
+   "deck_width_m": null,
+   "wiki": "Lerici-class_minehunter",
+   "revision": 1352632528,
+   "note": "Gaeta sub-class infobox gives only length; beam inherited from the Lerici infobox ('all other characteristics as above')."
+  },
+  {
+   "name": "Lerici",
+   "category": "cacciamine",
+   "navies": [
+    "Italia"
+   ],
+   "length_m": 49.98,
+   "beam_m": 9.56,
+   "deck_width_m": null,
+   "wiki": "Lerici-class_minehunter",
+   "revision": 1352632528,
+   "note": "Lerici sub-class infobox."
+  },
+  {
+   "name": "Tripartite (Éridan/Alkmaar/Aster)",
+   "category": "cacciamine",
+   "navies": [
+    "Francia",
+    "Paesi Bassi",
+    "Belgio"
+   ],
+   "length_m": 51.6,
+   "beam_m": 8.9,
+   "deck_width_m": null,
+   "wiki": "Tripartite-class_minehunter",
+   "revision": 1347641377,
+   "note": ""
+  },
+  {
+   "name": "Akizuki (2010)",
+   "category": "cacciatorpediniere",
+   "navies": [
+    "Giappone"
+   ],
+   "length_m": 150.5,
+   "beam_m": 18.3,
+   "deck_width_m": null,
+   "wiki": "Akizuki-class_destroyer_(2010)",
+   "revision": 1379619716,
+   "note": ""
+  },
+  {
+   "name": "Arleigh Burke (Flight I/II)",
+   "category": "cacciatorpediniere",
+   "navies": [
+    "USA"
+   ],
+   "length_m": 153.9,
+   "beam_m": 20.1,
+   "deck_width_m": null,
+   "wiki": "Arleigh_Burke-class_destroyer",
+   "revision": 1379194075,
+   "note": "convertito da piedi; differenza di lunghezza con Flight IIA/III <3% ma riga separata perche' l'infobox le distingue (IIA/III hanno hangar elicotteri)"
+  },
+  {
+   "name": "Arleigh Burke (Flight IIA/III)",
+   "category": "cacciatorpediniere",
+   "navies": [
+    "USA"
+   ],
+   "length_m": 155.3,
+   "beam_m": 20.1,
+   "deck_width_m": null,
+   "wiki": "Arleigh_Burke-class_destroyer",
+   "revision": 1379194075,
+   "note": "convertito da piedi"
+  },
+  {
+   "name": "Asahi",
+   "category": "cacciatorpediniere",
+   "navies": [
+    "Giappone"
+   ],
+   "length_m": 151.0,
+   "beam_m": 18.3,
+   "deck_width_m": null,
+   "wiki": "Asahi-class_destroyer",
+   "revision": 1357293191,
+   "note": ""
+  },
+  {
+   "name": "Atago",
+   "category": "cacciatorpediniere",
+   "navies": [
+    "Giappone"
+   ],
+   "length_m": 165.0,
+   "beam_m": 21.0,
+   "deck_width_m": null,
+   "wiki": "Atago-class_destroyer",
+   "revision": 1357292962,
+   "note": ""
+  },
+  {
+   "name": "Chungmugong Yi Sun-sin (KDX-II)",
+   "category": "cacciatorpediniere",
+   "navies": [
+    "Corea del Sud"
+   ],
+   "length_m": 150.0,
+   "beam_m": 17.4,
+   "deck_width_m": null,
+   "wiki": "Chungmugong_Yi_Sun-sin-class_destroyer",
+   "revision": 1374343709,
+   "note": ""
+  },
+  {
+   "name": "Durand de la Penne",
+   "category": "cacciatorpediniere",
+   "navies": [
+    "Italia"
+   ],
+   "length_m": 147.7,
+   "beam_m": 16.1,
+   "deck_width_m": null,
+   "wiki": "Durand_de_la_Penne-class_destroyer",
+   "revision": 1347233605,
+   "note": "Retired or retiring (replaced by DDX/FREMM); length not marked LOA/LPP."
+  },
+  {
+   "name": "Hobart",
+   "category": "cacciatorpediniere",
+   "navies": [
+    "Australia"
+   ],
+   "length_m": 147.2,
+   "beam_m": 18.6,
+   "deck_width_m": null,
+   "wiki": "Hobart-class_destroyer",
+   "revision": 1380056336,
+   "note": "beam 'maximum'"
+  },
+  {
+   "name": "Horizon (Andrea Doria / Forbin)",
+   "category": "cacciatorpediniere",
+   "navies": [
+    "Italia",
+    "Francia"
+   ],
+   "length_m": 152.87,
+   "beam_m": 20.3,
+   "deck_width_m": null,
+   "wiki": "Horizon-class_frigate",
+   "revision": 1378722712,
+   "note": "LOA (LPP 141.7 m). Italy classifies as destroyers (DDG), France as frigates."
+  },
+  {
+   "name": "Kolkata (Project 15A)",
+   "category": "cacciatorpediniere",
+   "navies": [
+    "India"
+   ],
+   "length_m": 163.0,
+   "beam_m": 17.4,
+   "deck_width_m": null,
+   "wiki": "Kolkata-class_destroyer",
+   "revision": 1376697716,
+   "note": ""
+  },
+  {
+   "name": "Kongō",
+   "category": "cacciatorpediniere",
+   "navies": [
+    "Giappone"
+   ],
+   "length_m": 161.0,
+   "beam_m": 21.0,
+   "deck_width_m": null,
+   "wiki": "Kongō-class_destroyer",
+   "revision": 1357293085,
+   "note": ""
+  },
+  {
+   "name": "Maya",
+   "category": "cacciatorpediniere",
+   "navies": [
+    "Giappone"
+   ],
+   "length_m": 170.0,
+   "beam_m": 21.0,
+   "deck_width_m": null,
+   "wiki": "Maya-class_destroyer",
+   "revision": 1357292973,
+   "note": ""
+  },
+  {
+   "name": "Sejong the Great (KDX-III)",
+   "category": "cacciatorpediniere",
+   "navies": [
+    "Corea del Sud"
+   ],
+   "length_m": 166.0,
+   "beam_m": 21.4,
+   "deck_width_m": null,
+   "wiki": "Sejong_the_Great-class_destroyer",
+   "revision": 1377645553,
+   "note": "Batch I value; infobox gives 170 m for Batch II (2.4% difference)."
+  },
+  {
+   "name": "Sovremenny (Project 956)",
+   "category": "cacciatorpediniere",
+   "navies": [
+    "Russia"
+   ],
+   "length_m": 156.5,
+   "beam_m": 17.2,
+   "deck_width_m": null,
+   "wiki": "Sovremenny-class_destroyer",
+   "revision": 1373950967,
+   "note": ""
+  },
+  {
+   "name": "Type 052C (Luyang II)",
+   "category": "cacciatorpediniere",
+   "navies": [
+    "Cina"
+   ],
+   "length_m": 155.0,
+   "beam_m": 17.0,
+   "deck_width_m": null,
+   "wiki": "Type_052C_destroyer",
+   "revision": 1357522607,
+   "note": ""
+  },
+  {
+   "name": "Type 052D (Luyang III)",
+   "category": "cacciatorpediniere",
+   "navies": [
+    "Cina"
+   ],
+   "length_m": 157.0,
+   "beam_m": 18.0,
+   "deck_width_m": null,
+   "wiki": "Type_052D_destroyer",
+   "revision": 1373995821,
+   "note": "Infobox gives ranges 156-157 m and 17-18 m from different sources; upper bounds used. First 13 ships."
+  },
+  {
+   "name": "Type 052DL (Luyang III mod)",
+   "category": "cacciatorpediniere",
+   "navies": [
+    "Cina"
+   ],
+   "length_m": 162.0,
+   "beam_m": 17.2,
+   "deck_width_m": null,
+   "wiki": "Type_052D_destroyer",
+   "revision": 1373995821,
+   "note": "Extended flight deck variant, from the Type 052D infobox."
+  },
+  {
+   "name": "Type 055 (Renhai)",
+   "category": "cacciatorpediniere",
+   "navies": [
+    "Cina"
+   ],
+   "length_m": 180.0,
+   "beam_m": 20.0,
+   "deck_width_m": null,
+   "wiki": "Type_055_destroyer",
+   "revision": 1370716415,
+   "note": "Classed as cruiser by NATO."
+  },
+  {
+   "name": "Type 45",
+   "category": "cacciatorpediniere",
+   "navies": [
+    "Regno Unito"
+   ],
+   "length_m": 152.4,
+   "beam_m": 21.2,
+   "deck_width_m": null,
+   "wiki": "Type_45_destroyer",
+   "revision": 1380221628,
+   "note": ""
+  },
+  {
+   "name": "Udaloy I/II (Project 1155/11551)",
+   "category": "cacciatorpediniere",
+   "navies": [
+    "Russia"
+   ],
+   "length_m": 163.0,
+   "beam_m": 19.3,
+   "deck_width_m": null,
+   "wiki": "Udaloy-class_destroyer",
+   "revision": 1376038150,
+   "note": "Single infobox for the class; no separate Udaloy II article/values."
+  },
+  {
+   "name": "Visakhapatnam (Project 15B)",
+   "category": "cacciatorpediniere",
+   "navies": [
+    "India"
+   ],
+   "length_m": 163.0,
+   "beam_m": 17.4,
+   "deck_width_m": null,
+   "wiki": "Visakhapatnam-class_destroyer",
+   "revision": 1368037093,
+   "note": ""
+  },
+  {
+   "name": "Zumwalt",
+   "category": "cacciatorpediniere",
+   "navies": [
+    "USA"
+   ],
+   "length_m": 185.9,
+   "beam_m": 24.6,
+   "deck_width_m": null,
+   "wiki": "Zumwalt-class_destroyer",
+   "revision": 1377028075,
+   "note": "convertito da piedi"
+  },
+  {
+   "name": "Ada (MILGEM)",
+   "category": "corvetta",
+   "navies": [
+    "Turchia"
+   ],
+   "length_m": 99.56,
+   "beam_m": 14.4,
+   "deck_width_m": null,
+   "wiki": "Ada-class_corvette",
+   "revision": 1379014016,
+   "note": ""
+  },
+  {
+   "name": "Braunschweig (K130)",
+   "category": "corvetta",
+   "navies": [
+    "Germania"
+   ],
+   "length_m": 89.12,
+   "beam_m": 13.28,
+   "deck_width_m": null,
+   "wiki": "Braunschweig-class_corvette",
+   "revision": 1380123751,
+   "note": ""
+  },
+  {
+   "name": "Buyan-M (Project 21631)",
+   "category": "corvetta",
+   "navies": [
+    "Russia"
+   ],
+   "length_m": 75.0,
+   "beam_m": 11.0,
+   "deck_width_m": null,
+   "wiki": "Buyan-M-class_corvette",
+   "revision": 1380167327,
+   "note": "Infobox gives length range 74.1-75 m; upper bound used."
+  },
+  {
+   "name": "D'Estienne d'Orves (A69)",
+   "category": "corvetta",
+   "navies": [
+    "Francia"
+   ],
+   "length_m": 80.0,
+   "beam_m": 10.3,
+   "deck_width_m": null,
+   "wiki": "D'Estienne_d'Orves-class_aviso",
+   "revision": 1380054405,
+   "note": "LOA (pp 76 m). Aviso; largely retired."
+  },
+  {
+   "name": "Freedom",
+   "category": "corvetta",
+   "navies": [
+    "USA"
+   ],
+   "length_m": 115.2,
+   "beam_m": 17.5,
+   "deck_width_m": null,
+   "wiki": "Freedom-class_littoral_combat_ship",
+   "revision": 1374242306,
+   "note": "convertito da piedi; littoral combat ship (LCS) monoscafo, categoria 'corvetta' scelta per dislocamento"
+  },
+  {
+   "name": "Gremyashchiy (Project 20385)",
+   "category": "corvetta",
+   "navies": [
+    "Russia"
+   ],
+   "length_m": 106.0,
+   "beam_m": 13.0,
+   "deck_width_m": null,
+   "wiki": "Gremyashchiy-class_corvette",
+   "revision": 1369005980,
+   "note": ""
+  },
+  {
+   "name": "Independence",
+   "category": "corvetta",
+   "navies": [
+    "USA"
+   ],
+   "length_m": 127.4,
+   "beam_m": 31.7,
+   "deck_width_m": null,
+   "wiki": "Independence-class_littoral_combat_ship",
+   "revision": 1379080356,
+   "note": "convertito da piedi; LCS trimarano (beam molto ampio), categoria 'corvetta' scelta per dislocamento"
+  },
+  {
+   "name": "Karakurt (Project 22800)",
+   "category": "corvetta",
+   "navies": [
+    "Russia"
+   ],
+   "length_m": 67.0,
+   "beam_m": 11.0,
+   "deck_width_m": null,
+   "wiki": "Karakurt-class_corvette",
+   "revision": 1379538504,
+   "note": ""
+  },
+  {
+   "name": "Minerva",
+   "category": "corvetta",
+   "navies": [
+    "Italia"
+   ],
+   "length_m": 87.0,
+   "beam_m": 10.5,
+   "deck_width_m": null,
+   "wiki": "Minerva-class_corvette",
+   "revision": 1365844144,
+   "note": "LOA. Class being retired."
+  },
+  {
+   "name": "Steregushchiy (Project 20380)",
+   "category": "corvetta",
+   "navies": [
+    "Russia"
+   ],
+   "length_m": 104.5,
+   "beam_m": 13.0,
+   "deck_width_m": null,
+   "wiki": "Steregushchiy-class_corvette",
+   "revision": 1378917858,
+   "note": "Infobox also gives 11.6 m beam at waterline; 13 m used."
+  },
+  {
+   "name": "Type 056/056A (Jiangdao)",
+   "category": "corvetta",
+   "navies": [
+    "Cina"
+   ],
+   "length_m": 90.0,
+   "beam_m": 11.14,
+   "deck_width_m": null,
+   "wiki": "Type_056_corvette",
+   "revision": 1378431237,
+   "note": ""
+  },
+  {
+   "name": "Absalon",
+   "category": "fregata",
+   "navies": [
+    "Danimarca"
+   ],
+   "length_m": 137.0,
+   "beam_m": 19.5,
+   "deck_width_m": null,
+   "wiki": "Absalon-class_frigate",
+   "revision": 1371746904,
+   "note": "Formerly flexible support ship."
+  },
+  {
+   "name": "Admiral Gorshkov (Project 22350)",
+   "category": "fregata",
+   "navies": [
+    "Russia"
+   ],
+   "length_m": 135.0,
+   "beam_m": 16.0,
+   "deck_width_m": null,
+   "wiki": "Admiral_Gorshkov-class_frigate",
+   "revision": 1378845468,
+   "note": ""
+  },
+  {
+   "name": "Admiral Grigorovich (Project 11356)",
+   "category": "fregata",
+   "navies": [
+    "Russia"
+   ],
+   "length_m": 124.8,
+   "beam_m": 15.2,
+   "deck_width_m": null,
+   "wiki": "Admiral_Grigorovich-class_frigate",
+   "revision": 1376473050,
+   "note": ""
+  },
+  {
+   "name": "Anzac",
+   "category": "fregata",
+   "navies": [
+    "Australia"
+   ],
+   "length_m": 118.0,
+   "beam_m": 14.8,
+   "deck_width_m": null,
+   "wiki": "Anzac-class_frigate",
+   "revision": 1375103139,
+   "note": "length overall (waterline 109 m)"
+  },
+  {
+   "name": "Baden-Württemberg (F125)",
+   "category": "fregata",
+   "navies": [
+    "Germania"
+   ],
+   "length_m": 149.52,
+   "beam_m": 18.8,
+   "deck_width_m": null,
+   "wiki": "Baden-Württemberg-class_frigate",
+   "revision": 1379274919,
+   "note": ""
+  },
+  {
+   "name": "Barbaros (MEKO 200TN-II)",
+   "category": "fregata",
+   "navies": [
+    "Turchia"
+   ],
+   "length_m": 116.7,
+   "beam_m": 14.8,
+   "deck_width_m": null,
+   "wiki": "Barbaros-class_frigate",
+   "revision": 1370863106,
+   "note": "F244/F245 116.7 m; F246/F247 118.0 m (within 3%)."
+  },
+  {
+   "name": "Brandenburg (F123)",
+   "category": "fregata",
+   "navies": [
+    "Germania"
+   ],
+   "length_m": 138.85,
+   "beam_m": 16.7,
+   "deck_width_m": null,
+   "wiki": "Brandenburg-class_frigate",
+   "revision": 1379194035,
+   "note": ""
+  },
+  {
+   "name": "Bremen (F122)",
+   "category": "fregata",
+   "navies": [
+    "Germania"
+   ],
+   "length_m": 130.5,
+   "beam_m": 14.6,
+   "deck_width_m": null,
+   "wiki": "Bremen-class_frigate",
+   "revision": 1373821907,
+   "note": "Retired by c. 2021."
+  },
+  {
+   "name": "Cassard",
+   "category": "fregata",
+   "navies": [
+    "Francia"
+   ],
+   "length_m": 139.0,
+   "beam_m": 14.0,
+   "deck_width_m": null,
+   "wiki": "Cassard-class_frigate",
+   "revision": 1379775410,
+   "note": "Retired c. 2019-2021."
+  },
+  {
+   "name": "Daegu (FFX-II)",
+   "category": "fregata",
+   "navies": [
+    "Corea del Sud"
+   ],
+   "length_m": 122.0,
+   "beam_m": 14.0,
+   "deck_width_m": null,
+   "wiki": "Daegu-class_frigate",
+   "revision": 1365657057,
+   "note": ""
+  },
+  {
+   "name": "De Zeven Provinciën",
+   "category": "fregata",
+   "navies": [
+    "Paesi Bassi"
+   ],
+   "length_m": 144.24,
+   "beam_m": 18.8,
+   "deck_width_m": null,
+   "wiki": "De_Zeven_Provinciën-class_frigate",
+   "revision": 1371484396,
+   "note": ""
+  },
+  {
+   "name": "Elli (Kortenaer)",
+   "category": "fregata",
+   "navies": [
+    "Grecia"
+   ],
+   "length_m": 130.0,
+   "beam_m": 14.5,
+   "deck_width_m": null,
+   "wiki": "Elli-class_frigate",
+   "revision": 1379778603,
+   "note": "Being retired."
+  },
+  {
+   "name": "FDI (Amiral Ronarc'h / Kimon)",
+   "category": "fregata",
+   "navies": [
+    "Francia",
+    "Grecia"
+   ],
+   "length_m": 122.0,
+   "beam_m": 17.7,
+   "deck_width_m": null,
+   "wiki": "Amiral_Ronarc'h-class_frigate",
+   "revision": 1380183967,
+   "note": "Greek FDI HN (Belharra) = Kimon sub-class; infobox gives one set of dimensions for the class. Also ordered by Sweden (Lulea)."
+  },
+  {
+   "name": "FREMM (Aquitaine/Alsace)",
+   "category": "fregata",
+   "navies": [
+    "Francia"
+   ],
+   "length_m": 142.0,
+   "beam_m": 20.0,
+   "deck_width_m": null,
+   "wiki": "FREMM_multipurpose_frigate",
+   "revision": 1377645713,
+   "note": "French variant LOA; Alsace (FREDA) sub-variant has no separate figures in the infobox."
+  },
+  {
+   "name": "FREMM (Bergamini)",
+   "category": "fregata",
+   "navies": [
+    "Italia"
+   ],
+   "length_m": 144.6,
+   "beam_m": 19.7,
+   "deck_width_m": null,
+   "wiki": "FREMM_multipurpose_frigate",
+   "revision": 1377645713,
+   "note": "Italian variant, LOA (LPP 132.5 m). Covers GP and ASW versions."
+  },
+  {
+   "name": "Floréal",
+   "category": "fregata",
+   "navies": [
+    "Francia"
+   ],
+   "length_m": 93.5,
+   "beam_m": 14.0,
+   "deck_width_m": null,
+   "wiki": "Floréal-class_frigate",
+   "revision": 1339656880,
+   "note": "Surveillance frigate."
+  },
+  {
+   "name": "Fridtjof Nansen",
+   "category": "fregata",
+   "navies": [
+    "Norvegia"
+   ],
+   "length_m": 134.0,
+   "beam_m": 16.8,
+   "deck_width_m": null,
+   "wiki": "Fridtjof_Nansen-class_frigate",
+   "revision": 1371996377,
+   "note": ""
+  },
+  {
+   "name": "Gabya (G-class, OHP)",
+   "category": "fregata",
+   "navies": [
+    "Turchia"
+   ],
+   "length_m": 135.6,
+   "beam_m": 13.7,
+   "deck_width_m": null,
+   "wiki": "G-class_frigate",
+   "revision": 1351003890,
+   "note": "Ex-US Oliver Hazard Perry."
+  },
+  {
+   "name": "Georges Leygues",
+   "category": "fregata",
+   "navies": [
+    "Francia"
+   ],
+   "length_m": 139.0,
+   "beam_m": 14.0,
+   "deck_width_m": null,
+   "wiki": "Georges_Leygues-class_frigate",
+   "revision": 1363769197,
+   "note": "Retired by c. 2022."
+  },
+  {
+   "name": "Gepard (Project 11661)",
+   "category": "fregata",
+   "navies": [
+    "Russia"
+   ],
+   "length_m": 102.4,
+   "beam_m": 13.09,
+   "deck_width_m": null,
+   "wiki": "Gepard-class_frigate",
+   "revision": 1370168780,
+   "note": "Infobox length is 'approx 102.4 m (Gepard 3.9 batch II)'; beam 13.09 m (infobox also lists approx 15 m for Gepard 3.9 export)."
+  },
+  {
+   "name": "Halifax",
+   "category": "fregata",
+   "navies": [
+    "Canada"
+   ],
+   "length_m": 134.1,
+   "beam_m": 16.4,
+   "deck_width_m": null,
+   "wiki": "Halifax-class_frigate",
+   "revision": 1374079994,
+   "note": ""
+  },
+  {
+   "name": "Hydra (MEKO 200HN)",
+   "category": "fregata",
+   "navies": [
+    "Grecia"
+   ],
+   "length_m": 117.5,
+   "beam_m": 14.8,
+   "deck_width_m": null,
+   "wiki": "Hydra-class_frigate",
+   "revision": 1362535682,
+   "note": ""
+  },
+  {
+   "name": "Istanbul (I-class/İstif)",
+   "category": "fregata",
+   "navies": [
+    "Turchia"
+   ],
+   "length_m": 113.2,
+   "beam_m": 14.4,
+   "deck_width_m": null,
+   "wiki": "Istanbul-class_frigate",
+   "revision": 1378025540,
+   "note": "MILGEM frigate."
+  },
+  {
+   "name": "Iver Huitfeldt",
+   "category": "fregata",
+   "navies": [
+    "Danimarca"
+   ],
+   "length_m": 138.7,
+   "beam_m": 19.75,
+   "deck_width_m": null,
+   "wiki": "Iver_Huitfeldt-class_frigate",
+   "revision": 1371918061,
+   "note": ""
+  },
+  {
+   "name": "Karel Doorman (M-frigate)",
+   "category": "fregata",
+   "navies": [
+    "Belgio",
+    "Portogallo"
+   ],
+   "length_m": 122.2,
+   "beam_m": 14.3,
+   "deck_width_m": null,
+   "wiki": "Karel_Doorman-class_frigate",
+   "revision": 1354649293,
+   "note": "Infobox in feet: 401 ft x 47 ft, converted. No longer Dutch; ex-Dutch units serve Belgium, Portugal (and Chile)."
+  },
+  {
+   "name": "La Fayette",
+   "category": "fregata",
+   "navies": [
+    "Francia"
+   ],
+   "length_m": 125.0,
+   "beam_m": 15.4,
+   "deck_width_m": null,
+   "wiki": "La_Fayette-class_frigate",
+   "revision": 1379685180,
+   "note": ""
+  },
+  {
+   "name": "Maestrale",
+   "category": "fregata",
+   "navies": [
+    "Italia"
+   ],
+   "length_m": 122.7,
+   "beam_m": 12.9,
+   "deck_width_m": null,
+   "wiki": "Maestrale-class_frigate",
+   "revision": 1371747073,
+   "note": "LOA (LPP 114 m). Being retired, some units remain."
+  },
+  {
+   "name": "Mogami",
+   "category": "fregata",
+   "navies": [
+    "Giappone"
+   ],
+   "length_m": 132.5,
+   "beam_m": 16.3,
+   "deck_width_m": null,
+   "wiki": "Mogami-class_frigate",
+   "revision": 1378784245,
+   "note": ""
+  },
+  {
+   "name": "Moudge (Jamaran)",
+   "category": "fregata",
+   "navies": [
+    "Iran"
+   ],
+   "length_m": 95.0,
+   "beam_m": 11.1,
+   "deck_width_m": null,
+   "wiki": "Moudge-class_frigate",
+   "revision": 1379425702,
+   "note": "Infobox: 6 completed, 6 lost (1 unconfirmed), active '0?' after the 2026 Iran war."
+  },
+  {
+   "name": "Neustrashimy (Project 11540)",
+   "category": "fregata",
+   "navies": [
+    "Russia"
+   ],
+   "length_m": 129.0,
+   "beam_m": 15.6,
+   "deck_width_m": null,
+   "wiki": "Neustrashimy-class_frigate",
+   "revision": 1365412193,
+   "note": ""
+  },
+  {
+   "name": "Nilgiri (Project 17A)",
+   "category": "fregata",
+   "navies": [
+    "India"
+   ],
+   "length_m": 149.0,
+   "beam_m": 17.8,
+   "deck_width_m": null,
+   "wiki": "Nilgiri-class_frigate_(2019)",
+   "revision": 1376762725,
+   "note": ""
+  },
+  {
+   "name": "Sachsen (F124)",
+   "category": "fregata",
+   "navies": [
+    "Germania"
+   ],
+   "length_m": 143.0,
+   "beam_m": 17.44,
+   "deck_width_m": null,
+   "wiki": "Sachsen-class_frigate",
+   "revision": 1380022813,
+   "note": ""
+  },
+  {
+   "name": "Santa María (F80)",
+   "category": "fregata",
+   "navies": [
+    "Spagna"
+   ],
+   "length_m": 138.8,
+   "beam_m": 14.3,
+   "deck_width_m": null,
+   "wiki": "Santa_María-class_frigate",
+   "revision": 1337970498,
+   "note": "OHP derivative."
+  },
+  {
+   "name": "Shivalik (Project 17)",
+   "category": "fregata",
+   "navies": [
+    "India"
+   ],
+   "length_m": 144.0,
+   "beam_m": 16.9,
+   "deck_width_m": null,
+   "wiki": "Shivalik-class_frigate",
+   "revision": 1376793836,
+   "note": ""
+  },
+  {
+   "name": "Talwar (Project 1135.6)",
+   "category": "fregata",
+   "navies": [
+    "India"
+   ],
+   "length_m": 124.8,
+   "beam_m": 15.2,
+   "deck_width_m": null,
+   "wiki": "Talwar-class_frigate",
+   "revision": 1378462263,
+   "note": ""
+  },
+  {
+   "name": "Type 054A (Jiangkai II)",
+   "category": "fregata",
+   "navies": [
+    "Cina"
+   ],
+   "length_m": 134.0,
+   "beam_m": 16.0,
+   "deck_width_m": null,
+   "wiki": "Type_054A_frigate",
+   "revision": 1371367801,
+   "note": ""
+  },
+  {
+   "name": "Type 054B",
+   "category": "fregata",
+   "navies": [
+    "Cina"
+   ],
+   "length_m": 150.0,
+   "beam_m": 17.0,
+   "deck_width_m": null,
+   "wiki": "Type_054B_frigate",
+   "revision": 1375836424,
+   "note": "Infobox values are explicitly 'around ... (estimated)'."
+  },
+  {
+   "name": "Type 23",
+   "category": "fregata",
+   "navies": [
+    "Regno Unito"
+   ],
+   "length_m": 133.0,
+   "beam_m": 16.1,
+   "deck_width_m": null,
+   "wiki": "Type_23_frigate",
+   "revision": 1379497134,
+   "note": ""
+  },
+  {
+   "name": "Type 26",
+   "category": "fregata",
+   "navies": [
+    "Regno Unito"
+   ],
+   "length_m": 149.9,
+   "beam_m": 20.8,
+   "deck_width_m": null,
+   "wiki": "Type_26_frigate",
+   "revision": 1376168586,
+   "note": "prime unita' RN in entrata in servizio; le varianti Hunter (Australia) e River-class destroyer (Canada) non incluse"
+  },
+  {
+   "name": "Yavuz (MEKO 200TN)",
+   "category": "fregata",
+   "navies": [
+    "Turchia"
+   ],
+   "length_m": 110.5,
+   "beam_m": 13.25,
+   "deck_width_m": null,
+   "wiki": "Yavuz-class_frigate",
+   "revision": 1371127809,
+   "note": ""
+  },
+  {
+   "name": "Álvaro de Bazán (F100)",
+   "category": "fregata",
+   "navies": [
+    "Spagna"
+   ],
+   "length_m": 146.7,
+   "beam_m": 18.6,
+   "deck_width_m": null,
+   "wiki": "Álvaro_de_Bazán-class_frigate",
+   "revision": 1368028537,
+   "note": ""
+  },
+  {
+   "name": "Kirov (Project 1144 Orlan)",
+   "category": "incrociatore",
+   "navies": [
+    "Russia"
+   ],
+   "length_m": 252.0,
+   "beam_m": 28.5,
+   "deck_width_m": null,
+   "wiki": "Kirov-class_battlecruiser",
+   "revision": 1379894092,
+   "note": "Infobox params are written as malformed '[[length]]'/'[[Beam]]' keys but values are present. 1 active, 1 in refit per infobox."
+  },
+  {
+   "name": "Slava (Project 1164)",
+   "category": "incrociatore",
+   "navies": [
+    "Russia"
+   ],
+   "length_m": 186.4,
+   "beam_m": 20.8,
+   "deck_width_m": null,
+   "wiki": "Slava-class_cruiser",
+   "revision": 1377614564,
+   "note": "2 active (Moskva lost) per infobox."
+  },
+  {
+   "name": "Ticonderoga",
+   "category": "incrociatore",
+   "navies": [
+    "USA"
+   ],
+   "length_m": 172.8,
+   "beam_m": 16.8,
+   "deck_width_m": null,
+   "wiki": "Ticonderoga-class_cruiser",
+   "revision": 1379774375,
+   "note": "convertito da piedi; valori nei template infobox 'Template:Ticonderoga class cruiser length' (rev 924582030, '567 feet (173 m)') e '...beam' (rev 924582005, '55 feet (16.8 meters)'); classe in dismissione, poche unita' ancora attive"
+  },
+  {
+   "name": "Albion",
+   "category": "nave anfibia",
+   "navies": [
+    "Regno Unito"
+   ],
+   "length_m": 176.0,
+   "beam_m": 28.9,
+   "deck_width_m": null,
+   "wiki": "Albion-class_landing_platform_dock",
+   "revision": 1371671469,
+   "note": "LPD; entrambe le unita' in riserva/in dismissione"
+  },
+  {
+   "name": "Bay",
+   "category": "nave anfibia",
+   "navies": [
+    "Regno Unito",
+    "Australia"
+   ],
+   "length_m": 176.6,
+   "beam_m": 26.4,
+   "deck_width_m": null,
+   "wiki": "Bay-class_landing_ship",
+   "revision": 1364096875,
+   "note": "convertito da piedi; RFA LSD(A); HMAS Choules (Australia) e' ex RFA Largs Bay"
+  },
+  {
+   "name": "Galicia",
+   "category": "nave anfibia",
+   "navies": [
+    "Spagna"
+   ],
+   "length_m": 160.0,
+   "beam_m": 25.0,
+   "deck_width_m": null,
+   "wiki": "Galicia-class_landing_platform_dock",
+   "revision": 1351013844,
+   "note": "LOA (pp 142 m). LPD: flight deck 60 x 25 m per infobox (not recorded as deck_width since not a carrier/LHD)."
+  },
+  {
+   "name": "Harpers Ferry",
+   "category": "nave anfibia",
+   "navies": [
+    "USA"
+   ],
+   "length_m": 185.8,
+   "beam_m": 25.6,
+   "deck_width_m": null,
+   "wiki": "Harpers_Ferry-class_dock_landing_ship",
+   "revision": 1375184283,
+   "note": "convertito da piedi (609 ft 7 in); LSD"
+  },
+  {
+   "name": "Ivan Gren (Project 11711)",
+   "category": "nave anfibia",
+   "navies": [
+    "Russia"
+   ],
+   "length_m": 135.0,
+   "beam_m": 16.5,
+   "deck_width_m": null,
+   "wiki": "Ivan_Gren-class_landing_ship",
+   "revision": 1374959170,
+   "note": "Infobox gives one length for all units, although it notes later units have enlarged hangars."
+  },
+  {
+   "name": "Johan de Witt (LPD)",
+   "category": "nave anfibia",
+   "navies": [
+    "Paesi Bassi"
+   ],
+   "length_m": 176.35,
+   "beam_m": 29.2,
+   "deck_width_m": null,
+   "wiki": "Rotterdam-class_landing_platform_dock",
+   "revision": 1351013877,
+   "note": "Johan de Witt variant per class infobox (ship article gives beam 29 m)."
+  },
+  {
+   "name": "Ropucha (Project 775)",
+   "category": "nave anfibia",
+   "navies": [
+    "Russia"
+   ],
+   "length_m": 112.5,
+   "beam_m": 15.0,
+   "deck_width_m": null,
+   "wiki": "Ropucha-class_landing_ship",
+   "revision": 1379912221,
+   "note": ""
+  },
+  {
+   "name": "Rotterdam (LPD)",
+   "category": "nave anfibia",
+   "navies": [
+    "Paesi Bassi"
+   ],
+   "length_m": 166.0,
+   "beam_m": 27.0,
+   "deck_width_m": null,
+   "wiki": "Rotterdam-class_landing_platform_dock",
+   "revision": 1351013877,
+   "note": "Rotterdam variant; flight deck width not stated."
+  },
+  {
+   "name": "San Antonio",
+   "category": "nave anfibia",
+   "navies": [
+    "USA"
+   ],
+   "length_m": 208.5,
+   "beam_m": 32.0,
+   "deck_width_m": null,
+   "wiki": "San_Antonio-class_amphibious_transport_dock",
+   "revision": 1378518354,
+   "note": "convertito da piedi; LPD"
+  },
+  {
+   "name": "San Giorgio",
+   "category": "nave anfibia",
+   "navies": [
+    "Italia"
+   ],
+   "length_m": 133.0,
+   "beam_m": 20.5,
+   "deck_width_m": null,
+   "wiki": "San_Giorgio-class_amphibious_transport_dock",
+   "revision": 1365843575,
+   "note": "LPD with flush flight deck; article gives no flight deck width. Length not marked LOA/LPP."
+  },
+  {
+   "name": "Type 071 (Yuzhao)",
+   "category": "nave anfibia",
+   "navies": [
+    "Cina"
+   ],
+   "length_m": 210.0,
+   "beam_m": 28.0,
+   "deck_width_m": null,
+   "wiki": "Type_071_amphibious_transport_dock",
+   "revision": 1374045674,
+   "note": ""
+  },
+  {
+   "name": "Whidbey Island",
+   "category": "nave anfibia",
+   "navies": [
+    "USA"
+   ],
+   "length_m": 185.6,
+   "beam_m": 25.6,
+   "deck_width_m": null,
+   "wiki": "Whidbey_Island-class_dock_landing_ship",
+   "revision": 1377304707,
+   "note": "convertito da piedi; LSD"
+  },
+  {
+   "name": "Ōsumi",
+   "category": "nave anfibia",
+   "navies": [
+    "Giappone"
+   ],
+   "length_m": 178.0,
+   "beam_m": 25.8,
+   "deck_width_m": null,
+   "wiki": "Ōsumi-class_tank_landing_ship",
+   "revision": 1372221426,
+   "note": ""
+  },
+  {
+   "name": "Blue Ridge",
+   "category": "nave di supporto",
+   "navies": [
+    "USA"
+   ],
+   "length_m": 193.2,
+   "beam_m": 32.9,
+   "deck_width_m": null,
+   "wiki": "Blue_Ridge-class_command_ship",
+   "revision": 1327123469,
+   "note": "convertito da piedi; nave comando (LCC)"
+  },
+  {
+   "name": "Lewis B. Puller (ESB)",
+   "category": "nave di supporto",
+   "navies": [
+    "USA"
+   ],
+   "length_m": 239.3,
+   "beam_m": 50.0,
+   "deck_width_m": null,
+   "wiki": "Expeditionary_Transfer_Dock",
+   "revision": 1379042205,
+   "note": "convertito da piedi; Expeditionary Sea/Mobile Base, sottoclasse ESB; dimensioni dall'unico infobox dell'articolo 'Expeditionary Transfer Dock' (non distingue ESD/ESB)"
+  },
+  {
+   "name": "Makran",
+   "category": "nave di supporto",
+   "navies": [
+    "Iran"
+   ],
+   "length_m": 230.13,
+   "beam_m": 42.03,
+   "deck_width_m": null,
+   "wiki": "IRIS_Makran",
+   "revision": 1344105432,
+   "note": "Forward base ship converted from tanker (tanker-era infobox: 229.6 m). Infobox status: Destroyed / sunk during the 2026 Iran war."
+  },
+  {
+   "name": "Mercy",
+   "category": "nave di supporto",
+   "navies": [
+    "USA"
+   ],
+   "length_m": 272.5,
+   "beam_m": 32.2,
+   "deck_width_m": null,
+   "wiki": "Mercy-class_hospital_ship",
+   "revision": 1366367728,
+   "note": "convertito da piedi (beam 105 ft 7 in); nave ospedale"
+  },
+  {
+   "name": "Montford Point (ESD)",
+   "category": "nave di supporto",
+   "navies": [
+    "USA"
+   ],
+   "length_m": 239.3,
+   "beam_m": 50.0,
+   "deck_width_m": null,
+   "wiki": "Expeditionary_Transfer_Dock",
+   "revision": 1379042205,
+   "note": "convertito da piedi; articolo unico 'Expeditionary Transfer Dock' (redirect), stesso infobox per ESD ed ESB"
+  },
+  {
+   "name": "Shahid Roudaki",
+   "category": "nave di supporto",
+   "navies": [
+    "Iran"
+   ],
+   "length_m": 150.0,
+   "beam_m": 22.0,
+   "deck_width_m": null,
+   "wiki": "IRIS_Shahid_Roudaki",
+   "revision": 1379968723,
+   "note": "IRGCN converted ro-ro drone/helicopter carrier; infobox status: Destroyed, sunk 1 September 2026. No flight deck width stated."
+  },
+  {
+   "name": "Spearhead",
+   "category": "nave di supporto",
+   "navies": [
+    "USA"
+   ],
+   "length_m": 103.0,
+   "beam_m": 28.5,
+   "deck_width_m": null,
+   "wiki": "Spearhead-class_expeditionary_fast_transport",
+   "revision": 1380014672,
+   "note": "catamarano EPF (MSC)"
+  },
+  {
+   "name": "Asterix",
+   "category": "nave logistica",
+   "navies": [
+    "Canada"
+   ],
+   "length_m": 182.5,
+   "beam_m": 25.2,
+   "deck_width_m": null,
+   "wiki": "MV_Asterix",
+   "revision": 1375103560,
+   "note": "nave singola (Resolve class); valori dall'infobox 'as converted' (as built: 182.52 m oa)"
+  },
+  {
+   "name": "Berlin (Type 702)",
+   "category": "nave logistica",
+   "navies": [
+    "Germania"
+   ],
+   "length_m": 173.7,
+   "beam_m": 24.0,
+   "deck_width_m": null,
+   "wiki": "Berlin-class_replenishment_ship",
+   "revision": 1327320085,
+   "note": ""
+  },
+  {
+   "name": "Boris Chilikin",
+   "category": "nave logistica",
+   "navies": [
+    "Russia"
+   ],
+   "length_m": 162.3,
+   "beam_m": 21.4,
+   "deck_width_m": null,
+   "wiki": "Boris_Chilikin-class_fleet_oiler",
+   "revision": 1372413731,
+   "note": "Replenishment oiler."
+  },
+  {
+   "name": "Cantabria",
+   "category": "nave logistica",
+   "navies": [
+    "Spagna"
+   ],
+   "length_m": 174.0,
+   "beam_m": 23.0,
+   "deck_width_m": null,
+   "wiki": "Spanish_oiler_Cantabria",
+   "revision": 1327323690,
+   "note": "Single ship."
+  },
+  {
+   "name": "Dubna",
+   "category": "nave logistica",
+   "navies": [
+    "Russia"
+   ],
+   "length_m": 130.0,
+   "beam_m": 20.0,
+   "deck_width_m": null,
+   "wiki": "Dubna-class_tanker",
+   "revision": 1357252233,
+   "note": "Replenishment oiler."
+  },
+  {
+   "name": "Durance",
+   "category": "nave logistica",
+   "navies": [
+    "Francia"
+   ],
+   "length_m": 157.2,
+   "beam_m": 21.2,
+   "deck_width_m": null,
+   "wiki": "Durance-class_tanker",
+   "revision": 1326946299,
+   "note": "Retired from French service in recent years (replaced by BRF)."
+  },
+  {
+   "name": "Etna",
+   "category": "nave logistica",
+   "navies": [
+    "Italia"
+   ],
+   "length_m": 146.6,
+   "beam_m": 21.0,
+   "deck_width_m": null,
+   "wiki": "Etna-class_replenishment_oiler",
+   "revision": 1365489677,
+   "note": "LOA."
+  },
+  {
+   "name": "Fort Victoria",
+   "category": "nave logistica",
+   "navies": [
+    "Regno Unito"
+   ],
+   "length_m": 203.0,
+   "beam_m": 30.0,
+   "deck_width_m": null,
+   "wiki": "Fort_Victoria-class_replenishment_oiler",
+   "revision": 1377608722,
+   "note": "RFA"
+  },
+  {
+   "name": "Henry J. Kaiser",
+   "category": "nave logistica",
+   "navies": [
+    "USA"
+   ],
+   "length_m": 206.3,
+   "beam_m": 29.7,
+   "deck_width_m": null,
+   "wiki": "Henry_J._Kaiser-class_replenishment_oiler",
+   "revision": 1375906443,
+   "note": "convertito da piedi (beam 97 ft 5 in); oiler MSC T-AO"
+  },
+  {
+   "name": "Jacques Chevallier (BRF)",
+   "category": "nave logistica",
+   "navies": [
+    "Francia"
+   ],
+   "length_m": 194.0,
+   "beam_m": 27.4,
+   "deck_width_m": null,
+   "wiki": "Bâtiment_ravitailleur_de_forces",
+   "revision": 1355198621,
+   "note": "Vulcano derivative."
+  },
+  {
+   "name": "John Lewis",
+   "category": "nave logistica",
+   "navies": [
+    "USA"
+   ],
+   "length_m": 227.4,
+   "beam_m": 32.4,
+   "deck_width_m": null,
+   "wiki": "John_Lewis-class_replenishment_oiler",
+   "revision": 1365192404,
+   "note": "convertito da piedi (beam 106 ft 5 in); oiler MSC T-AO"
+  },
+  {
+   "name": "Kaliningradneft",
+   "category": "nave logistica",
+   "navies": [
+    "Russia"
+   ],
+   "length_m": 115.5,
+   "beam_m": 17.03,
+   "deck_width_m": null,
+   "wiki": "Kaliningradneft-class_tanker",
+   "revision": 1357252189,
+   "note": "Replenishment oiler."
+  },
+  {
+   "name": "Karel Doorman (JSS)",
+   "category": "nave logistica",
+   "navies": [
+    "Paesi Bassi"
+   ],
+   "length_m": 204.7,
+   "beam_m": 30.4,
+   "deck_width_m": null,
+   "wiki": "HNLMS_Karel_Doorman_(A833)",
+   "revision": 1379965579,
+   "note": "Single joint support ship with large flight deck; article gives no deck width."
+  },
+  {
+   "name": "Lewis and Clark",
+   "category": "nave logistica",
+   "navies": [
+    "USA"
+   ],
+   "length_m": 210.0,
+   "beam_m": 32.3,
+   "deck_width_m": null,
+   "wiki": "Lewis_and_Clark-class_dry_cargo_ship",
+   "revision": 1374251462,
+   "note": "infobox in testo semplice '689 ft 0 in (210 m) overall', beam '106 ft 0 in (32.3 m)': usati i valori in metri indicati; T-AKE MSC"
+  },
+  {
+   "name": "Mashū",
+   "category": "nave logistica",
+   "navies": [
+    "Giappone"
+   ],
+   "length_m": 221.0,
+   "beam_m": 27.0,
+   "deck_width_m": null,
+   "wiki": "Mashū-class_replenishment_ship",
+   "revision": 1327668789,
+   "note": ""
+  },
+  {
+   "name": "Patiño",
+   "category": "nave logistica",
+   "navies": [
+    "Spagna"
+   ],
+   "length_m": 166.0,
+   "beam_m": 22.0,
+   "deck_width_m": null,
+   "wiki": "Spanish_oiler_Patiño",
+   "revision": 1327556192,
+   "note": "Single ship."
+  },
+  {
+   "name": "Protecteur",
+   "category": "nave logistica",
+   "navies": [
+    "Canada"
+   ],
+   "length_m": 173.7,
+   "beam_m": 24.0,
+   "deck_width_m": null,
+   "wiki": "Protecteur-class_auxiliary_vessel",
+   "revision": 1374080527,
+   "note": "Joint Support Ship; prime unita' in consegna"
+  },
+  {
+   "name": "Supply (AO)",
+   "category": "nave logistica",
+   "navies": [
+    "Australia"
+   ],
+   "length_m": 173.9,
+   "beam_m": 23.0,
+   "deck_width_m": null,
+   "wiki": "Supply-class_replenishment_oiler",
+   "revision": 1380148760,
+   "note": "RAN"
+  },
+  {
+   "name": "Supply (T-AOE)",
+   "category": "nave logistica",
+   "navies": [
+    "USA"
+   ],
+   "length_m": 229.8,
+   "beam_m": 32.6,
+   "deck_width_m": null,
+   "wiki": "Supply-class_fast_combat_support_ship",
+   "revision": 1374270143,
+   "note": "convertito da piedi; infobox: 754 ft overall, 107 ft extreme beam; unita' MSC in parte inattivate"
+  },
+  {
+   "name": "Tide",
+   "category": "nave logistica",
+   "navies": [
+    "Regno Unito"
+   ],
+   "length_m": 200.9,
+   "beam_m": 28.6,
+   "deck_width_m": null,
+   "wiki": "Tide-class_tanker",
+   "revision": 1375259719,
+   "note": "RFA"
+  },
+  {
+   "name": "Type 901 (Fuyu)",
+   "category": "nave logistica",
+   "navies": [
+    "Cina"
+   ],
+   "length_m": 240.0,
+   "beam_m": 31.0,
+   "deck_width_m": null,
+   "wiki": "Type_901_fast_combat_support_ship",
+   "revision": 1365547819,
+   "note": ""
+  },
+  {
+   "name": "Type 903/903A (Fuchi)",
+   "category": "nave logistica",
+   "navies": [
+    "Cina"
+   ],
+   "length_m": 178.5,
+   "beam_m": 24.8,
+   "deck_width_m": null,
+   "wiki": "Type_903_replenishment_ship",
+   "revision": 1369666328,
+   "note": ""
+  },
+  {
+   "name": "Vulcano",
+   "category": "nave logistica",
+   "navies": [
+    "Italia"
+   ],
+   "length_m": 193.0,
+   "beam_m": 27.2,
+   "deck_width_m": null,
+   "wiki": "Vulcano-class_logistic_support_ship",
+   "revision": 1367658908,
+   "note": "LOA (LPP 175.9 m)."
+  },
+  {
+   "name": "Arafura",
+   "category": "pattugliatore",
+   "navies": [
+    "Australia"
+   ],
+   "length_m": 80.0,
+   "beam_m": 13.0,
+   "deck_width_m": null,
+   "wiki": "Arafura-class_patrol_vessel",
+   "revision": 1372389017,
+   "note": "infobox in testo semplice ('80 metres', '13 metres'); articolo 'Arafura-class patrol vessel' (redirect)"
+  },
+  {
+   "name": "Comandanti",
+   "category": "pattugliatore",
+   "navies": [
+    "Italia"
+   ],
+   "length_m": 88.6,
+   "beam_m": 12.2,
+   "deck_width_m": null,
+   "wiki": "Comandanti-class_patrol_vessel",
+   "revision": 1345470211,
+   "note": "LOA (LPP 80.0 m)."
+  },
+  {
+   "name": "Famous",
+   "category": "pattugliatore",
+   "navies": [
+    "USA"
+   ],
+   "length_m": 82.3,
+   "beam_m": 11.6,
+   "deck_width_m": null,
+   "wiki": "Medium_endurance_cutter",
+   "revision": 1373925932,
+   "note": "convertito da piedi; USCG WMEC 270 ft; articolo 'Medium endurance cutter' (redirect da Famous-class cutter), infobox della sezione Famous"
+  },
+  {
+   "name": "Félix Éboué (POM)",
+   "category": "pattugliatore",
+   "navies": [
+    "Francia"
+   ],
+   "length_m": 80.0,
+   "beam_m": 11.8,
+   "deck_width_m": null,
+   "wiki": "Patrouilleur_Outre-mer",
+   "revision": 1379870250,
+   "note": ""
+  },
+  {
+   "name": "Hamilton",
+   "category": "pattugliatore",
+   "navies": [
+    "USA"
+   ],
+   "length_m": 115.2,
+   "beam_m": 13.1,
+   "deck_width_m": null,
+   "wiki": "Hamilton-class_cutter",
+   "revision": 1374391276,
+   "note": "convertito da piedi; USCG WHEC, ritirati dalla USCG negli ultimi anni, molte unita' trasferite a marine estere"
+  },
+  {
+   "name": "Harry DeWolf",
+   "category": "pattugliatore",
+   "navies": [
+    "Canada"
+   ],
+   "length_m": 103.6,
+   "beam_m": 19.0,
+   "deck_width_m": null,
+   "wiki": "Harry_DeWolf-class_offshore_patrol_vessel",
+   "revision": 1374080281,
+   "note": "AOPV"
+  },
+  {
+   "name": "Holland (OPV)",
+   "category": "pattugliatore",
+   "navies": [
+    "Paesi Bassi"
+   ],
+   "length_m": 108.4,
+   "beam_m": 16.0,
+   "deck_width_m": null,
+   "wiki": "Holland-class_patrol_vessel",
+   "revision": 1368934134,
+   "note": ""
+  },
+  {
+   "name": "Knud Rasmussen",
+   "category": "pattugliatore",
+   "navies": [
+    "Danimarca"
+   ],
+   "length_m": 71.8,
+   "beam_m": 14.6,
+   "deck_width_m": null,
+   "wiki": "Knud_Rasmussen-class_patrol_vessel",
+   "revision": 1342936193,
+   "note": "LOA (LWL 61.0 m)."
+  },
+  {
+   "name": "Legend",
+   "category": "pattugliatore",
+   "navies": [
+    "USA"
+   ],
+   "length_m": 127.4,
+   "beam_m": 16.5,
+   "deck_width_m": null,
+   "wiki": "Legend-class_cutter",
+   "revision": 1373924499,
+   "note": "convertito da piedi; USCG National Security Cutter"
+  },
+  {
+   "name": "Meteoro (BAM)",
+   "category": "pattugliatore",
+   "navies": [
+    "Spagna"
+   ],
+   "length_m": 93.9,
+   "beam_m": 14.2,
+   "deck_width_m": null,
+   "wiki": "Meteoro-class_patrol_vessel",
+   "revision": 1379077617,
+   "note": ""
+  },
+  {
+   "name": "River (Batch 1)",
+   "category": "pattugliatore",
+   "navies": [
+    "Regno Unito"
+   ],
+   "length_m": 79.5,
+   "beam_m": 13.5,
+   "deck_width_m": null,
+   "wiki": "River-class_patrol_vessel",
+   "revision": 1380015276,
+   "note": "articolo 'River-class patrol vessel' (redirect)"
+  },
+  {
+   "name": "River (Batch 2)",
+   "category": "pattugliatore",
+   "navies": [
+    "Regno Unito"
+   ],
+   "length_m": 90.5,
+   "beam_m": 13.5,
+   "deck_width_m": null,
+   "wiki": "River-class_patrol_vessel",
+   "revision": 1380015276,
+   "note": "articolo 'River-class patrol vessel' (redirect)"
+  },
+  {
+   "name": "Thaon di Revel (PPA)",
+   "category": "pattugliatore",
+   "navies": [
+    "Italia"
+   ],
+   "length_m": 143.0,
+   "beam_m": 16.5,
+   "deck_width_m": null,
+   "wiki": "Thaon_di_Revel-class_patrol_vessel",
+   "revision": 1379526502,
+   "note": "LOA (LPP 133 m). Officially offshore patrol vessel, frigate-sized."
+  },
+  {
+   "name": "Thetis",
+   "category": "pattugliatore",
+   "navies": [
+    "Danimarca"
+   ],
+   "length_m": 112.3,
+   "beam_m": 14.4,
+   "deck_width_m": null,
+   "wiki": "Thetis-class_patrol_vessel",
+   "revision": 1342934816,
+   "note": ""
+  },
+  {
+   "name": "Vasily Bykov (Project 22160)",
+   "category": "pattugliatore",
+   "navies": [
+    "Russia"
+   ],
+   "length_m": 94.0,
+   "beam_m": 14.0,
+   "deck_width_m": null,
+   "wiki": "Project_22160_patrol_ship",
+   "revision": 1377743456,
+   "note": ""
+  },
+  {
+   "name": "America",
+   "category": "portaelicotteri d'assalto",
+   "navies": [
+    "USA"
+   ],
+   "length_m": 257.3,
+   "beam_m": 32.3,
+   "deck_width_m": null,
+   "wiki": "America-class_amphibious_assault_ship",
+   "revision": 1377651931,
+   "note": "convertito da piedi; larghezza del ponte di volo non indicata nell'articolo"
+  },
+  {
+   "name": "Anadolu",
+   "category": "portaelicotteri d'assalto",
+   "navies": [
+    "Turchia"
+   ],
+   "length_m": 232.0,
+   "beam_m": 32.0,
+   "deck_width_m": null,
+   "wiki": "TCG_Anadolu",
+   "revision": 1380200198,
+   "note": "Juan Carlos I derivative; article gives no flight deck width."
+  },
+  {
+   "name": "Canberra",
+   "category": "portaelicotteri d'assalto",
+   "navies": [
+    "Australia"
+   ],
+   "length_m": 230.82,
+   "beam_m": 32.0,
+   "deck_width_m": 32.0,
+   "wiki": "Canberra-class_landing_helicopter_dock",
+   "revision": 1362838253,
+   "note": "deck_width_m dal testo: 'The flight deck is 202.3 by 32 m'"
+  },
+  {
+   "name": "Dokdo",
+   "category": "portaelicotteri d'assalto",
+   "navies": [
+    "Corea del Sud"
+   ],
+   "length_m": 199.0,
+   "beam_m": 31.0,
+   "deck_width_m": null,
+   "wiki": "Dokdo-class_amphibious_assault_ship",
+   "revision": 1371721145,
+   "note": "Infobox gives no flight deck width; beam is the maximum (o/a) value."
+  },
+  {
+   "name": "Hyūga",
+   "category": "portaelicotteri d'assalto",
+   "navies": [
+    "Giappone"
+   ],
+   "length_m": 197.0,
+   "beam_m": 33.0,
+   "deck_width_m": null,
+   "wiki": "Hyūga-class_helicopter_destroyer",
+   "revision": 1370747736,
+   "note": "Infobox gives no flight deck width; beam is the maximum (o/a) value. ASW helicopter carrier (helicopter destroyer)."
+  },
+  {
+   "name": "Juan Carlos I",
+   "category": "portaelicotteri d'assalto",
+   "navies": [
+    "Spagna"
+   ],
+   "length_m": 230.82,
+   "beam_m": 32.0,
+   "deck_width_m": null,
+   "wiki": "Spanish_ship_Juan_Carlos_I",
+   "revision": 1374021547,
+   "note": "Article gives flight deck length (202 m) but not width."
+  },
+  {
+   "name": "Mistral",
+   "category": "portaelicotteri d'assalto",
+   "navies": [
+    "Francia"
+   ],
+   "length_m": 199.0,
+   "beam_m": 32.0,
+   "deck_width_m": null,
+   "wiki": "Mistral-class_landing_helicopter_dock",
+   "revision": 1371738790,
+   "note": "Article does not state flight deck width."
+  },
+  {
+   "name": "Trieste",
+   "category": "portaelicotteri d'assalto",
+   "navies": [
+    "Italia"
+   ],
+   "length_m": 245.0,
+   "beam_m": 47.0,
+   "deck_width_m": 36.0,
+   "wiki": "Italian_landing_helicopter_dock_Trieste",
+   "revision": 1366112848,
+   "note": "Single ship (LHD). Infobox beam 47 m (likely max incl. sponsons). Flight deck 230 x 36 m per infobox and body text."
+  },
+  {
+   "name": "Type 075 (Yushen)",
+   "category": "portaelicotteri d'assalto",
+   "navies": [
+    "Cina"
+   ],
+   "length_m": 232.0,
+   "beam_m": 36.8,
+   "deck_width_m": null,
+   "wiki": "Type_075_landing_helicopter_dock",
+   "revision": 1354513615,
+   "note": "Infobox gives no flight deck width; beam is the maximum (o/a) value."
+  },
+  {
+   "name": "Type 076 (Sichuan)",
+   "category": "portaelicotteri d'assalto",
+   "navies": [
+    "Cina"
+   ],
+   "length_m": 260.0,
+   "beam_m": 52.0,
+   "deck_width_m": null,
+   "wiki": "Type_076_landing_helicopter_dock",
+   "revision": 1374494674,
+   "note": "Infobox gives no flight deck width; beam is the maximum (o/a) value. Infobox gives ranges 252.3-260 m and 45-52 m (o/a) from two sources; upper bounds used."
+  },
+  {
+   "name": "Wasp",
+   "category": "portaelicotteri d'assalto",
+   "navies": [
+    "USA"
+   ],
+   "length_m": 257.0,
+   "beam_m": 31.8,
+   "deck_width_m": null,
+   "wiki": "Wasp-class_amphibious_assault_ship",
+   "revision": 1378469689,
+   "note": "infobox in metri; larghezza del ponte di volo non indicata nell'articolo"
+  },
+  {
+   "name": "Admiral Kuznetsov (Project 1143.5)",
+   "category": "portaerei",
+   "navies": [
+    "Russia"
+   ],
+   "length_m": 305.0,
+   "beam_m": 72.0,
+   "deck_width_m": null,
+   "wiki": "Kuznetsov-class_aircraft_carrier",
+   "revision": 1380004417,
+   "note": "Infobox gives no flight deck width; beam is the maximum (o/a) value. Infobox aircraft_facilities states a 14,700 m2 flight deck (area, not width). Ship out of active service since 2017 per ship article."
+  },
+  {
+   "name": "Cavour",
+   "category": "portaerei",
+   "navies": [
+    "Italia"
+   ],
+   "length_m": 244.0,
+   "beam_m": 29.1,
+   "deck_width_m": 34.5,
+   "wiki": "Italian_aircraft_carrier_Cavour",
+   "revision": 1378154369,
+   "note": "Single ship. Beam field lists 29.1 m and 39 m 'moulded breadth'; first value used. Deck width from infobox 'aircraft' field: flight deck 232.60 x 34.5 m."
+  },
+  {
+   "name": "Charles de Gaulle",
+   "category": "portaerei",
+   "navies": [
+    "Francia"
+   ],
+   "length_m": 261.5,
+   "beam_m": 31.5,
+   "deck_width_m": 64.36,
+   "wiki": "French_aircraft_carrier_Charles_de_Gaulle",
+   "revision": 1379516177,
+   "note": "LOA. Beam field: overall 64.36 m (used; effectively max width seen from above), waterline 31.5 m. Article does not state a flight deck width. Larghezza al galleggiamento 31,5 m; in deck_width_m la larghezza massima (64,36 m), quella visibile dall'alto."
+  },
+  {
+   "name": "Fujian (Type 003)",
+   "category": "portaerei",
+   "navies": [
+    "Cina"
+   ],
+   "length_m": 316.0,
+   "beam_m": 76.0,
+   "deck_width_m": null,
+   "wiki": "Chinese_aircraft_carrier_Fujian",
+   "revision": 1380055324,
+   "note": "Infobox gives no flight deck width; beam is the maximum (o/a) value."
+  },
+  {
+   "name": "Gerald R. Ford",
+   "category": "portaerei",
+   "navies": [
+    "USA"
+   ],
+   "length_m": 337.1,
+   "beam_m": 40.8,
+   "deck_width_m": 78.0,
+   "wiki": "Gerald_R._Ford-class_aircraft_carrier",
+   "revision": 1378370559,
+   "note": "convertito da piedi; infobox length '1092 ft – 1106 ft', usato il massimo; beam_m = waterline 134 ft; deck_width_m = infobox beam '256 ft (flight deck)' (aircraft_facilities indica invece flight deck 1092 x 252 ft = 76.8 m)"
+  },
+  {
+   "name": "Giuseppe Garibaldi",
+   "category": "portaerei",
+   "navies": [
+    "Italia"
+   ],
+   "length_m": 180.2,
+   "beam_m": 33.4,
+   "deck_width_m": 30.0,
+   "wiki": "Italian_aircraft_carrier_Giuseppe_Garibaldi",
+   "revision": 1380117753,
+   "note": "Decommissioned 1 Oct 2024, transferred to Indonesia (KRI Sriwijaya) per infobox. Deck width from infobox notes (174.0 x 30.0 m); body text says 30.4 m."
+  },
+  {
+   "name": "Izumo",
+   "category": "portaerei",
+   "navies": [
+    "Giappone"
+   ],
+   "length_m": 248.0,
+   "beam_m": 38.0,
+   "deck_width_m": null,
+   "wiki": "Izumo-class_destroyer",
+   "revision": 1373724249,
+   "note": "Infobox gives no flight deck width; beam is the maximum (o/a) value. Officially helicopter destroyer, being converted for F-35B operations."
+  },
+  {
+   "name": "Liaoning (Type 001)",
+   "category": "portaerei",
+   "navies": [
+    "Cina"
+   ],
+   "length_m": 306.4,
+   "beam_m": 74.4,
+   "deck_width_m": null,
+   "wiki": "Chinese_aircraft_carrier_Liaoning",
+   "revision": 1380212784,
+   "note": "Infobox gives no flight deck width; beam is the maximum (o/a) value. Waterline values 270 m x 35 m also given."
+  },
+  {
+   "name": "Nimitz",
+   "category": "portaerei",
+   "navies": [
+    "USA"
+   ],
+   "length_m": 332.8,
+   "beam_m": 40.8,
+   "deck_width_m": 76.8,
+   "wiki": "Nimitz-class_aircraft_carrier",
+   "revision": 1378895753,
+   "note": "convertito da piedi; valori nei template infobox 'Template:Nimitz class aircraft carrier length' (rev 1272656120, overall 1092 ft, waterline 1040 ft) e '...beam' (rev 1272655808); beam_m = waterline 134 ft; deck_width_m = beam 'Overall' 252 ft del template (larghezza massima ponte di volo)"
+  },
+  {
+   "name": "Queen Elizabeth",
+   "category": "portaerei",
+   "navies": [
+    "Regno Unito"
+   ],
+   "length_m": 284.0,
+   "beam_m": 39.0,
+   "deck_width_m": 73.0,
+   "wiki": "Queen_Elizabeth-class_aircraft_carrier",
+   "revision": 1379405695,
+   "note": "beam_m = waterline 39 m; deck_width_m = infobox beam 'overall' 73 m (testo: 'a width of 73 m')"
+  },
+  {
+   "name": "Shandong (Type 002)",
+   "category": "portaerei",
+   "navies": [
+    "Cina"
+   ],
+   "length_m": 305.0,
+   "beam_m": 75.0,
+   "deck_width_m": null,
+   "wiki": "Chinese_aircraft_carrier_Shandong",
+   "revision": 1380055013,
+   "note": "Infobox gives no flight deck width; beam is the maximum (o/a) value. Length value is tagged {{citation needed}} in the infobox."
+  },
+  {
+   "name": "Vikramaditya",
+   "category": "portaerei",
+   "navies": [
+    "India"
+   ],
+   "length_m": 284.0,
+   "beam_m": 61.0,
+   "deck_width_m": null,
+   "wiki": "INS_Vikramaditya",
+   "revision": 1380017324,
+   "note": "Infobox gives no flight deck width; beam is the maximum (o/a) value. Modified Kiev class (single ship)."
+  },
+  {
+   "name": "Vikrant (IAC-1)",
+   "category": "portaerei",
+   "navies": [
+    "India"
+   ],
+   "length_m": 262.5,
+   "beam_m": 62.0,
+   "deck_width_m": null,
+   "wiki": "INS_Vikrant_(2013)",
+   "revision": 1379439664,
+   "note": "Infobox gives no flight deck width; beam is the maximum (o/a) value. Infobox aircraft_facilities states a 12,500 m2 flight deck (area, not width)."
+  },
+  {
+   "name": "Akula I (Project 971)",
+   "category": "sottomarino",
+   "navies": [
+    "Russia"
+   ],
+   "length_m": 110.3,
+   "beam_m": 15.4,
+   "deck_width_m": null,
+   "wiki": "Akula-class_submarine",
+   "revision": 1376675708,
+   "note": "Akula I and I Improved values. Akula II/III row separate because beam differs >3%."
+  },
+  {
+   "name": "Akula II/III (Project 971)",
+   "category": "sottomarino",
+   "navies": [
+    "Russia"
+   ],
+   "length_m": 113.3,
+   "beam_m": 13.6,
+   "deck_width_m": null,
+   "wiki": "Akula-class_submarine",
+   "revision": 1376675708,
+   "note": "Akula II and III values from the same infobox."
+  },
+  {
+   "name": "Astute",
+   "category": "sottomarino",
+   "navies": [
+    "Regno Unito"
+   ],
+   "length_m": 97.0,
+   "beam_m": 11.3,
+   "deck_width_m": null,
+   "wiki": "Astute-class_submarine",
+   "revision": 1379869791,
+   "note": "SSN"
+  },
+  {
+   "name": "Borei (Project 955/955A)",
+   "category": "sottomarino",
+   "navies": [
+    "Russia"
+   ],
+   "length_m": 170.0,
+   "beam_m": 13.5,
+   "deck_width_m": null,
+   "wiki": "Borei-class_submarine",
+   "revision": 1374940822,
+   "note": ""
+  },
+  {
+   "name": "Collins",
+   "category": "sottomarino",
+   "navies": [
+    "Australia"
+   ],
+   "length_m": 77.42,
+   "beam_m": 7.8,
+   "deck_width_m": null,
+   "wiki": "Collins-class_submarine",
+   "revision": 1378115873,
+   "note": ""
+  },
+  {
+   "name": "Delta IV (Project 667BDRM)",
+   "category": "sottomarino",
+   "navies": [
+    "Russia"
+   ],
+   "length_m": null,
+   "beam_m": null,
+   "deck_width_m": null,
+   "wiki": "Delta-class_submarine",
+   "revision": 1375131371,
+   "note": "The Delta IV section of the Delta-class infobox has empty length and beam fields (Delta III section gives 166 m x 12.3 m, not used). Delta IV-class submarine redirects to this article."
+  },
+  {
+   "name": "Dosan Ahn Changho Batch I (KSS-III)",
+   "category": "sottomarino",
+   "navies": [
+    "Corea del Sud"
+   ],
+   "length_m": 83.5,
+   "beam_m": 9.6,
+   "deck_width_m": null,
+   "wiki": "Dosan_Ahn_Changho-class_submarine",
+   "revision": 1373251166,
+   "note": ""
+  },
+  {
+   "name": "Dosan Ahn Changho Batch II (KSS-III)",
+   "category": "sottomarino",
+   "navies": [
+    "Corea del Sud"
+   ],
+   "length_m": 89.3,
+   "beam_m": 9.6,
+   "deck_width_m": null,
+   "wiki": "Dosan_Ahn_Changho-class_submarine",
+   "revision": 1373251166,
+   "note": "Batch II; beam shared with Batch I in infobox."
+  },
+  {
+   "name": "Kilo / Improved Kilo (Project 877/636)",
+   "category": "sottomarino",
+   "navies": [
+    "Russia"
+   ],
+   "length_m": 73.8,
+   "beam_m": 9.9,
+   "deck_width_m": null,
+   "wiki": "Kilo-class_submarine",
+   "revision": 1380253230,
+   "note": "Project 636.3 length used; infobox gives 72.6 m for Project 877 (difference <3%)."
+  },
+  {
+   "name": "Lada (Project 677)",
+   "category": "sottomarino",
+   "navies": [
+    "Russia"
+   ],
+   "length_m": 72.0,
+   "beam_m": 7.1,
+   "deck_width_m": null,
+   "wiki": "Lada-class_submarine",
+   "revision": 1378626084,
+   "note": ""
+  },
+  {
+   "name": "Los Angeles",
+   "category": "sottomarino",
+   "navies": [
+    "USA"
+   ],
+   "length_m": 110.3,
+   "beam_m": 10.1,
+   "deck_width_m": null,
+   "wiki": "Los_Angeles-class_submarine",
+   "revision": 1378580369,
+   "note": "convertito da piedi; SSN"
+  },
+  {
+   "name": "Ohio",
+   "category": "sottomarino",
+   "navies": [
+    "USA"
+   ],
+   "length_m": 170.7,
+   "beam_m": 12.8,
+   "deck_width_m": null,
+   "wiki": "Ohio-class_submarine",
+   "revision": 1379190978,
+   "note": "convertito da piedi; stesso scafo per SSBN e SSGN"
+  },
+  {
+   "name": "Oscar II (Project 949A)",
+   "category": "sottomarino",
+   "navies": [
+    "Russia"
+   ],
+   "length_m": 155.0,
+   "beam_m": 18.2,
+   "deck_width_m": null,
+   "wiki": "Oscar-class_submarine",
+   "revision": 1374942082,
+   "note": ""
+  },
+  {
+   "name": "Reis (Type 214TN)",
+   "category": "sottomarino",
+   "navies": [
+    "Turchia"
+   ],
+   "length_m": 68.35,
+   "beam_m": 6.3,
+   "deck_width_m": null,
+   "wiki": "Reis-class_submarine",
+   "revision": 1372319445,
+   "note": ""
+  },
+  {
+   "name": "Rubis",
+   "category": "sottomarino",
+   "navies": [
+    "Francia"
+   ],
+   "length_m": 73.6,
+   "beam_m": 7.6,
+   "deck_width_m": null,
+   "wiki": "Rubis-class_submarine",
+   "revision": 1373715365,
+   "note": "Being replaced by Suffren class."
+  },
+  {
+   "name": "S-80 (Isaac Peral)",
+   "category": "sottomarino",
+   "navies": [
+    "Spagna"
+   ],
+   "length_m": 81.05,
+   "beam_m": 11.68,
+   "deck_width_m": null,
+   "wiki": "S-80_Plus-class_submarine",
+   "revision": 1379072899,
+   "note": "DOUBT: infobox beam 11.68 m is implausible for the hull (draught field is 7.3 m); recorded as published."
+  },
+  {
+   "name": "Sauro (Pelosi/Longobardo)",
+   "category": "sottomarino",
+   "navies": [
+    "Italia"
+   ],
+   "length_m": 64.36,
+   "beam_m": 6.83,
+   "deck_width_m": null,
+   "wiki": "Sauro-class_submarine",
+   "revision": 1351191836,
+   "note": "Batch III 64.36 m (Pelosi); batch IV 66.00 m (Longobardo, +2.5%); batches I-II 63.85 m retired."
+  },
+  {
+   "name": "Seawolf",
+   "category": "sottomarino",
+   "navies": [
+    "USA"
+   ],
+   "length_m": 107.6,
+   "beam_m": 12.2,
+   "deck_width_m": null,
+   "wiki": "Seawolf-class_submarine",
+   "revision": 1374245322,
+   "note": "convertito da piedi; SSN-21/22"
+  },
+  {
+   "name": "Seawolf (Jimmy Carter)",
+   "category": "sottomarino",
+   "navies": [
+    "USA"
+   ],
+   "length_m": 138.0,
+   "beam_m": 12.2,
+   "deck_width_m": null,
+   "wiki": "Seawolf-class_submarine",
+   "revision": 1374245322,
+   "note": "convertito da piedi; USS Jimmy Carter (SSN-23) allungato, valore separato nell'infobox"
+  },
+  {
+   "name": "Suffren (Barracuda)",
+   "category": "sottomarino",
+   "navies": [
+    "Francia"
+   ],
+   "length_m": 99.5,
+   "beam_m": 8.8,
+   "deck_width_m": null,
+   "wiki": "Suffren-class_submarine",
+   "revision": 1377043276,
+   "note": ""
+  },
+  {
+   "name": "Sōryū",
+   "category": "sottomarino",
+   "navies": [
+    "Giappone"
+   ],
+   "length_m": 84.0,
+   "beam_m": 9.1,
+   "deck_width_m": null,
+   "wiki": "Sōryū-class_submarine",
+   "revision": 1372428153,
+   "note": ""
+  },
+  {
+   "name": "Taigei",
+   "category": "sottomarino",
+   "navies": [
+    "Giappone"
+   ],
+   "length_m": 84.0,
+   "beam_m": 9.1,
+   "deck_width_m": null,
+   "wiki": "Taigei-class_submarine",
+   "revision": 1379190655,
+   "note": ""
+  },
+  {
+   "name": "Trafalgar",
+   "category": "sottomarino",
+   "navies": [
+    "Regno Unito"
+   ],
+   "length_m": 85.4,
+   "beam_m": 9.8,
+   "deck_width_m": null,
+   "wiki": "Trafalgar-class_submarine",
+   "revision": 1378462285,
+   "note": "SSN, ritirati di recente (scafi in disarmo visibili a Devonport/Rosyth)"
+  },
+  {
+   "name": "Triomphant",
+   "category": "sottomarino",
+   "navies": [
+    "Francia"
+   ],
+   "length_m": 138.0,
+   "beam_m": 12.5,
+   "deck_width_m": null,
+   "wiki": "Triomphant-class_submarine",
+   "revision": 1375359500,
+   "note": "SSBN."
+  },
+  {
+   "name": "Type 039A/B/C (Yuan)",
+   "category": "sottomarino",
+   "navies": [
+    "Cina"
+   ],
+   "length_m": 77.6,
+   "beam_m": 8.4,
+   "deck_width_m": null,
+   "wiki": "Type_039A/B/C_submarine",
+   "revision": 1366887586,
+   "note": ""
+  },
+  {
+   "name": "Type 093 (Shang)",
+   "category": "sottomarino",
+   "navies": [
+    "Cina"
+   ],
+   "length_m": 108.5,
+   "beam_m": 11.0,
+   "deck_width_m": null,
+   "wiki": "Type_093_submarine",
+   "revision": 1364899223,
+   "note": "Type 093/093A value; infobox gives 110 m for Type 093B (<3% difference)."
+  },
+  {
+   "name": "Type 094 (Jin)",
+   "category": "sottomarino",
+   "navies": [
+    "Cina"
+   ],
+   "length_m": 137.0,
+   "beam_m": 13.0,
+   "deck_width_m": null,
+   "wiki": "Type_094_submarine",
+   "revision": 1367543119,
+   "note": ""
+  },
+  {
+   "name": "Type 095 (Sui)",
+   "category": "sottomarino",
+   "navies": [
+    "Cina"
+   ],
+   "length_m": 110.0,
+   "beam_m": 13.0,
+   "deck_width_m": null,
+   "wiki": "Type_095_submarine",
+   "revision": 1376364878,
+   "note": "Uncited infobox values; beam given as '12 to 13 meters', upper bound used. Class status/NATO name uncertain."
+  },
+  {
+   "name": "Type 209/1200 (Poseidon/Atılay)",
+   "category": "sottomarino",
+   "navies": [
+    "Grecia",
+    "Turchia"
+   ],
+   "length_m": 55.9,
+   "beam_m": null,
+   "deck_width_m": null,
+   "wiki": "Type_209_submarine",
+   "revision": 1367657975,
+   "note": "Infobox beam field empty. Infobox lists only 209/1500 (64.4 m) and 209/1200; Turkish Preveze/Gür (209/1400) not covered by the infobox."
+  },
+  {
+   "name": "Type 212A (Todaro)",
+   "category": "sottomarino",
+   "navies": [
+    "Italia",
+    "Germania"
+   ],
+   "length_m": 56.0,
+   "beam_m": 6.8,
+   "deck_width_m": null,
+   "wiki": "Type_212A_submarine",
+   "revision": 1378792827,
+   "note": "First batch 56 m; 2nd batch 57.20 m (within 3%, one row)."
+  },
+  {
+   "name": "Type 214 (Papanikolis)",
+   "category": "sottomarino",
+   "navies": [
+    "Grecia",
+    "Portogallo"
+   ],
+   "length_m": 65.0,
+   "beam_m": 6.3,
+   "deck_width_m": null,
+   "wiki": "Type_214_submarine",
+   "revision": 1371559096,
+   "note": "Generic Type 214 infobox; Turkish Reis variant separate row."
+  },
+  {
+   "name": "Ula",
+   "category": "sottomarino",
+   "navies": [
+    "Norvegia"
+   ],
+   "length_m": 59.0,
+   "beam_m": 5.4,
+   "deck_width_m": null,
+   "wiki": "Ula-class_submarine",
+   "revision": 1370923015,
+   "note": ""
+  },
+  {
+   "name": "Vanguard",
+   "category": "sottomarino",
+   "navies": [
+    "Regno Unito"
+   ],
+   "length_m": 149.9,
+   "beam_m": 12.8,
+   "deck_width_m": null,
+   "wiki": "Vanguard-class_submarine",
+   "revision": 1379710855,
+   "note": "SSBN"
+  },
+  {
+   "name": "Victoria",
+   "category": "sottomarino",
+   "navies": [
+    "Canada"
+   ],
+   "length_m": 70.26,
+   "beam_m": 7.2,
+   "deck_width_m": null,
+   "wiki": "Upholder/Victoria-class_submarine",
+   "revision": 1373691429,
+   "note": "articolo 'Upholder/Victoria-class submarine' (redirect)"
+  },
+  {
+   "name": "Virginia (Block I-IV)",
+   "category": "sottomarino",
+   "navies": [
+    "USA"
+   ],
+   "length_m": 114.9,
+   "beam_m": 10.4,
+   "deck_width_m": null,
+   "wiki": "Virginia-class_submarine",
+   "revision": 1377562747,
+   "note": "convertito da piedi; SSN"
+  },
+  {
+   "name": "Virginia (Block V)",
+   "category": "sottomarino",
+   "navies": [
+    "USA"
+   ],
+   "length_m": 140.2,
+   "beam_m": 10.4,
+   "deck_width_m": null,
+   "wiki": "Virginia-class_submarine",
+   "revision": 1377562747,
+   "note": "convertito da piedi; infobox: 460 ft 'for Block V' (con Virginia Payload Module); le prime unita' Block V potrebbero non essere ancora in servizio"
+  },
+  {
+   "name": "Walrus",
+   "category": "sottomarino",
+   "navies": [
+    "Paesi Bassi"
+   ],
+   "length_m": 67.72,
+   "beam_m": 8.4,
+   "deck_width_m": null,
+   "wiki": "Walrus-class_submarine",
+   "revision": 1380038411,
+   "note": ""
+  },
+  {
+   "name": "Yasen (Project 885)",
+   "category": "sottomarino",
+   "navies": [
+    "Russia"
+   ],
+   "length_m": 139.2,
+   "beam_m": 13.0,
+   "deck_width_m": null,
+   "wiki": "Yasen-class_submarine",
+   "revision": 1377190112,
+   "note": "Lead boat Severodvinsk."
+  },
+  {
+   "name": "Yasen-M (Project 885M)",
+   "category": "sottomarino",
+   "navies": [
+    "Russia"
+   ],
+   "length_m": 130.0,
+   "beam_m": 13.0,
+   "deck_width_m": null,
+   "wiki": "Yasen-class_submarine",
+   "revision": 1377190112,
+   "note": "Infobox gives 130 m for Yasen-M; beam single value 13 m for both."
+  }
+ ]
+}

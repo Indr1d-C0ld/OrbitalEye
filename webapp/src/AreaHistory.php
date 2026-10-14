@@ -27,6 +27,7 @@ final class AreaHistory
             }
         }
 
+        $zones = StudyZone::forStudy($studyId);
         $rows = [];
         foreach (Capture::forStudy($studyId) as $c) {
             $id = (int) $c['id'];
@@ -47,6 +48,8 @@ final class AreaHistory
                 'confidence' => $det ? (float) $det['confidence'] : null,
                 'counts' => $det ? array_map(fn($k) => (int) ($det['counts'][$k] ?? 0), array_combine(array_keys(Detection::HISTORY_CLASSES), array_keys(Detection::HISTORY_CLASSES))) : null,
                 'types' => $types,
+                // Per zona di conteggio (StudyZone): conteggi e copertura.
+                'zones' => $det && $zones ? StudyZone::count($zones, $c, $det) : null,
             ];
         }
         usort($rows, fn($a, $b) => [$a['date'] ?? '9999', $a['capture_id']] <=> [$b['date'] ?? '9999', $b['capture_id']]);
@@ -54,15 +57,24 @@ final class AreaHistory
     }
 
     /** CSV (separatore ";" e virgola decimale, per i fogli di calcolo italiani). */
-    public static function csv(array $rows): string
+    public static function csv(array $rows, array $zones = []): string
     {
         $out = fopen('php://temp', 'r+');
         fwrite($out, "\xEF\xBB\xBF"); // BOM: Excel riconosce l'UTF-8
-        fputcsv($out, array_merge(['data_immagine', 'ripresa', 'fonte', 'm_per_pixel', 'rilevamento_del', 'confidenza_min'],
-            array_values(Detection::HISTORY_CLASSES), ['tipi_identificati']), ';', '"', '');
         // Celle che un foglio di calcolo interpreterebbe come formula
         // (etichette scritte dall'utente che iniziano con = + - @).
         $cell = fn($v) => is_string($v) && $v !== '' && strpbrk($v[0], "=+-@\t\r") !== false ? "'" . $v : $v;
+        // Per ogni zona: le stesse classi e la copertura della ripresa.
+        $zoneHeads = [];
+        foreach ($zones as $z) {
+            foreach (Detection::HISTORY_CLASSES as $label) {
+                $zoneHeads[] = $z['name'] . ': ' . $label;
+            }
+            $zoneHeads[] = $z['name'] . ': copertura';
+        }
+        $coverage = ['full' => 'intera', 'partial' => 'parziale', 'none' => 'fuori'];
+        fputcsv($out, array_merge(['data_immagine', 'ripresa', 'fonte', 'm_per_pixel', 'rilevamento_del', 'confidenza_min'],
+            array_values(Detection::HISTORY_CLASSES), ['tipi_identificati'], array_map($cell, $zoneHeads)), ';', '"', '');
         foreach ($rows as $r) {
             $types = implode(', ', array_map(fn($t, $n) => $n > 1 ? "$t ×$n" : $t, array_keys($r['types']), $r['types']));
             fputcsv($out, array_merge(
@@ -71,10 +83,24 @@ final class AreaHistory
                     // SQLite registra in UTC: nel file l'ora locale, come nell'interfaccia.
                     $r['detected_at'] ? date('Y-m-d H:i', strtotime($r['detected_at'] . ' UTC')) : '', $r['confidence'] !== null ? str_replace('.', ',', (string) $r['confidence']) : ''],
                 $r['counts'] !== null ? array_values($r['counts']) : array_fill(0, count(Detection::HISTORY_CLASSES), ''),
-                [$cell($types)]
+                [$cell($types)],
+                self::zoneCells($r['zones'] ?? null, $zones, $coverage)
             ), ';', '"', '');
         }
         rewind($out);
         return stream_get_contents($out);
+    }
+
+    private static function zoneCells(?array $byZone, array $zones, array $coverage): array
+    {
+        $cells = [];
+        foreach ($zones as $z) {
+            $zc = $byZone[$z['id']] ?? null;
+            foreach (array_keys(Detection::HISTORY_CLASSES) as $k) {
+                $cells[] = isset($zc['counts'][$k]) ? $zc['counts'][$k] : '';
+            }
+            $cells[] = $zc ? $coverage[$zc['coverage']] : '';
+        }
+        return $cells;
     }
 }

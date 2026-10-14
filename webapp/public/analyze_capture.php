@@ -557,6 +557,9 @@ window.ORBITALEYE_ANALYZE = {
   captureDatetime: <?= json_encode($captureMeta['s2_pass']['datetime'] ?? $captureMeta['s1_pass']['datetime'] ?? null) ?>,
   // Bbox geografica grezza (per centro area -> lat/lon nella stima ombra).
   geoBbox: <?= $geoBbox ? json_encode(array_map('floatval', $geoBbox)) : 'null' ?>,
+  // Georeferenza propria della ripresa (non il riquadro dello studio usato
+  // come ripiego): serve alle zone di conteggio.
+  hasGeoRef: <?= Capture::resolveGeoRef($capture) ? 'true' : 'false' ?>,
   // Angolo (gradi) applicato in fase di scaricamento se l'area era stata
   // ruotata (vedi ImageRotateCrop.php): gli assi pixel di questa immagine
   // non sono allineati a lon/lat come al solito, serve per calcolare

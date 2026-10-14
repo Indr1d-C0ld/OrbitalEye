@@ -424,14 +424,62 @@
     const tableEl = $('#area-history-table'), chartEl = $('#area-history-chart');
     const status = $('#area-history-status'), detectAllBtn = $('#area-history-detect-all');
     const studyId = window.ORBITALEYE.studyId;
-    let rows = [], classes = {};
+    let rows = [], classes = {}, zones = [], zoneId = '', series = 'velivoli';
+    // Serie del grafico: gruppo di classi con colore.
+    const SERIES = {
+      velivoli: [['plane', 'aerei', '#ff4fd8'], ['helicopter', 'elicotteri', '#ffb020']],
+      navi: [['ship', 'navi', '#4fc3ff']],
+      veicoli: [['large vehicle', 'veicoli grandi', '#9be15d'], ['small vehicle', 'veicoli piccoli', '#c8c8c8']],
+    };
+    // Zone di conteggio (StudyZone): selettore sopra la tabella; con una
+    // zona scelta tabella e grafico contano solo gli oggetti al suo interno.
+    const zoneBar = document.createElement('div');
+    zoneBar.className = 'tag-row';
+    zoneBar.style.margin = '6px 0';
+    tableEl.parentNode.insertBefore(zoneBar, tableEl);
+
+    // Conteggi della ripresa per la vista attuale (area intera o zona), con
+    // la copertura della zona ('full', 'partial', 'none').
+    function countsOf(r) {
+      if (!zoneId) return { counts: r.counts, coverage: 'full' };
+      const z = r.zones && r.zones[zoneId];
+      if (!r.counts) return { counts: null, coverage: 'full' };
+      if (!z) return { counts: null, coverage: 'nogeo' };
+      return { counts: z.counts, coverage: z.coverage };
+    }
+
+    function renderZoneBar() {
+      const seriesSel = `<label class="hint" for="area-history-series">Grafico:</label>
+        <select id="area-history-series">${Object.keys(SERIES).map((k) => `<option value="${k}"${k === series ? ' selected' : ''}>${k}</option>`).join('')}</select>`;
+      if (!zones.length) {
+        zoneBar.innerHTML = seriesSel + ' <span class="hint">Per contare gli oggetti in una parte dell\'area (un piazzale, una banchina, un deposito), disegna un rettangolo o un poligono su una ripresa e usa ▦ nell\'elenco delle annotazioni.</span>';
+        zoneBar.querySelector('#area-history-series').addEventListener('change', (e) => { series = e.target.value; renderChart(); });
+        return;
+      }
+      zoneBar.innerHTML = seriesSel + ` <label class="hint" for="area-history-zone">Conteggi per:</label>
+        <select id="area-history-zone"><option value="">tutta l'area di ogni ripresa</option>${zones.map((z) => `<option value="${z.id}"${String(z.id) === zoneId ? ' selected' : ''}>zona: ${esc(z.name)}</option>`).join('')}</select>
+        ${zoneId ? '<button type="button" class="btn btn-sm btn-danger" id="area-history-zone-del" title="Elimina questa zona di conteggio">✕ zona</button>' : ''}`;
+      zoneBar.querySelector('#area-history-zone').addEventListener('change', (e) => { zoneId = e.target.value; renderZoneBar(); renderTable(); renderChart(); });
+      zoneBar.querySelector('#area-history-series').addEventListener('change', (e) => { series = e.target.value; renderChart(); });
+      const del = zoneBar.querySelector('#area-history-zone-del');
+      if (del) {
+        del.addEventListener('click', async () => {
+          const z = zones.find((x) => String(x.id) === zoneId);
+          if (!z || !window.confirm('Eliminare la zona di conteggio "' + z.name + '"? Le annotazioni restano.')) return;
+          const res = await fetch('api/zones.php', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: z.id }) });
+          if (!res.ok) { status.textContent = 'Zona non eliminata.'; return; }
+          zoneId = '';
+          await load();
+        });
+      }
+    }
 
     function typesText(types) {
       return Object.entries(types || {}).map(([t, n]) => (n > 1 ? `${t} ×${n}` : t)).join(', ');
     }
 
     function renderChart() {
-      const pts = rows.filter((r) => r.counts && r.date);
+      const pts = rows.map((r) => ({ ...r, counts: countsOf(r).counts, partial: countsOf(r).coverage === 'partial' })).filter((r) => r.counts && r.date);
       if (pts.length < 1) {
         chartEl.innerHTML = '<div class="hint">Il grafico compare quando almeno una ripresa con data nota ha un rilevamento automatico.</div>';
         return;
@@ -441,9 +489,10 @@
       const t0 = Math.min(...pts.map((p) => t(p.date))), t1 = Math.max(...pts.map((p) => t(p.date)));
       const span = Math.max(t1 - t0, 30 * 86400000);
       const x = (d) => L + (pts.length === 1 ? (W - L - R) / 2 : ((t(d) - t0) / span) * (W - L - R));
-      const maxV = Math.max(1, ...pts.map((p) => (p.counts.plane || 0) + (p.counts.helicopter || 0)));
+      const ser = SERIES[series];
+      const maxV = Math.max(1, ...pts.map((p) => Math.max(...ser.map(([k]) => p.counts[k] || 0))));
       const y = (v) => H - B - (v / maxV) * (H - T - B);
-      let svg = `<svg viewBox="0 0 ${W} ${H}" style="width:100%; max-width:${W}px; height:auto;" role="img" aria-label="Velivoli rilevati nel tempo">`;
+      let svg = `<svg viewBox="0 0 ${W} ${H}" style="width:100%; max-width:${W}px; height:auto;" role="img" aria-label="${esc(series)} rilevati nel tempo">`;
       svg += `<line x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}" stroke="var(--line-bright)"/>`;
       [0, Math.ceil(maxV / 2), maxV].forEach((v) => {
         svg += `<text x="${L - 6}" y="${y(v) + 3}" fill="var(--text-muted)" font-size="10" text-anchor="end">${v}</text>`
@@ -451,9 +500,11 @@
       });
       const years = new Set();
       pts.forEach((p) => {
-        const px = x(p.date), planes = p.counts.plane || 0, helis = p.counts.helicopter || 0;
-        svg += `<rect x="${px - 5}" y="${y(planes)}" width="5" height="${y(0) - y(planes)}" fill="#ff4fd8"><title>${esc(p.date)}: ${planes} aerei</title></rect>`;
-        svg += `<rect x="${px}" y="${y(helis)}" width="5" height="${y(0) - y(helis)}" fill="#ffb020"><title>${esc(p.date)}: ${helis} elicotteri</title></rect>`;
+        const px = x(p.date), bw = 10 / ser.length;
+        ser.forEach(([k, label, color], j) => {
+          const v = p.counts[k] || 0;
+          svg += `<rect x="${px - 5 + j * bw}" y="${y(v)}" width="${bw}" height="${y(0) - y(v)}" fill="${color}"${p.partial ? ' fill-opacity="0.45"' : ''}><title>${esc(p.date)}: ${v} ${label}${p.partial ? ' (zona coperta solo in parte)' : ''}</title></rect>`;
+        });
         years.add(p.date.slice(0, 4));
       });
       [...years].forEach((yr) => {
@@ -461,7 +512,8 @@
         const px = pts.length === 1 ? x(pts[0].date) : L + ((d - t0) / span) * (W - L - R);
         svg += `<text x="${px}" y="${H - 10}" fill="var(--text-muted)" font-size="10" text-anchor="middle">${yr}</text>`;
       });
-      svg += '</svg><div class="hint"><span style="color:#ff4fd8;">■</span> aerei &nbsp; <span style="color:#ffb020;">■</span> elicotteri — per data reale dell\'immagine</div>';
+      svg += '</svg><div class="hint">' + ser.map(([, label, color]) => `<span style="color:${color};">■</span> ${label}`).join(' &nbsp; ')
+        + ' — per data reale dell\'immagine' + (zoneId ? ', nella zona scelta (barre chiare: ripresa che copre la zona solo in parte)' : '') + '</div>';
       chartEl.innerHTML = svg;
     }
 
@@ -471,8 +523,11 @@
       tableEl.innerHTML = '<div class="table-responsive"><table><thead><tr><th>Immagine del</th><th>Ripresa</th>'
         + cls.map((k) => `<th>${esc(classes[k])}</th>`).join('') + '<th>Tipi identificati</th><th></th></tr></thead><tbody>'
         + rows.map((r) => {
-          const cells = r.counts ? cls.map((k) => `<td>${r.counts[k]}</td>`).join('')
-            : `<td colspan="${cls.length}" class="hint">${r.detectable ? 'non ancora rilevato' : 'risoluzione insufficiente (' + String(r.mpp).replace('.', ',') + ' m/pixel)'}</td>`;
+          const view = countsOf(r);
+          const partial = view.coverage === 'partial' ? ' <span class="hint" title="La ripresa copre solo una parte della zona: conteggio parziale">*</span>' : '';
+          const cells = view.counts ? cls.map((k) => `<td>${view.counts[k]}${partial}</td>`).join('')
+            : `<td colspan="${cls.length}" class="hint">${!r.counts ? (r.detectable ? 'non ancora rilevato' : 'risoluzione insufficiente (' + String(r.mpp).replace('.', ',') + ' m/pixel)')
+              : (view.coverage === 'none' ? 'la ripresa non copre la zona' : 'ripresa senza coordinate: zona non applicabile')}</td>`;
           const action = r.detectable
             ? `<button type="button" class="btn btn-sm hist-detect-btn" data-id="${r.capture_id}" title="${r.counts ? 'Ripeti il rilevamento' : 'Esegui il rilevamento automatico'}">${r.counts ? '↻' : '🎯'}</button>`
             : '';
@@ -508,6 +563,9 @@
         if (!res.ok) throw new Error(data.error || 'Errore');
         rows = data.rows || [];
         classes = data.classes || {};
+        zones = data.zones || [];
+        if (zoneId && !zones.some((z) => String(z.id) === zoneId)) zoneId = '';
+        renderZoneBar();
         renderTable();
         renderChart();
       } catch (e) {

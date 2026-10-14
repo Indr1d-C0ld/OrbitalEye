@@ -964,8 +964,11 @@
       ctx.setLineDash([]);
       // Sagoma misurata (silhouette.py): il contorno da cui vengono apertura
       // e lunghezza, per giudicare a vista se la misura è credibile.
-      if (d.silhouette && d.silhouette.quality === 'ok' && d.silhouette.outline && d.silhouette.outline.length > 2) {
-        const so = d.silhouette.outline.map(([fx, fy]) => [fx * targetW, fy * targetH]);
+      // Per le navi lo scafo misurato (hull.py).
+      const measured = d.silhouette && d.silhouette.quality === 'ok' ? d.silhouette
+        : (d.hull && ['ok', 'media'].includes(d.hull.quality) ? d.hull : null);
+      if (measured && measured.outline && measured.outline.length > 2) {
+        const so = measured.outline.map(([fx, fy]) => [fx * targetW, fy * targetH]);
         ctx.lineWidth = (sel ? 2 : 1) * k;
         ctx.beginPath();
         ctx.moveTo(so[0][0], so[0][1]);
@@ -1260,11 +1263,39 @@
         miss.addEventListener('click', () => window.markMissedObject(a, div));
         right.appendChild(miss);
       }
+      // Zona di conteggio (StudyZone): lo storico dell'area conterà gli
+      // oggetti rilevati dentro questa area in ogni ripresa dello studio.
+      if ((a.shape_type === 'rect' || a.shape_type === 'polygon' || !a.shape_type) && a.id && CFG.hasGeoRef && CFG.captureId) {
+        const zone = document.createElement('button');
+        zone.type = 'button';
+        zone.className = 'btn btn-sm';
+        zone.textContent = '▦';
+        zone.title = 'Usa come zona di conteggio: lo storico dell\'area conterà aerei, navi e veicoli rilevati qui dentro in ogni ripresa dello studio';
+        zone.addEventListener('click', () => createZone(a));
+        right.appendChild(zone);
+      }
       right.appendChild(del);
       div.appendChild(left);
       div.appendChild(right);
       container.appendChild(div);
     });
+  }
+
+  async function createZone(a) {
+    const name = window.prompt('Nome della zona di conteggio (es. "Piazzale nord", "Banchina 5"):', a.label || '');
+    if (name === null) return;
+    try {
+      const res = await fetch('api/zones.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ annotation_id: a.id, name: name.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'errore ' + res.status);
+      window.alert('Zona "' + data.zone.name + '" creata: i conteggi sono nello storico dell\'area, nella pagina dello studio.');
+    } catch (e) {
+      window.alert('Zona non creata: ' + e.message);
+    }
   }
 
   function toCanvasCoords(e) {
@@ -1890,9 +1921,15 @@
           const silOk = sil && sil.quality === 'ok';
           // Dalla sagoma: apertura × lunghezza vere; altrimenti i lati del
           // riquadro, che includono margine e ombra.
-          const measures = silOk
+          const hull = d.hull;
+          const hullOk = hull && ['ok', 'media'].includes(hull.quality) && hull.length_m;
+          const vs = d.vehicle_size;
+          const measures = (silOk
             ? `${fmtM(sil.span_m)} × ${fmtM(sil.length_m)} <span class="hint" title="Apertura × lunghezza misurate sulla sagoma (contorno sulla ripresa), con l'ombra tolta">sagoma</span>`
-            : (d.size_m ? `${fmtM(d.size_m[0])} × ${fmtM(d.size_m[1])} <span class="hint" title="Lati del riquadro del rilevamento: includono margine e ombra, e non dicono quale sia l'apertura${sil && sil.reason ? '. Sagoma non usata: ' + escHtml(sil.reason) : ''}">riquadro</span>` : '—');
+            : hullOk
+              ? `${fmtM(hull.length_m)} × ${hull.quality === 'ok' ? fmtM(hull.beam_m) : '≈' + fmtM(hull.beam_m)} <span class="hint" title="Lunghezza × larghezza dello scafo, separato dall'acqua${hull.quality === 'media' ? '. Larghezza indicativa: ' + escHtml(hull.reason || '') + '; le classi si cercano per lunghezza' : ''}">scafo</span>`
+              : (d.size_m ? `${fmtM(d.size_m[0])} × ${fmtM(d.size_m[1])} <span class="hint" title="Lati del riquadro del rilevamento: includono margine e ombra${d.class === 'plane' ? ", e non dicono quale sia l'apertura" : ''}${sil && sil.reason ? '. Sagoma non usata: ' + escHtml(sil.reason) : ''}${hull && hull.reason ? '. Scafo non misurato: ' + escHtml(hull.reason) : ''}">riquadro</span>` : '—'))
+            + (vs ? `<div class="hint" title="Classe di lunghezza dal riquadro (circa ${fmtM(vs.length_m)} m): a questa risoluzione il tipo esatto di un veicolo non si riconosce">${escHtml(vs.key)}: ${escHtml(vs.label)}</div>` : '');
           const j = matched[i];
           const r = j !== undefined ? reviews[j] : null;
           const reviewCell = r
@@ -1916,7 +1953,8 @@
           const topVisual = visual.length && visual[0].clear ? visual[0].type : null;
           const cHtml = (cands.length
             ? cands.map((c) => `<button type="button" class="btn btn-sm det-cand-btn${chosen[d.n] === c.name ? ' btn-primary' : ''}" data-n="${d.n}" data-name="${escHtml(c.name)}" title="${escHtml(((c.maker || '') + ' ' + c.name).trim())} — compatibilità ${Math.round(c.compatibility * 100)}%${c.note ? ' (' + escHtml(c.note) + ')' : ''}${c.name === topVisual ? '. È anche il più simile nella libreria visiva' : ''}. Clic per usarlo come etichetta.">${c.name === topVisual ? '★ ' : ''}${escHtml(c.name)} ${Math.round(c.compatibility * 100)}%</button>`).join(' ')
-            : (['plane', 'helicopter'].includes(d.class) && d.size_m ? '<span class="hint">nessuno in tabella</span>' : ''))
+            : (['plane', 'helicopter'].includes(d.class) && d.size_m ? '<span class="hint">nessuno in tabella</span>'
+              : (d.class === 'ship' && d.id_from ? '<span class="hint">nessuna classe in tabella</span>' : '')))
             + (visual.length
               ? `<div class="hint" style="margin-top:4px;" title="Libreria visiva: i velivoli che hai già identificato più simili a questo, per aspetto e non per misure. Propone solo tipi già identificati almeno una volta: un tipo mai identificato non può comparire. Le percentuali sono tutte alte anche fra tipi diversi: conta il distacco fra il primo e il secondo; sotto i 5 punti il suggerimento è incerto.">👁 simile a, fra i tipi già identificati${visual.length && !visual[0].clear ? ' (incerto)' : ''}: ${visual.map((v) => `<button type="button" class="btn btn-sm det-cand-btn${chosen[d.n] === v.type ? ' btn-primary' : ''}" data-n="${d.n}" data-name="${escHtml(v.type)}" title="Velivolo identificato più simile di questo tipo: ${escHtml(v.label)} (${escHtml(v.study)}${v.date ? ', ' + escHtml(v.date.split('-').reverse().join('/')) : ''}). Somiglianza dell'immagine, non delle misure. Clic per usarlo come etichetta.">${escHtml(v.type)} ${Math.round(v.similarity * 100)}%</button>`).join(' ')}</div>`
               : '')

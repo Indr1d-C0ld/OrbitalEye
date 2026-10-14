@@ -4,6 +4,144 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-10-14 (3) — Navi e veicoli senza ML: misura dello scafo, classi navali, categorie dei veicoli, zone di conteggio
+
+Fase 2 del piano per navi e veicoli. Nessun dataset scaricato: la tabella
+delle classi navali viene dalle schede di Wikipedia, lette pagina per
+pagina.
+
+### Misura dello scafo (python-service/app/core/hull.py, nuovo)
+
+- **Come si misura**:
+  - lunghezza e larghezza di ogni nave di almeno 20 m, separando lo scafo
+    dall'acqua in un ritaglio lungo l'asse del riquadro;
+  - il colore dell'acqua viene dalla fascia esterna;
+  - lo scafo sono i pixel lontani da quel colore e non più scuri: l'ombra
+    sull'acqua resta fuori.
+- **Lunghezza**:
+  - si misura nella sola fascia centrale lungo l'asse, dove una banchina o
+    una nave affiancata non arrivano;
+  - si estende alle estremità affusolate in una fascia stretta attorno
+    all'asse dello scafo (non del riquadro), al più del 12% per estremità.
+- **Larghezza**:
+  - è il 75° percentile delle sezioni nel 60% centrale;
+  - se lo scafo tocca una banchina o un'altra nave, viene dalle sole
+    sezioni libere oppure resta ignota (qualità "media").
+- **Scafi scuri**: uno scafo più scuro dell'acqua (sottomarini) si cerca fra
+  i pixel scuri vicino all'asse, con qualità "media".
+- **Controlli** (con la qualità "bassa" nei primi tre casi):
+  - nave tagliata o in fila con altre;
+  - lunghezza incoerente con il riquadro;
+  - larghezza implausibile;
+  - banchina o scafo scuro: "media".
+- **Prova su riprese Esri** di Norfolk, Portsmouth, La Spezia e Taranto
+  (0,3–0,5 m/pixel):
+  - portaerei classe Ford: 344 m (reale 337), ponte di volo circa 88 m;
+  - due Type 45: 150,5 m e 162 m (reale 152,4);
+  - le navi affiancate o fuse sono scartate o restano senza larghezza.
+- **[routers/analysis.py](python-service/app/routers/analysis.py)**: la
+  misura avviene dopo il rilevamento, con al massimo un quarto del tempo
+  rimasto (e comunque non più di 30 s). Un errore su una nave non toglie
+  le misure delle altre.
+
+### Classi navali (webapp/src/ShipCatalog.php, ship_types.json, nuovi)
+
+- **Tabella di 202 classi** di 20 marine (USA, Regno Unito, Canada,
+  Australia, marine europee, Russia, Cina, Giappone, Corea del Sud, India,
+  Iran):
+  - lunghezza fuori tutto, larghezza massima e, dove la voce la riporta,
+    larghezza del ponte di volo;
+  - i valori vengono dalle schede (infobox) della Wikipedia in inglese,
+    lette con l'API, con voce e revisione citate per ogni riga;
+  - la tabella è un adattamento CC BY-SA 4.0, con l'avviso nel file e nel
+    README;
+  - verificati a campione: Vanguard, Independence, Type 039A.
+- **Confronto** come per i velivoli:
+  - la lunghezza è la misura forte (5%), la larghezza pesa meno (15%);
+  - con la larghezza indicativa (scafo "media") la tolleranza sale al 35%:
+    separa un sottomarino da una fregata, non due fregate;
+  - dall'alto si confronta il ponte di volo, se più largo dello scafo;
+  - la lunghezza ha un limite suo, così una larghezza perfetta non salva
+    una lunghezza molto diversa;
+  - senza misura dello scafo si usano i lati del riquadro, con tolleranza
+    larga.
+- **Risultati**:
+  - la portaerei di Norfolk ha come prima classe "Gerald R. Ford";
+  - a circa 155 m molte classi pareggiano (Arleigh Burke, Type 45,
+    Horizon, Type 052D...): le misure riducono i candidati a un gruppo,
+    l'identificazione resta dell'analista.
+- **[DetectionRunner.php](webapp/src/DetectionRunner.php)** — per le navi:
+  - salva lo scafo e le classi compatibili ("scafo" o "riquadro");
+  - nessuna classe per le barche sotto i 20 m.
+- **[DetectionReview.php](webapp/src/DetectionReview.php)**:
+  - le navi si confermano con una classe della tabella;
+  - messaggio chiaro per le classi senza tipi.
+- **[DetectionQuality.php](webapp/src/DetectionQuality.php)**,
+  **[quality.php](webapp/public/quality.php)** — riga "Scafo (navi)":
+  posizione della classe confermata fra le compatibili.
+- **[analyze.js](webapp/public/assets/js/analyze.js)** — misure "scafo"
+  (larghezza con ≈ se indicativa), classi compatibili e contorno dello
+  scafo disegnato sulla ripresa.
+
+### Veicoli
+
+- Per ogni veicolo, la classe di lunghezza dal riquadro (circa 0,9 del
+  lato lungo), solo sotto 0,6 m/pixel: piccolo (auto o furgone), medio,
+  grande (camion, autobus, mezzo pesante), molto grande. Soglie da tarare
+  sulle verifiche. Il modello esatto a questa risoluzione non si
+  riconosce: i veicoli non hanno tipi da confermare.
+
+### Zone di conteggio
+
+- **[migrations/006_study_zones.sql](webapp/migrations/006_study_zones.sql)**,
+  **[StudyZone.php](webapp/src/StudyZone.php)** (nuovi):
+  - un rettangolo o un poligono disegnato su una ripresa georiferita (▦
+    nell'elenco delle annotazioni) diventa una zona in longitudine e
+    latitudine, valida per tutte le riprese dello studio;
+  - un oggetto è nella zona se il centro del suo riquadro lo è;
+  - **copertura per ripresa:**
+    - intera;
+    - parziale: c'è un vertice dentro, la zona contiene un angolo
+      dell'immagine o ne attraversa un bordo;
+    - fuori, e allora non c'è conteggio.
+  - ▦ premuto due volte dà la stessa zona.
+- **[AreaHistory.php](webapp/src/AreaHistory.php)**,
+  **[api/area_history.php](webapp/public/api/area_history.php)**,
+  **[api/zones.php](webapp/public/api/zones.php)** (nuovo):
+  - conteggi per zona nello storico e nel CSV (colonne per zona, con la
+    copertura);
+  - creazione ed eliminazione delle zone.
+- **[study.js](webapp/public/assets/js/study.js)**:
+  - nello storico dell'area si sceglie la zona;
+  - le riprese che coprono la zona solo in parte sono segnate (\*, barre
+    chiare);
+  - il grafico si sceglie fra velivoli, navi e veicoli.
+
+### Test, prove e revisione
+
+- **Test**:
+  - `test_hull.py`: nave isolata, ombra, banchina con riquadro spostato,
+    prua affusolata, scafo scuro, navi affiancate, barche;
+  - `ShipZoneTest.php`: classi navali, conferma, veicoli, zone, copertura,
+    CSV, doppioni, dati rovinati, qualità;
+  - in tutto PHP 81, Python 52.
+- **Prova nell'ambiente isolato e nel browser**:
+  - tabella con scafo e classi;
+  - zona creata con ▦ (11 navi su 40 nel "Bacino est" di Portsmouth);
+  - riprese di altri porti segnate "non copre la zona";
+  - selettore della zona e del grafico;
+  - CSV con le colonne della zona.
+- **Revisione indipendente**, correzioni applicate:
+  - lunghezza sottostimata sulle prue affusolate (fino al 18% sui test);
+  - larghezza da un lato solo, che sbagliava del doppio dello scarto del
+    riquadro;
+  - scafi scuri non misurabili;
+  - cicli in Python vettorizzati;
+  - copertura delle zone lunghe e strette e dei vertici sul bordo;
+  - ▦ mostrato su riprese senza georeferenza propria;
+  - coerenza fra studio e annotazione;
+  - limite della lunghezza nel confronto.
+
 ## 2026-10-14 (2) — Fondamenta per navi e veicoli: rilevamento nei porti, navi grandi, tipi per ambito
 
 Fase 1 del piano per estendere il riconoscimento a navi e veicoli. Nessun

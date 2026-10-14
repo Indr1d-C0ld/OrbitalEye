@@ -10,6 +10,7 @@ from ..core import detect as detectmod
 from ..core import diff as diffmod
 from ..core import embed as embedmod
 from ..core import enhance as enhancemod
+from ..core import hull as hullmod
 from ..core import silhouette as silhouettemod
 from ..core import spectral as spectralmod
 from ..core import typeclass as typeclassmod
@@ -400,6 +401,17 @@ def detect(req: DetectRequest):
         # proprio tetto (TIME_BUDGET_S).
         def remaining():
             return max(0.0, req.time_budget_s - (time.monotonic() - started))
+
+        # Lunghezza e larghezza delle navi dallo scafo (veloce: un quarto del
+        # tempo rimasto al massimo).
+        try:
+            hulls = hullmod.analyze(img, result["detections"], req.mpp_x, req.mpp_y,
+                                    budget_s=min(hullmod.TIME_BUDGET_S, remaining() / 4))
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Misura degli scafi non riuscita: %s", e)
+            hulls = {}
+        for i, info in hulls.items():
+            result["detections"][i]["hull"] = info
 
         try:
             sil = silhouettemod.analyze(img, result["detections"], req.mpp_x, req.mpp_y,

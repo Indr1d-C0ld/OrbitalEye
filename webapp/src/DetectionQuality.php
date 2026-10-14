@@ -51,7 +51,7 @@ final class DetectionQuality
             $classes[$g] = ['tp' => 0, 'fp' => 0, 'fn' => 0, 'wrong_class' => 0, 'tp_complete' => 0];
         }
         $bands = array_map(fn($b) => ['from' => $b[0], 'to' => min(1.0, $b[1]), 'tp' => 0, 'fp' => 0], self::CONFIDENCE_BANDS);
-        $ident = ['sagoma' => self::rankStats(), 'riquadro' => self::rankStats(), 'mar20' => self::rankStats()];
+        $ident = ['sagoma' => self::rankStats(), 'riquadro' => self::rankStats(), 'mar20' => self::rankStats(), 'scafo' => self::rankStats()];
         // Indizio MAR20 con ★ (TypeClassifier): quante volte è stato dato
         // su un velivolo identificato e quante era giusto. Conta anche gli
         // aerei di tipi che MAR20 non conosce: sono loro il rischio.
@@ -98,6 +98,14 @@ final class DetectionQuality
                     $classes[$g]['tp_complete']++;
                 }
                 $bands[$band]['tp']++;
+                // Navi: posizione della classe vera fra le compatibili con lo
+                // scafo misurato (ShipCatalog).
+                if (!empty($r['type_name']) && $g === 'ship' && $mppMean
+                    && in_array($o['hull']['quality'] ?? null, ['ok', 'media'], true) && !empty($o['hull']['length_m'])) {
+                    $ships = ShipCatalog::match((float) $o['hull']['length_m'], isset($o['hull']['beam_m']) ? (float) $o['hull']['beam_m'] : null,
+                        $mppMean, $o['hull']['quality'] === 'ok' ? 'hull' : 'hull_length', 200);
+                    self::addRank($ident['scafo'], self::rankOf($ships, $r['type_name']));
+                }
                 if (!empty($r['type_name']) && in_array($g, ['plane', 'helicopter'], true) && $mppMean) {
                     foreach (self::ranks($o, $r['type_name'], $mppMean) as $method => $rank) {
                         self::addRank($ident[$method], $rank);

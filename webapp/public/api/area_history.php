@@ -17,7 +17,8 @@ if (($_GET['format'] ?? '') === 'csv') {
     $name = preg_replace('/[^A-Za-z0-9_-]+/', '_', $study['title']) ?: 'studio';
     header('Content-Type: text/csv; charset=utf-8');
     header('Content-Disposition: attachment; filename="storico_' . $name . '.csv"');
-    echo AreaHistory::csv($rows);
+    echo AreaHistory::csv($rows, StudyZone::forStudy($studyId));
     exit;
 }
-respond_json(['rows' => $rows, 'classes' => Detection::HISTORY_CLASSES]);
+respond_json(['rows' => $rows, 'classes' => Detection::HISTORY_CLASSES,
+    'zones' => array_map(fn($z) => ['id' => $z['id'], 'name' => $z['name']], StudyZone::forStudy($studyId))]);

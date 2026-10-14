@@ -94,7 +94,13 @@ Il confronto non è una semplice sovrapposizione: le due immagini vengono prima 
 
   Si ricalcola con il codice attuale, quindi ogni miglioramento si misura sugli stessi oggetti.
 - **Confronto per oggetti**: nel confronto fra due riprese, quali aerei, elicotteri, navi e veicoli sono **comparsi, spariti o rimasti** ("aerei: 5 comparsi, 9 spariti, 0 rimasti"). Usa il rilevamento automatico su entrambe le riprese, eseguito se manca. Gli oggetti sono abbinati per posizione, categoria e dimensioni. Le posizioni di B sono riportate su A con lo stesso allineamento delle immagini, quindi lo scarto di georeferenza fra fonti diverse non separa lo stesso oggetto. Le due riprese possono avere aree, rotazioni e risoluzioni diverse. Non risente di ombre, colori o trama del terreno. Elenco con zoom su ciascun oggetto, riquadri verdi e rossi sull'immagine, riepilogo nella didascalia e nel report esportato. Anche gli **alert dei download pianificati** riportano gli oggetti comparsi, spariti e rimasti rispetto alla ripresa precedente
-- **Storico dell'area**: per ogni ripresa di uno studio, nell'ordine della data reale dell'immagine, quanti aerei, elicotteri, navi e veicoli sono stati rilevati e quali tipi identificati, con grafico, rilevamento in serie e export CSV
+- **Navi**:
+  - **Scafo.** Lunghezza e larghezza misurate separando lo scafo dall'acqua (con l'ombra esclusa); banchine e navi affiancate sono segnalate e lì vale la sola lunghezza. Su Norfolk e Portsmouth: una portaerei classe Ford 340,7 × 80,8 m, due Type 45 155,3 × 21,5 e 148,1 × 23,0 m.
+  - **Classi compatibili.** Da una **tabella locale di 202 classi navali** di 20 marine, con lunghezza, larghezza e, dove la voce la riporta, larghezza del ponte di volo dalle schede di Wikipedia, con voce e revisione citate per ogni classe. Le misure riducono i candidati a un gruppo (a ~155 m: Arleigh Burke, Type 45, Horizon...); l'identificazione resta dell'analista, che conferma la classe con ✓.
+  - **Navi grandi.** Le navi più lunghe di un tassello di rilevamento si trovano intere con una seconda passata a 1 m/pixel; una nave dentro un riquadro "porto" non viene più scartata.
+- **Veicoli**: a 0,3–0,5 m/pixel un'auto è 9–15 pixel, il modello esatto non si riconosce. Per ogni veicolo la classe di lunghezza (piccolo, medio, grande, molto grande), da tarare sulle verifiche.
+- **Storico dell'area**: per ogni ripresa di uno studio, nell'ordine della data reale dell'immagine, quanti aerei, elicotteri, navi e veicoli sono stati rilevati e quali tipi identificati, con grafico (velivoli, navi o veicoli), rilevamento in serie e export CSV.
+  - **Zone di conteggio**: un rettangolo o un poligono disegnato su una ripresa (▦ nell'elenco delle annotazioni) diventa una zona geografica, per esempio un piazzale, una banchina o un deposito. Lo storico conta gli oggetti al suo interno in ogni ripresa dello studio, anche di altre fonti o rotazioni, e segnala le riprese che coprono la zona solo in parte o per niente.
 
 **Organizzazione e output**
 - Annotazioni e misurazioni persistenti, disegnabili direttamente sulle immagini
@@ -393,6 +399,7 @@ cd python-service && venv/bin/python -m unittest discover -s tests -t .
 - [DINOv2](https://github.com/facebookresearch/dinov2) di Meta — vettori della libreria visiva (DINOv2-small, Apache-2.0); non incluso, si installa con `python-service/tools/fetch_embedding_model.sh`
 - [MAR20](https://gcheng-nwpu.github.io/) — dataset di velivoli militari su cui si addestra il classificatore dei tipi, licenza CC BY-NC 4.0 (uso non commerciale e di ricerca); non incluso. W. Yu, G. Cheng, M. Wang, Y. Yao, X. Xie, X. Yao, J. Han, "MAR20: A Benchmark for Military Aircraft Recognition in Remote Sensing Images", *National Remote Sensing Bulletin*, 2022
 - [Wikipedia](https://en.wikipedia.org/) — dimensioni dei velivoli nella tabella `webapp/src/aircraft_types.json`, tratte dalle schede tecniche delle voci indicate per ciascun tipo (testi CC BY-SA 4.0)
+- [Wikipedia](https://en.wikipedia.org/) — dimensioni delle classi navali nella tabella `webapp/src/ship_types.json`, tratte dalle schede (infobox) delle voci della Wikipedia in inglese indicate per ciascuna classe, con la revisione letta; la tabella è un adattamento distribuito con la stessa licenza (CC BY-SA 4.0)
 
 ## Licenza
 

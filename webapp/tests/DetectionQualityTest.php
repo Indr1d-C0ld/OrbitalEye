@@ -146,7 +146,7 @@ test('verifica: il tipo solo nell\'ambito della classe (niente "C-17" per una na
     sort($types);
     assert_same([null, 'V-22 Osprey', 'V-22 Osprey'], $types);
     $byClass = DetectionReview::typesByClass();
-    assert_same(['plane', 'helicopter'], array_keys($byClass));
+    assert_same(['plane', 'helicopter', 'ship'], array_keys($byClass));
     assert_true(in_array('CH-47 Chinook', $byClass['helicopter'], true) && !in_array('CH-47 Chinook', $byClass['plane'], true));
 });
 

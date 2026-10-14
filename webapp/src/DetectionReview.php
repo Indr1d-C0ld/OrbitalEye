@@ -29,11 +29,15 @@ final class DetectionReview
      * Tipi ammessi per classe: un tipo si conferma solo nell'ambito della sua
      * classe (un aereo con un tipo d'aereo, non una nave con "C-17"). Per gli
      * aerei tutti i velivoli tranne gli elicotteri; per gli elicotteri anche
-     * i convertiplani, che il rilevatore può vedere come elicotteri. Le altre
-     * classi per ora non hanno una tabella dei tipi.
+     * i convertiplani, che il rilevatore può vedere come elicotteri; per le
+     * navi le classi navali (ShipCatalog). I veicoli non hanno tipi: a 0,3–0,5
+     * m/pixel non si riconoscono.
      */
     public static function typesFor(?string $class): array
     {
+        if ($class === 'ship') {
+            return ShipCatalog::names();
+        }
         if ($class !== 'plane' && $class !== 'helicopter') {
             return [];
         }
@@ -91,13 +95,15 @@ final class DetectionReview
             throw new InvalidArgumentException('Tipo non valido');
         }
         $type = trim((string) $typeIn);
-        if ($type !== '' && $verdict === 'confirmed') {
-            if (!in_array($type, array_column(AircraftCatalog::types(), 'name'), true)) {
-                throw new InvalidArgumentException('Tipo non presente nella tabella dei velivoli');
-            }
-            if (!in_array($type, self::typesFor($class), true)) {
-                throw new InvalidArgumentException('Tipo non valido per la classe "' . (self::CLASSES[$class] ?? $class) . '"');
-            }
+        if ($type !== '' && $verdict === 'confirmed' && !in_array($type, self::typesFor($class), true)) {
+            $known = in_array($type, array_column(AircraftCatalog::types(), 'name'), true) || in_array($type, ShipCatalog::names(), true);
+            $label = self::CLASSES[$class] ?? (string) $class;
+            throw new InvalidArgumentException(match (true) {
+                !self::typesFor($class) => 'Nessun tipo per la classe "' . $label . '"',
+                $known => 'Tipo non valido per la classe "' . $label . '"',
+                $class === 'ship' => 'Classe non presente nella tabella delle navi',
+                default => 'Tipo non presente nella tabella dei velivoli',
+            });
         }
         $polygon = self::polygon($data['polygon'] ?? null);
         if (!$polygon) {
