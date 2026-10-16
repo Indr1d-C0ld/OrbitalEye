@@ -42,6 +42,75 @@ final class ImageryAttribution
     }
 
     /**
+     * Provenienza in campi separati, per il riquadro dei dati tecnici delle
+     * pubblicazioni (PublicationData): fonte, sensore, risoluzione del
+     * sensore, acquisizione (con l'ora quando la fonte la dà), orbita,
+     * nuvole, giorno del download. I campi non noti sono null.
+     *
+     * @return array{source:string, sensor:?string, resolution_m:?float, acquired:?string,
+     *   orbit:?string, cloud:?string, fetched:?string}
+     */
+    public static function provenance(array $capture): array
+    {
+        $origin = self::resolveOrigin($capture);
+        $meta = $origin['meta'];
+        $out = ['source' => '', 'sensor' => null, 'resolution_m' => null, 'acquired' => null,
+            'orbit' => null, 'cloud' => null, 'fetched' => null];
+        if (!empty($meta['fetched_at'])) {
+            $out['fetched'] = self::it(substr((string) $meta['fetched_at'], 0, 10));
+        }
+        $date = $origin['capture']['capture_date'] ?? null;
+        if ($origin['kind'] === 'esri') {
+            $wayback = $meta['wayback']['release_date'] ?? null;
+            $out['source'] = $wayback ? 'Esri Wayback (versione del ' . self::it($wayback) . ')' : 'Esri World Imagery';
+            $imagery = $meta['esri_imagery'] ?? null;
+            $acq = $imagery['acquisitions'] ?? [];
+            if (!$acq) {
+                return $out;
+            }
+            $dom = $acq[0];
+            $name = EsriImageryMetadata::sensorName($dom['sensor'] ?? '') ?: ($dom['sensor_name'] ?? '');
+            $out['sensor'] = trim(implode(' · ', array_filter([$name, $dom['provider'] ?? '', $dom['product'] ?? '']))) ?: null;
+            $out['resolution_m'] = isset($dom['resolution_m']) ? (float) $dom['resolution_m'] : null;
+            $min = $imagery['date_min'] ?? $dom['date'];
+            $max = $imagery['date_max'] ?? $dom['date'];
+            $out['acquired'] = $min === $max
+                ? self::it($dom['date'])
+                : 'mosaico ' . self::it($min) . '–' . self::it($max) . ' (prevalente ' . self::it($dom['date']) . ', ' . round(($dom['coverage'] ?? 0) * 100) . '%)';
+            if (isset($imagery['certain']) && $imagery['certain'] === false && !empty($imagery['alternative']['dominant_date'])) {
+                $out['acquired'] .= ', incerta: oppure ' . self::it($imagery['alternative']['dominant_date']);
+            }
+            return $out;
+        }
+        if ($origin['kind'] === 'sentinel') {
+            $radar = !empty($meta['s1_pass']) || ($origin['capture']['source'] ?? '') === 'sentinel1';
+            $pass = $radar ? ($meta['s1_pass'] ?? null) : ($meta['s2_pass'] ?? null);
+            $out['source'] = 'Copernicus ' . ($radar ? 'Sentinel-1' : 'Sentinel-2');
+            $out['sensor'] = ($pass['platform'] ?? ($radar ? 'Sentinel-1' : 'Sentinel-2'))
+                . ($radar ? ' · SAR banda C, VV' : ' · MSI L2A');
+            $out['resolution_m'] = 10.0;
+            if (!empty($pass['datetime'])) {
+                $out['acquired'] = ImageryCatalog::label($pass['datetime']);
+            } elseif (!$radar && !empty($meta['date_from']) && !empty($meta['date_to']) && $meta['date_from'] !== $meta['date_to']) {
+                $out['acquired'] = 'mosaico ' . self::it($meta['date_from']) . '–' . self::it($meta['date_to']);
+            } elseif ($date) {
+                $out['acquired'] = self::it($date);
+            }
+            if (isset($pass['relative_orbit'])) {
+                $state = ['ascending' => 'ascendente', 'descending' => 'discendente'][$pass['orbit_state'] ?? ''] ?? '';
+                $out['orbit'] = trim('relativa ' . (int) $pass['relative_orbit'] . ' ' . $state);
+            }
+            if (isset($pass['aoi_cloud'])) {
+                $out['cloud'] = round($pass['aoi_cloud'] * 100) . '% sull\'area';
+            }
+            return $out;
+        }
+        $out['source'] = $origin['kind'] === 'custom' ? trim((string) $meta['attribution']) : 'immagine caricata, fonte non indicata';
+        $out['acquired'] = $date ? self::it($date) : null;
+        return $out;
+    }
+
+    /**
      * Identificativo dell'acquisizione: due riprese con la stessa chiave sono
      * la stessa foto (anche se ritagliate o elaborate diversamente). Null
      * quando non si può stabilire — immagini caricate a mano, vecchi

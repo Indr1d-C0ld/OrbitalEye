@@ -30,6 +30,14 @@ final class PublicationException extends RuntimeException
  *  - natural_width: larghezza, in pixel della ripresa originale, coperta
  *    dall'immagine caricata (un ritaglio ne copre una parte): serve alla
  *    barra di scala
+ *  - signature: '1' (predefinito) = firma OrbitalEye con l'indirizzo del
+ *    repository pubblico, discreta, in ogni formato
+ *  - telemetry: '1' = riquadro dei dati tecnici sotto l'immagine
+ *    (PublicationData); spento se non chiesto, perché riporta le coordinate
+ *  - crop_x, crop_y, crop_w, crop_h: per un ritaglio, il rettangolo in
+ *    frazioni della ripresa (area e oggetti del riquadro)
+ *  - processing: JSON con le regolazioni della copia di lavoro (vedi
+ *    PublicationData::processing)
  */
 final class PublicationBuilder
 {
@@ -53,8 +61,10 @@ final class PublicationBuilder
         $studyId = !empty($p['study_id']) ? (int) $p['study_id'] : null;
         $study = $studyId ? Study::find($studyId) : null;
         $title = mb_substr(trim((string) ($p['title'] ?? '')), 0, 120) ?: ($study['title'] ?? '');
-        if (in_array($format, ['card', 'pair'], true) && !PublicationComposer::available()) {
-            throw new PublicationException('Scheda non disponibile: servono GD con FreeType e il font DejaVu Sans (pacchetto fonts-dejavu) sul server.', 500);
+        $signature = ($p['signature'] ?? '1') === '1';
+        $telemetry = ($p['telemetry'] ?? '0') === '1';
+        if ((in_array($format, ['card', 'pair'], true) || $telemetry) && !PublicationComposer::available()) {
+            throw new PublicationException(($telemetry ? 'Riquadro dei dati tecnici' : 'Scheda') . ' non disponibile: servono GD con FreeType e il font DejaVu Sans (pacchetto fonts-dejavu) sul server.', 500);
         }
 
         if ($kind === 'capture') {
@@ -82,8 +92,13 @@ final class PublicationBuilder
                 'mpp_x' => $mpp && $width ? $mpp['mpp_x'] * $naturalWidth / $width : null,
                 'north_deg' => self::north($capture),
             ];
-            $main = self::compose($format, $bytes, $mime, $cardInfo, $info['strip']);
-            $doc = $wantDocument ? ($format === 'card' ? PublicationComposer::card($bytes, $cardInfo, true) : $main) : null;
+            $rows = $telemetry
+                ? PublicationData::forCapture($capture, PublicationData::crop($p), PublicationData::processing($p['processing'] ?? null))
+                : [];
+            $main = self::finish($format, self::compose($format, $bytes, $mime, $cardInfo, self::strip($info['strip'], $signature)), $rows, $signature);
+            $doc = $wantDocument
+                ? ($format === 'card' ? self::finish('card', PublicationComposer::card($bytes, $cardInfo, true), $rows, $signature) : $main)
+                : null;
             return [
                 'kind' => 'capture', 'ref_id' => (int) $capture['id'], 'study_id' => $studyId,
                 'caption' => $caption, 'format' => $format,
@@ -139,6 +154,7 @@ final class PublicationBuilder
             'credit' => $credit,
             'north_deg' => $capA ? self::north($capA) : null,
         ];
+        $rows = $telemetry && $comparison ? PublicationData::forComparison($comparison, $capA, $capB, $format === 'pair' ? 'pair' : $view) : [];
         $mppFor = fn(int $width) => $mppA && $width && $capA ? $mppA['mpp_x'] * (float) $capA['width'] / $width : null;
         $dateOf = fn(?array $info) => $info && $info['date'] ? self::it($info['date']) : 'data non nota';
 
@@ -153,15 +169,17 @@ final class PublicationBuilder
                 'label_a' => 'PRIMA · ' . $dateOf($infoA),
                 'label_b' => 'DOPO · ' . $dateOf($infoB),
             ];
-            $main = PublicationComposer::pair($a, $b, $pairInfo);
+            $main = self::finish('pair', PublicationComposer::pair($a, $b, $pairInfo), $rows, $signature);
             if ($wantDocument) {
-                $doc = PublicationComposer::pair($a, $b, $pairInfo, true);
+                $doc = self::finish('pair', PublicationComposer::pair($a, $b, $pairInfo, true), $rows, $signature);
             }
         } else {
             [$bytes, $mime, $w] = $read($view);
-            $main = self::compose($format, $bytes, $mime, $cardInfo + ['mpp_x' => $mppFor($w)], $pair['strip']);
+            $main = self::finish($format, self::compose($format, $bytes, $mime, $cardInfo + ['mpp_x' => $mppFor($w)], self::strip($pair['strip'], $signature)), $rows, $signature);
             if ($wantDocument) {
-                $doc = $format === 'card' ? PublicationComposer::card($bytes, $cardInfo + ['mpp_x' => $mppFor($w)], true) : $main;
+                $doc = $format === 'card'
+                    ? self::finish('card', PublicationComposer::card($bytes, $cardInfo + ['mpp_x' => $mppFor($w)], true), $rows, $signature)
+                    : $main;
             }
         }
         $base = ($kind === 'study' ? 'riepilogo_studio_' . $studyId : 'confronto_' . $comparison['id']);
@@ -171,8 +189,12 @@ final class PublicationBuilder
             // riprese confrontate, ciascuna con la propria data.
             foreach ([['enhanced_a', 'prima', 'Prima', $infoA], ['aligned_b', 'dopo', 'Dopo', $infoB]] as [$key, $suffix, $label, $info]) {
                 [$bytes, $mime] = $read($key);
-                $strip = $label . ' ' . $dateOf($info) . ($info && $info['credit'] ? ' · ' . $info['credit'] : '');
-                $item = $format === 'none' ? [$bytes, $mime] : (ImageryAttribution::burnStrip($bytes, $strip) ?? [$bytes, $mime]);
+                $strip = self::strip($label . ' ' . $dateOf($info) . ($info && $info['credit'] ? ' · ' . $info['credit'] : ''), $signature);
+                if ($format === 'none') {
+                    $item = $signature && PublicationComposer::available() ? PublicationComposer::cornerTag($bytes) : [$bytes, $mime];
+                } else {
+                    $item = ImageryAttribution::burnStrip($bytes, $strip) ?? [$bytes, $mime];
+                }
                 $media[] = [$item[0], $base . '_' . $suffix . self::ext($item[1]), $item[1]];
             }
         }
@@ -199,6 +221,28 @@ final class PublicationBuilder
             return ImageryAttribution::burnStrip($bytes, $strip) ?? [$bytes, $mime];
         }
         return [$bytes, $mime];
+    }
+
+    /** Testo della striscia, con la firma in coda se chiesta. */
+    private static function strip(string $text, bool $signature): string
+    {
+        return implode(' · ', array_filter([$text, $signature ? PublicationComposer::SIGNATURE : '']));
+    }
+
+    /**
+     * Firma e riquadro dei dati tecnici sull'immagine già composta: sotto,
+     * in una fascia (PublicationComposer::decorate); per "Solo immagine"
+     * senza riquadro, la firma in un angolo; nella striscia è già nel testo.
+     */
+    private static function finish(string $format, array $img, array $rows, bool $signature): array
+    {
+        if (!PublicationComposer::available()) {
+            return $img;
+        }
+        if (!$rows && $format === 'none') {
+            return $signature ? PublicationComposer::cornerTag($img[0]) : $img;
+        }
+        return PublicationComposer::decorate($img[0], $img[1], $rows, $signature && $format !== 'strip');
     }
 
     /** @return array{0:string,1:string,2:int} byte, tipo MIME, larghezza */

@@ -127,6 +127,8 @@ function publishOptions(prefix) {
     album: !!(el('album') && el('album').checked),
     document: !!(el('document') && el('document').checked),
     review: !!(el('review') && el('review').checked),
+    signature: !el('signature') || el('signature').checked,
+    telemetry: !!(el('telemetry') && el('telemetry').checked),
   };
 }
 
@@ -137,6 +139,8 @@ function appendPublishOptions(form, prefix) {
   form.append('album', o.album ? '1' : '0');
   form.append('document', o.document ? '1' : '0');
   form.append('review', o.review ? '1' : '0');
+  form.append('signature', o.signature ? '1' : '0');
+  form.append('telemetry', o.telemetry ? '1' : '0');
   return o;
 }
 

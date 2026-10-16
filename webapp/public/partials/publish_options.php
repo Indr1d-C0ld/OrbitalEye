@@ -13,7 +13,7 @@ $pp = e($publishPrefix);
 <div class="publish-options" data-prefix="<?= $pp ?>" style="margin:8px 0;">
   <div class="grid grid-2" style="margin-bottom:4px;">
     <div class="field" style="margin-bottom:6px;">
-      <label>Formato <span class="info-tip" tabindex="0" data-tip="Scheda: l'immagine con una fascia in basso che riporta titolo, data reale e sensore, barra di scala, freccia del nord e attribuzione richiesta dalla fonte — lo stesso formato per Telegram, per la copia da incollare su X e per l'anteprima. Striscia: solo data e fonte in sovrimpressione. Nessuna coordinata viene mai aggiunta.">?</span></label>
+      <label>Formato <span class="info-tip" tabindex="0" data-tip="Scheda: l'immagine con una fascia in basso che riporta titolo, data reale e sensore, barra di scala, freccia del nord e attribuzione richiesta dalla fonte — lo stesso formato per Telegram, per la copia da incollare su X e per l'anteprima. Striscia: solo data e fonte in sovrimpressione. Le coordinate compaiono solo se attivi il riquadro dei dati tecnici.">?</span></label>
       <select id="<?= $pp ?>-publish-format">
         <option value="card">Scheda di pubblicazione</option>
         <?php if ($publishKind === 'comparison'): ?><option value="pair">Scheda con Prima e Dopo affiancate</option><?php endif; ?>
@@ -32,6 +32,12 @@ $pp = e($publishPrefix);
         <input type="checkbox" id="<?= $pp ?>-publish-album"> Album Telegram con Prima e Dopo
       </label>
     <?php endif; ?>
+    <label class="checkbox-row" style="margin:0;" title="In basso a destra, in piccolo: «OrbitalEye · <?= e(PublicationComposer::SIGNATURE_URL) ?>». Nella striscia è in coda al testo; con «Solo immagine» è un'etichetta discreta nell'angolo.">
+      <input type="checkbox" id="<?= $pp ?>-publish-signature" checked> Firma OrbitalEye
+    </label>
+    <label class="checkbox-row" style="margin:0;" title="Un riquadro sotto l'immagine, che non la copre, con fonte, sensore, data e ora di acquisizione, risoluzione, centro e box dell'area in coordinate, estensione, orientamento ed elaborazioni (ritaglio, regolazioni, filtri, rilevamento automatico, confronto). Attenzione: rivela la posizione di ciò che pubblichi.">
+      <input type="checkbox" id="<?= $pp ?>-publish-telemetry"> Riquadro dati tecnici <span style="font-size:12px; color:var(--text-muted);">(con coordinate)</span>
+    </label>
     <label class="checkbox-row" style="margin:0;" title="Telegram comprime le foto: allega anche la stessa immagine come file, senza perdita di dettaglio.">
       <input type="checkbox" id="<?= $pp ?>-publish-document"> Allega il file a piena risoluzione
     </label>

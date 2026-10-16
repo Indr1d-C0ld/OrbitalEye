@@ -11,13 +11,23 @@
  *             attribuzione richiesta dalla fonte;
  *  - 'pair':  scheda con Prima e Dopo affiancate (confronti).
  *
- * Nessuna coordinata nella scheda: come per le didascalie, la posizione la
- * aggiunge l'analista se e quando vuole.
+ * Sotto, in ogni formato, si possono aggiungere (decorate) la firma della
+ * piattaforma — attiva di serie — e il riquadro dei dati tecnici
+ * (PublicationData). Nessuna coordinata nella scheda: la posizione compare
+ * solo nel riquadro, che l'analista attiva se e quando vuole.
  */
 final class PublicationComposer
 {
+    /** Firma della piattaforma: nome e repository pubblico. */
+    public const SIGNATURE_NAME = 'OrbitalEye';
+    public const SIGNATURE_URL = 'github.com/Indr1d-C0ld/OrbitalEye';
+    public const SIGNATURE = self::SIGNATURE_NAME . ' · ' . self::SIGNATURE_URL;
+
     private const FONT = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf';
     private const FONT_BOLD = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
+    /** Per il riquadro dei dati tecnici, se c'è (più testo nella stessa larghezza). */
+    private const FONT_CONDENSED = '/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed.ttf';
+    private const FONT_CONDENSED_BOLD = '/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf';
     /** Larghezza minima della scheda: sotto, i testi non stanno (un ritaglio
      * piccolo viene ingrandito). Massima: limite pratico delle foto Telegram. */
     private const MIN_WIDTH = 1000;
@@ -91,7 +101,196 @@ final class PublicationComposer
         return self::withFooter($canvas, $info, $mpp);
     }
 
+    /**
+     * Fascia sotto un'immagine già composta (scheda, striscia o solo
+     * immagine) con il riquadro dei dati tecnici e/o la firma della
+     * piattaforma: non copre mai l'immagine. Con il riquadro, un'immagine
+     * più stretta di MIN_WIDTH resta 1:1 al centro di una fascia più larga
+     * (i dati non starebbero).
+     *
+     * @param array<int,array{0:string,1:string}> $rows [etichetta, valore]
+     * @return array{0:string,1:string} [byte JPEG, tipo MIME]
+     */
+    public static function decorate(string $bytes, string $mime, array $rows, bool $signature): array
+    {
+        if (!$rows && !$signature) {
+            return [$bytes, $mime];
+        }
+        $img = self::load($bytes);
+        $w = imagesx($img);
+        $h = imagesy($img);
+        $offset = 0;
+        if ($rows && $w < self::MIN_WIDTH) {
+            $offset = intdiv(self::MIN_WIDTH - $w, 2);
+            $w = self::MIN_WIDTH;
+        }
+        $k = self::k($w);
+        $font = is_file(self::FONT_CONDENSED) ? self::FONT_CONDENSED : self::FONT;
+        $fontB = is_file(self::FONT_CONDENSED_BOLD) ? self::FONT_CONDENSED_BOLD : self::FONT_BOLD;
+        $pad = (int) round(18 * $k);
+        $sigSize = 12 * $k;
+        $sigW = $signature ? self::signatureWidth($sigSize) : 0;
+
+        $layout = $rows ? self::panelLayout($rows, $w - 2 * $pad, $k, $font, $fontB) : null;
+        // La firma nell'intestazione del riquadro se ci sta, altrimenti sotto.
+        $sigInHeader = $layout && $signature && $layout['header_w'] + $sigW + 30 * $k <= $layout['content_w'];
+        $sigLineH = $signature && !$sigInHeader ? (int) round($sigSize * 1.9) : 0;
+        $top = (int) round(($rows ? 12 : 4) * $k);
+        $bandH = $top + ($layout ? $layout['h'] : 0) + $sigLineH + ($layout ? $pad : (int) round(8 * $k));
+
+        $out = imagecreatetruecolor($w, $h + $bandH);
+        $bg = imagecolorallocate($out, 11, 17, 24);
+        imagefill($out, 0, 0, $bg);
+        imagecopy($out, $img, $offset, 0, 0, 0, imagesx($img), $h);
+        imagedestroy($img);
+
+        $y = $h + $top;
+        if ($layout) {
+            self::drawPanel($out, $layout, $pad, $y, $k, $font, $fontB);
+            if ($sigInHeader) {
+                self::drawSignature($out, $w - $pad - $layout['inner'], $y + $layout['inner'] + (int) round($layout['head_size'] * 1.2), $sigSize);
+            }
+            $y += $layout['h'];
+        }
+        if ($sigLineH) {
+            self::drawSignature($out, $w - $pad, $y + (int) round($sigSize * 1.45), $sigSize);
+        }
+        return self::jpeg($out);
+    }
+
+    /**
+     * Firma discreta nell'angolo in basso a destra, per "Solo immagine"
+     * senza riquadro: l'immagine resta delle sue dimensioni.
+     * @return array{0:string,1:string}
+     */
+    public static function cornerTag(string $bytes): array
+    {
+        $img = self::load($bytes);
+        $w = imagesx($img);
+        $h = imagesy($img);
+        $size = max(9.0, min(18.0, $w * 0.011));
+        $p = (int) round($size * 0.55);
+        $full = self::signatureWidth($size) + 2 * $p <= $w * 0.9;
+        $tw = $full ? self::signatureWidth($size) : self::textWidth(self::SIGNATURE_NAME, self::FONT_BOLD, $size);
+        if ($tw + 2 * $p > $w) {
+            return self::jpeg($img);
+        }
+        $th = (int) round($size * 1.5);
+        imagealphablending($img, true);
+        imagefilledrectangle($img, $w - $tw - 2 * $p, $h - $th - $p, $w, $h, imagecolorallocatealpha($img, 11, 17, 24, 40));
+        $base = $h - $p - (int) round($size * 0.45);
+        if ($full) {
+            self::drawSignature($img, $w - $p, $base, $size);
+        } else {
+            imagettftext($img, $size * 0.75, 0, $w - $p - $tw, $base, imagecolorallocate($img, 235, 242, 248), self::FONT_BOLD, self::SIGNATURE_NAME);
+        }
+        return self::jpeg($img);
+    }
+
     // ------------------------------------------------------------------
+
+    /** Righe del riquadro in colonne (dall'alto in basso, poi a destra). */
+    private static function panelLayout(array $rows, int $boxW, float $k, string $font, string $fontB): array
+    {
+        $inner = (int) round(14 * $k);
+        $labelSize = 11.5 * $k;
+        $valueSize = 12.5 * $k;
+        $headSize = 11 * $k;
+        $lh = (int) round($valueSize * 1.6);
+        $rowGap = (int) round(3 * $k);
+        $contentW = $boxW - 2 * $inner;
+        $colGap = (int) round(26 * $k);
+        $cols = max(1, min(3, count($rows), intdiv($contentW + $colGap, (int) round(340 * $k) + $colGap)));
+        $colW = intdiv($contentW - ($cols - 1) * $colGap, $cols);
+        $columns = [];
+        $maxH = 0;
+        foreach (array_chunk($rows, (int) ceil(count($rows) / $cols)) as $chunk) {
+            $labelW = 0;
+            foreach ($chunk as [$label]) {
+                $labelW = max($labelW, self::textWidth($label, $fontB, $labelSize));
+            }
+            $labelW = min($labelW + (int) round(12 * $k), (int) round($colW * 0.42));
+            $items = [];
+            $colH = 0;
+            foreach ($chunk as [$label, $value]) {
+                $lines = self::wrap($value, $font, $valueSize, $colW - $labelW, 3) ?: ['—'];
+                $items[] = [self::wrap($label, $fontB, $labelSize, $labelW - (int) round(8 * $k), 1)[0] ?? '', $lines];
+                $colH += count($lines) * $lh + $rowGap;
+            }
+            $columns[] = ['label_w' => $labelW, 'items' => $items];
+            $maxH = max($maxH, $colH - $rowGap);
+        }
+        $headH = (int) round($headSize * 1.9) + (int) round(8 * $k);
+        return [
+            'box_w' => $boxW, 'inner' => $inner, 'content_w' => $contentW, 'col_w' => $colW, 'col_gap' => $colGap,
+            'label_size' => $labelSize, 'value_size' => $valueSize, 'head_size' => $headSize, 'lh' => $lh, 'row_gap' => $rowGap,
+            'head_h' => $headH, 'columns' => $columns,
+            'header_w' => self::textWidth('DATI TECNICI', $fontB, $headSize),
+            'h' => $inner + $headH + $maxH + $inner,
+        ];
+    }
+
+    private static function drawPanel($img, array $l, int $x, int $y, float $k, string $font, string $fontB): void
+    {
+        $fill = imagecolorallocate($img, 16, 25, 34);
+        $border = imagecolorallocate($img, 40, 62, 78);
+        $cyan = imagecolorallocate($img, 0, 255, 242);
+        $grey = imagecolorallocate($img, 140, 156, 170);
+        $white = imagecolorallocate($img, 228, 236, 243);
+        imagefilledrectangle($img, $x, $y, $x + $l['box_w'], $y + $l['h'], $fill);
+        imagesetthickness($img, max(1, (int) round($k)));
+        imagerectangle($img, $x, $y, $x + $l['box_w'], $y + $l['h'], $border);
+        $cx = $x + $l['inner'];
+        $cy = $y + $l['inner'];
+        imagettftext($img, $l['head_size'] * 0.75, 0, $cx, $cy + (int) round($l['head_size'] * 1.2), $cyan, $fontB, 'DATI TECNICI');
+        $lineY = $cy + (int) round($l['head_size'] * 1.9);
+        imageline($img, $cx, $lineY, $cx + $l['content_w'], $lineY, $border);
+        imagesetthickness($img, 1);
+        $top = $cy + $l['head_h'];
+        foreach ($l['columns'] as $i => $col) {
+            $colX = $cx + $i * ($l['col_w'] + $l['col_gap']);
+            $ry = $top;
+            foreach ($col['items'] as [$label, $lines]) {
+                $base = fn(int $n) => $ry + ($n + 1) * $l['lh'] - (int) round($l['value_size'] * 0.45);
+                imagettftext($img, $l['label_size'] * 0.75, 0, $colX, $base(0), $grey, $fontB, $label);
+                foreach ($lines as $n => $t) {
+                    imagettftext($img, $l['value_size'] * 0.75, 0, $colX + $col['label_w'], $base($n), $white, $font, $t);
+                }
+                $ry += count($lines) * $l['lh'] + $l['row_gap'];
+            }
+        }
+    }
+
+    private static function signatureWidth(float $size): int
+    {
+        return self::textWidth(self::SIGNATURE_NAME, self::FONT_BOLD, $size) + self::textWidth(' · ' . self::SIGNATURE_URL, self::FONT, $size);
+    }
+
+    /** Firma allineata a destra in $right: il nome in evidenza, l'indirizzo più tenue. */
+    private static function drawSignature($img, int $right, int $baseline, float $size): void
+    {
+        $rest = ' · ' . self::SIGNATURE_URL;
+        $restW = self::textWidth($rest, self::FONT, $size);
+        $nameW = self::textWidth(self::SIGNATURE_NAME, self::FONT_BOLD, $size);
+        imagettftext($img, $size * 0.75, 0, $right - $restW - $nameW, $baseline, imagecolorallocate($img, 0, 255, 242), self::FONT_BOLD, self::SIGNATURE_NAME);
+        imagettftext($img, $size * 0.75, 0, $right - $restW, $baseline, imagecolorallocate($img, 150, 165, 178), self::FONT, $rest);
+    }
+
+    private static function textWidth(string $text, string $font, float $size): int
+    {
+        $b = imagettfbbox($size * 0.75, 0, $font, $text);
+        return abs($b[2] - $b[0]);
+    }
+
+    /** @return array{0:string,1:string} */
+    private static function jpeg($img): array
+    {
+        ob_start();
+        imagejpeg($img, null, 92);
+        $bytes = ob_get_clean();
+        imagedestroy($img);
+        return [$bytes, 'image/jpeg'];
+    }
 
     private static function load(string $bytes)
     {

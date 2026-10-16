@@ -4,6 +4,57 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-10-16 — Condivisione: firma OrbitalEye e riquadro dei dati tecnici
+
+Due nuove opzioni in ogni blocco "Condividi" (ripresa, ritaglio, confronto,
+riepilogo dello studio), valide per Telegram, per la copia per X e per
+l'anteprima.
+
+- **[webapp/src/PublicationData.php](webapp/src/PublicationData.php)** (nuovo):
+  righe del riquadro dei dati tecnici.
+  - `forCapture()`: fonte, sensore, acquisizione, risoluzione del sensore e
+    scala dell'immagine (i due assi se differiscono), orbita, nuvole,
+    download; centro e box SO·NE (WGS84, gradi decimali) ed estensione
+    dell'area mostrata, anche di un ritaglio; orientamento delle aree
+    ruotate; elaborazioni (ritaglio, filtri delle copie salvate, regolazioni
+    e filtri della copia di lavoro, annotazioni, sovrapposizioni); oggetti
+    del rilevamento con il centro nell'area mostrata; ora di composizione.
+  - `forComparison()`: Prima e Dopo, scala e area della ripresa A, vista,
+    allineamento, metodo di confronto, variazione, pre-elaborazione,
+    oggetti comparsi e spariti.
+  - `processing()`: accetta dalla pagina solo voci e valori noti (valori
+    limitati, nessun testo libero); `crop()`: rettangolo del ritaglio.
+- **[webapp/src/ImageryAttribution.php](webapp/src/ImageryAttribution.php)**:
+  `provenance()`, la provenienza in campi separati (fonte, sensore,
+  risoluzione, acquisizione, orbita, nuvole, download) per il riquadro.
+- **[webapp/src/PublicationComposer.php](webapp/src/PublicationComposer.php)**:
+  - `decorate()`: fascia sotto l'immagine già composta, che non la copre
+    mai, con il riquadro "DATI TECNICI" in colonne e/o la firma; con il
+    riquadro un'immagine stretta resta 1:1 su una fascia larga 1000 px;
+  - `cornerTag()`: firma nell'angolo per "Solo immagine";
+  - costanti della firma (nome e indirizzo del repository).
+- **[webapp/src/PublicationBuilder.php](webapp/src/PublicationBuilder.php)**:
+  nuovi campi `signature` (predefinito attivo), `telemetry` (predefinito
+  spento), `crop_*`, `processing`; firma in coda alla striscia e sulle
+  riprese dell'album; riquadro e firma anche sul file a piena risoluzione.
+- **[webapp/public/partials/publish_options.php](webapp/public/partials/publish_options.php)**:
+  caselle "Firma OrbitalEye" (spuntata) e "Riquadro dati tecnici (con
+  coordinate)", con spiegazioni; il suggerimento sul formato non dice più
+  che le coordinate non vengono mai aggiunte.
+- **[webapp/public/assets/js/common.js](webapp/public/assets/js/common.js)**:
+  le due opzioni nella richiesta di pubblicazione.
+- **[webapp/public/assets/js/analyze.js](webapp/public/assets/js/analyze.js)**:
+  invia regolazioni, filtri avanzati applicati (ripristinati anche con
+  l'annulla), livelli inclusi e, per il ritaglio, il suo rettangolo e le
+  regolazioni del momento in cui è stato ritagliato.
+- **[webapp/tests/PublicationTest.php](webapp/tests/PublicationTest.php)**:
+  5 test — fascia sotto un'immagine intatta, firma nell'angolo; righe di una
+  ripresa e di un ritaglio (centro, box, oggetti nel ritaglio,
+  elaborazioni); confronto e ripresa Sentinel-2 ruotata; regolazioni non
+  valide scartate; firma attiva e riquadro spento se non indicati.
+- **[README.md](README.md)**: le due opzioni fra le caratteristiche e nella
+  guida "Condivisione ed export".
+
 ## 2026-10-15 — README aggiornato: piattaforma conclusa
 
 Solo documentazione, nessuna modifica al codice.

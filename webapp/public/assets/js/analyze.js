@@ -462,6 +462,9 @@
   // premuto "Ripristina originale" — è superata e va ignorata. Prima una
   // risposta lenta sovrascriveva l'originale appena ripristinato.
   let advancedRequestSeq = 0;
+  // Filtri avanzati che formano la base attuale della copia di lavoro: per
+  // il riquadro dei dati tecnici delle pubblicazioni (processingInfo).
+  let appliedAdvancedSteps = [];
   const advancedApplyBtn = $('#an-advanced-apply-btn');
   advancedApplyBtn.addEventListener('click', async () => {
     const steps = buildAdvancedSteps();
@@ -484,9 +487,12 @@
       if (!res.ok) throw new Error(data.error || 'Errore');
       if (seq !== advancedRequestSeq) return; // superata da un'azione successiva
       imgRight.src = data.url + '&_=' + Date.now();
+      const prevSteps = appliedAdvancedSteps;
+      appliedAdvancedSteps = steps.map((st) => st.filter);
       status.textContent = 'Filtri applicati: ora sono la nuova base per le regolazioni in tempo reale sopra.';
       pushUndo(() => {
         imgRight.src = prevSrc;
+        appliedAdvancedSteps = prevSteps;
         status.textContent = 'Filtri avanzati annullati.';
       });
     } catch (err) {
@@ -503,13 +509,16 @@
     const prevChecks = {};
     ['an-wb', 'an-denoise', 'an-clahe', 'an-hist-eq', 'an-edge', 'an-desaturate'].forEach((id) => { prevChecks[id] = $('#' + id).checked; });
 
+    const prevSteps = appliedAdvancedSteps;
     imgRight.src = CFG.imageUrl;
+    appliedAdvancedSteps = [];
     resetSliders();
     ['an-wb', 'an-denoise', 'an-clahe', 'an-hist-eq', 'an-edge', 'an-desaturate'].forEach((id) => { $('#' + id).checked = false; });
     $('#an-advanced-status').textContent = 'Ripristinata la ripresa originale.';
 
     pushUndo(() => {
       imgRight.src = prevSrc;
+      appliedAdvancedSteps = prevSteps;
       Object.assign(adjust, prevAdjust);
       SLIDER_MAP.forEach(([inputId, outId, key, fmt]) => {
         $('#' + inputId).value = adjust[key];
@@ -2096,6 +2105,7 @@
   let lastCropBlob = null; // frammento "pulito", per anteprima e come base del livello opzionale
   let lastCropCanvas = null; // riferimento al canvas pulito, per ricomporre al volo col livello
   let lastCropNativeRect = null; // {sx,sy,sw,sh} in pixel nativi, per ritagliare la stessa area dal livello
+  let lastCropProcessing = null; // regolazioni "cotte" nel frammento quando è stato ritagliato
 
   function renderCropFromSelection(x, y, w, h) {
     const natW = imgRight.naturalWidth, natH = imgRight.naturalHeight;
@@ -2115,6 +2125,7 @@
     ctx.drawImage(imgRight, sx, sy, sw, sh, 0, 0, cropCanvas.width, cropCanvas.height);
     applyPixelAdjustments(ctx, cropCanvas.width, cropCanvas.height);
     lastCropCanvas = cropCanvas;
+    lastCropProcessing = { adjust: { ...adjust }, steps: appliedAdvancedSteps.slice(), overlay: false };
 
     // Il frammento in anteprima è quello che le azioni useranno davvero: se
     // "includi livello" è già spuntato, va mostrato con il livello (prima si
@@ -2360,7 +2371,17 @@
     form.append('study_id', CFG.studyId);
     form.append('caption', $('#an-crop-share-caption').value);
     form.append('image', blob, 'ritaglio_ripresa' + CFG.captureId + '.png');
-    if (lastCropNativeRect) form.append('natural_width', lastCropNativeRect.sw);
+    if (lastCropNativeRect) {
+      form.append('natural_width', lastCropNativeRect.sw);
+      // Area e oggetti del riquadro dei dati tecnici: quelli del frammento.
+      const { sx, sy, sw, sh } = lastCropNativeRect;
+      form.append('crop_x', sx / imgRight.naturalWidth);
+      form.append('crop_y', sy / imgRight.naturalHeight);
+      form.append('crop_w', sw / imgRight.naturalWidth);
+      form.append('crop_h', sh / imgRight.naturalHeight);
+    }
+    const layerEl = $('#an-crop-include-overlay-layer');
+    form.append('processing', JSON.stringify({ ...(lastCropProcessing || {}), layer: !!(layerEl && layerEl.checked) }));
     appendPublishOptions(form, 'an-crop');
     return form;
   }
@@ -2439,6 +2460,12 @@
     form.append('caption', shareCaptionEl.value);
     form.append('image', blob, 'ripresa_' + CFG.captureId + '.jpg');
     form.append('natural_width', imgRight.naturalWidth);
+    // Cosa contiene la copia di lavoro (regolazioni, filtri, livelli), per
+    // il riquadro dei dati tecnici: le stesse voci di renderAdjustedCanvas.
+    const layerEl = $('#an-include-overlay-layer');
+    form.append('processing', JSON.stringify({
+      adjust: { ...adjust }, steps: appliedAdvancedSteps, overlay: !!overlay.loaded, layer: !!(layerEl && layerEl.checked),
+    }));
     appendPublishOptions(form, 'an');
     return form;
   }
