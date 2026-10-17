@@ -1,5 +1,5 @@
 // Riconoscimento delle coordinate (public/assets/js/coords.js).
-// Uso: node --test webapp/tests/
+// Uso: node --test webapp/tests/*.test.js
 const test = require('node:test');
 const assert = require('node:assert');
 const C = require('../public/assets/js/coords.js');

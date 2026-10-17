@@ -54,4 +54,4 @@ jobs:
       - name: Sintassi
         run: for f in webapp/public/assets/js/*.js; do node --check "$f"; done
       - name: Test
-        run: node --test webapp/tests/
+        run: node --test webapp/tests/*.test.js

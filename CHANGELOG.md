@@ -4,6 +4,17 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-10-17 (2) — Test JavaScript: comando compatibile con Node 22
+
+Il job JavaScript della CI falliva: con Node 22 `node --test webapp/tests/`
+prova a eseguire la cartella come un file (MODULE_NOT_FOUND). Ora i file
+di test sono indicati esplicitamente.
+
+- **webapp/tests/coords.test.js**: commento d'uso con
+  `node --test webapp/tests/*.test.js`.
+- **[.github/workflows/ci.yml](.github/workflows/ci.yml)**, **[README.md](README.md)**:
+  stesso comando nella CI e nella documentazione.
+
 ## 2026-10-17 — Coordinate dell'area in qualunque formato e area da un solo punto
 
 Nel nuovo studio e nelle sezioni Copernicus ed Esri.

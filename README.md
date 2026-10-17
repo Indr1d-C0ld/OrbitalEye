@@ -417,7 +417,7 @@ Vedi [Architettura](#architettura) sopra per l'albero delle cartelle principali.
 
 ```bash
 php webapp/tests/run.php
-node --test webapp/tests/
+node --test webapp/tests/*.test.js
 cd python-service && venv/bin/python -m unittest discover -s tests -t .
 ```
 
