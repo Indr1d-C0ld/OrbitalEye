@@ -4,6 +4,62 @@ Registro delle modifiche sincronizzate dal deployment live a questo repo.
 Ogni voce elenca i file toccati e cosa/perché è cambiato — stesso dettaglio
 riportato nel messaggio del commit corrispondente.
 
+## 2026-10-17 — Coordinate dell'area in qualunque formato e area da un solo punto
+
+Nel nuovo studio e nelle sezioni Copernicus ed Esri.
+
+- **[webapp/public/assets/js/coords.js](webapp/public/assets/js/coords.js)**
+  (nuovo): riconoscimento delle coordinate, tutto nel browser.
+  - Formati: gradi decimali (anche con la virgola), gradi-primi-secondi e
+    gradi con primi decimali (simboli ASCII o tipografici, o solo spazi),
+    emisferi N/S/E/W/O prima o dopo, segno.
+  - Coppie lat, lon; l'ordine si inverte solo se lo dicono gli emisferi o
+    un primo valore oltre 90.
+  - UTM, dove la lettera è la fascia di latitudine o l'emisfero: "S" vale
+    come fascia 32–40° nord se il punto ci cade, altrimenti come sud.
+  - MGRS/USNG, al centro del quadrato indicato. La conversione UTM→gradi
+    usa le formule di Snyder, WGS84.
+  - Link di Google Maps (luogo segnato `!3d…!4d…`, `q=`, `@lat,lon`),
+    OpenStreetMap (`mlat/mlon`, `#map=`), Bing (`cp=`) e `geo:`.
+  - `parsePoint()` e `parseAxis()` restituiscono il valore o un errore
+    leggibile; `boxAround()` e `boxSize()` per l'area attorno a un centro.
+- **[webapp/public/assets/js/map-picker.js](webapp/public/assets/js/map-picker.js)**:
+  - **Quattro campi:** riscritti in gradi decimali al cambio, con il
+    riscontro sotto. Gli errori (anche un asse sbagliato) restano visibili
+    e il campo è bordato di rosso. Una coppia, un punto UTM/MGRS o un link
+    in un campo riempiono l'angolo Min o Max di quel campo.
+  - **Nuovo campo "Centro dell'area":** il punto diventa il centro;
+    l'area mantiene le dimensioni attuali, o diventa un quadrato del
+    "Lato" indicato. Senza un'area si usa il lato predefinito della sezione
+    (`defaultSizeKm`). La mappa inquadra l'area e segna il punto.
+  - **Sincronizzazione:** disegnando un'area, il centro e il lato mostrano
+    quelli della nuova.
+  - **Invio:** Invio nel centro centra senza inviare il form.
+    `normalizeAreaFields(form)` converte prima di ogni uso; con un errore
+    il form del nuovo studio non parte.
+- **[webapp/public/assets/js/study.js](webapp/public/assets/js/study.js)**:
+  conversione dei campi prima di download, catalogo, versioni storiche e
+  pianificazioni; lato predefinito 5 km per Copernicus e 1 km per Esri.
+- **[webapp/public/new_study.php](webapp/public/new_study.php)**: carica
+  `coords.js`, lato predefinito 2 km, frase d'aiuto aggiornata.
+- **[webapp/public/study.php](webapp/public/study.php)**: carica `coords.js`.
+- **[webapp/tests/coords.test.js](webapp/tests/coords.test.js)** (nuovo): 7
+  test con `node --test`, tra cui:
+  - i formati;
+  - UTM/MGRS su punti noti (Washington Monument, Torre Eiffel, Sydney);
+  - i link;
+  - l'ordine lon, lat;
+  - gli errori;
+  - i campi singoli;
+  - l'area attorno a un centro.
+- **[.github/workflows/ci.yml](.github/workflows/ci.yml)**: passo
+  `node --test webapp/tests/` nel job JavaScript.
+- **[README.md](README.md)**:
+  - caratteristica "Coordinate in qualunque formato";
+  - nuova guida "Indicare l'area";
+  - primo avvio aggiornato;
+  - comando dei test JavaScript.
+
 ## 2026-10-16 — Condivisione: firma OrbitalEye e riquadro dei dati tecnici
 
 Due nuove opzioni in ogni blocco "Condividi" (ripresa, ritaglio, confronto,

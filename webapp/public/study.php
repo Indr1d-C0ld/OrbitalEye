@@ -794,6 +794,7 @@ window.ORBITALEYE = {
      SHA-256 verificati contro gli attributi integrity usati prima. -->
 <link rel="stylesheet" href="assets/leaflet/leaflet.css">
 <script src="assets/leaflet/leaflet.js"></script>
+<script src="assets/js/coords.js?v=<?= @filemtime(__DIR__ . '/assets/js/coords.js') ?: time() ?>"></script>
 <script src="assets/js/map-picker.js?v=<?= @filemtime(__DIR__ . '/assets/js/map-picker.js') ?: time() ?>"></script>
 <script src="assets/js/study.js?v=<?= @filemtime(__DIR__ . '/assets/js/study.js') ?: time() ?>"></script>
 

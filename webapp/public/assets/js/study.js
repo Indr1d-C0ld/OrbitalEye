@@ -25,6 +25,7 @@
       toggles: {
         draw: 'sh-map-draw', pan: 'sh-map-pan', mapView: 'sh-map-osm', satView: 'sh-map-sat',
         rotation: 'sh-map-rotation', rotationOut: 'sh-map-rotation-out', rotationReset: 'sh-map-rotation-reset',
+        defaultSizeKm: 5,
       },
     },
     'tab-esri': {
@@ -33,6 +34,7 @@
       toggles: {
         draw: 'esri-map-draw', pan: 'esri-map-pan', mapView: 'esri-map-osm', satView: 'esri-map-sat',
         rotation: 'esri-map-rotation', rotationOut: 'esri-map-rotation-out', rotationReset: 'esri-map-rotation-reset',
+        defaultSizeKm: 1,
       },
     },
   };
@@ -140,6 +142,9 @@
   // ---------- Fetch (Copernicus / Esri) — stessa logica per entrambe le
   // sezioni, ciascuna con il proprio form e i propri campi ----------
   function areaPayload(form) {
+    // Coordinate in qualunque formato → gradi decimali (map-picker.js); un
+    // errore resta visibile sotto i campi, e il server rifiuta l'area.
+    if (typeof normalizeAreaFields === 'function') normalizeAreaFields(form);
     const fd = new FormData(form);
     const payload = {
       study_id: parseInt(fd.get('study_id'), 10),
@@ -663,6 +668,7 @@
       // Un doppio clic creava due pianificazioni, ognuna col proprio primo
       // scaricamento di base.
       if (saveBtn.disabled) return;
+      if (typeof normalizeAreaFields === 'function') normalizeAreaFields(form);
       const fd = new FormData(form);
       const intervalUnit = parseInt(panel.querySelector('.schedule-interval-unit').value, 10);
       const intervalValue = parseInt(panel.querySelector('.schedule-interval-value').value, 10) || 1;

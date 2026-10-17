@@ -84,7 +84,7 @@ require __DIR__ . '/partials/nav.php';
         <input type="text" id="ns-max-lon" name="max_lon" value="<?= e($_POST['max_lon'] ?? '') ?>" placeholder="max lon">
         <input type="text" id="ns-max-lat" name="max_lat" value="<?= e($_POST['max_lat'] ?? '') ?>" placeholder="max lat">
       </div>
-      <div class="hint">Disegna l'area sulla mappa (o scrivi le coordinate EPSG:4326/WGS84 a mano). Se non la imposti ora potrai comunque caricare immagini manualmente.</div>
+      <div class="hint">Disegna l'area sulla mappa, scrivi le coordinate (WGS84, in qualunque formato: decimali, gradi-primi-secondi, UTM, MGRS, link delle mappe) o indica solo il centro qui sotto. Se non la imposti ora potrai comunque caricare immagini manualmente.</div>
     </div>
     <div class="field">
       <label>Note operative</label>
@@ -103,12 +103,13 @@ require __DIR__ . '/partials/nav.php';
      SHA-256 verificati contro gli attributi integrity usati prima. -->
 <link rel="stylesheet" href="assets/leaflet/leaflet.css">
 <script src="assets/leaflet/leaflet.js"></script>
+<script src="assets/js/coords.js?v=<?= @filemtime(__DIR__ . '/assets/js/coords.js') ?: time() ?>"></script>
 <script src="assets/js/map-picker.js?v=<?= @filemtime(__DIR__ . '/assets/js/map-picker.js') ?: time() ?>"></script>
 <script>
 initMapPicker(
   'ns-map-picker',
   { minLon: 'ns-min-lon', minLat: 'ns-min-lat', maxLon: 'ns-max-lon', maxLat: 'ns-max-lat' },
-  { draw: 'ns-map-draw', pan: 'ns-map-pan', mapView: 'ns-map-osm', satView: 'ns-map-sat' }
+  { draw: 'ns-map-draw', pan: 'ns-map-pan', mapView: 'ns-map-osm', satView: 'ns-map-sat', defaultSizeKm: 2 }
 );
 </script>
 

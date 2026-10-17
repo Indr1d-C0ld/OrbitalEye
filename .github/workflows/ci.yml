@@ -1,5 +1,6 @@
 # Controlli automatici a ogni push e pull request: sintassi e test del
-# webapp PHP, test del servizio di analisi Python, sintassi del JavaScript.
+# webapp PHP, test del servizio di analisi Python, sintassi e test del
+# JavaScript.
 # Nessun servizio esterno viene contattato (Copernicus, Esri, Telegram):
 # i test girano su database e storage temporanei.
 name: CI
@@ -52,3 +53,5 @@ jobs:
           node-version: '22'
       - name: Sintassi
         run: for f in webapp/public/assets/js/*.js; do node --check "$f"; done
+      - name: Test
+        run: node --test webapp/tests/

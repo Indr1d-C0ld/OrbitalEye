@@ -42,6 +42,7 @@ Il confronto non è una semplice sovrapposizione: le due immagini vengono prima 
 - **Archivio storico Esri (Wayback)**: le versioni del mosaico World Imagery pubblicate dal 2014 in cui l'immagine dell'area è davvero diversa, raggruppate per acquisizione e ciascuna con la data reale dello scatto — su una base aerea tipica una decina di immagini sub-metriche dal 2011 a oggi, già allineate pixel per pixel con le riprese Esri correnti della stessa area
 - **Data reale delle immagini Esri**: il mosaico World Imagery è composto da acquisizioni di epoche diverse e aggiornato di rado, quindi la data del download non dice nulla su quando è stata scattata la foto. Per ogni ripresa vengono letti dai metadati ufficiali Esri data, sensore (WorldView-2/3, Legion…), risoluzione nativa e fornitore di ogni acquisizione che copre l'area, con la quota di area di ciascuna; la data prevalente diventa la data della ripresa. Le riprese più vecchie si datano com'erano il giorno del download grazie all'archivio storico Wayback
 - Selettore d'area interattivo su mappa (Leaflet, incluso nel progetto) con mappa stradale Esri World Street Map, basemap satellitare opzionale e **ricerca luogo** per nome (Nominatim/OpenStreetMap, solo su richiesta esplicita)
+- **Coordinate in qualunque formato**: gradi decimali (anche con la virgola), gradi-primi-secondi, gradi e primi decimali, N/S/E/W/O o segno, UTM, MGRS e link di Google Maps/OpenStreetMap, convertiti nel browser senza richieste esterne; e **area da un solo punto**, che ne diventa il centro
 - Possibilità di **ruotare l'area** prima dello scaricamento: la rotazione avviene nelle proporzioni reali del terreno, quindi la ripresa salvata coincide esattamente con il poligono mostrato sulla mappa, a qualunque latitudine
 - **Scaricamento pianificato guidato dai nuovi dati**: si scarica solo quando la fonte ha qualcosa di nuovo — un passaggio Sentinel-2 successivo all'ultimo con nuvole sull'area entro la soglia, un passaggio Sentinel-1 della stessa orbita, oppure un aggiornamento delle immagini Esri dell'area (riconosciuto dai metadati, senza scaricare) — con **alert** che riporta le date e la variazione rispetto alla ripresa precedente; pagina di gestione centralizzata di tutte le pianificazioni con badge d'errore nel menu
 
@@ -272,7 +273,7 @@ Uno script `deploy_apache.sh` è incluso come riferimento per inserire automatic
 Apri il sito: verrai reindirizzato a `setup.php` per creare l'account operatore (username + password, uno solo — OrbitalEye è pensato per uso mono-utente/personale). Da lì:
 
 1. **Impostazioni** → inserisci le credenziali Sentinel Hub/Esri (opzionali) e i parametri di analisi predefiniti.
-2. **Nuovo Studio** → crea uno studio per un'area di interesse, disegnandola sulla mappa integrata.
+2. **Nuovo Studio** → crea uno studio per un'area di interesse, disegnandola sulla mappa integrata, scrivendone le coordinate o indicandone solo il centro.
 3. Nella pagina dello studio: carica manualmente due riprese, oppure scaricale da Copernicus (scegli due passaggi dall'elenco) o da Esri (immagine attuale e versioni storiche), selezionale come **A (prima)** e **B (dopo)**, regola soglia/filtri (o usa un preset di sensibilità) ed esegui il confronto.
 4. Esplora i risultati: overlay, heatmap, contorni, maschera, slider prima/dopo. Clicca una regione rilevata (nella lista o direttamente sull'immagine) per ingrandirla, o trasformala in un'annotazione con un click.
 5. Salva i confronti interessanti in **Libreria** ed esportali (ZIP con immagini + report) quando serve condividerli o archiviarli.
@@ -293,6 +294,27 @@ Apri il sito: verrai reindirizzato a `setup.php` per creare l'account operatore 
 5. **Pulizia** — apertura/chiusura morfologica + filtro per area minima del blob, per scartare rumore fotografico e micro-disallineamenti residui.
 6. **Report grafico** — overlay in falso colore con bounding box numerate e cliccabili, heatmap, contorni, maschera binaria, slider prima/dopo.
 7. **Statistiche** — superficie variata (%), numero di regioni e, quando la scala reale della ripresa è nota, aree in m²/km² (totale e per regione).
+
+### Indicare l'area
+
+Nel nuovo studio e nelle sezioni Copernicus ed Esri l'area si indica in tre modi, che restano sincronizzati: disegnandola sulla mappa, scrivendo i quattro campi **Min/Max Lon/Lat**, oppure indicando solo il **centro**.
+
+- **Formati accettati**, sia nei quattro campi sia nel centro:
+  - gradi decimali, anche con la virgola: `37.4077` · `37,4077`;
+  - gradi, primi e secondi: `37°24'27.6"N` · `37 24 27.6 N` · `N 37° 24′ 27″`;
+  - gradi e primi decimali: `37°24.46'N`;
+  - emisfero con N/S/E/W (O = ovest), prima o dopo il numero, oppure il segno;
+  - **UTM** (`33S 495000 4140000`) e **MGRS** (`33SVB1234567890`, di cui si prende il centro del quadrato);
+  - link di Google Maps, OpenStreetMap, Bing e `geo:`.
+- **Conversione:** tutto avviene nel browser, senza richieste esterne. Ogni campo viene riscritto in gradi decimali e sotto compare cosa è stato riconosciuto.
+- **Errori:** sono spiegati, per esempio una longitudine scritta in un campo Lat, e il campo si colora di rosso.
+- **Coppia in un solo campo:** riempie l'angolo di quel campo, sud-ovest per Min e nord-est per Max.
+- **Ordine delle coppie:** latitudine, longitudine. L'ordine si inverte da solo solo se il primo valore supera 90 o se lo dicono le lettere N/S/E/W; per una coppia ambigua conviene guardare il riscontro sotto i campi.
+- **Centro dell'area:** il punto scritto diventa il centro e l'area si ricalcola attorno.
+  - Mantiene le dimensioni di quella attuale; cambiando **Lato** diventa un quadrato di quel lato.
+  - Senza un'area, il lato predefinito è 1 km per Esri, 5 km per Copernicus e 2 km per un nuovo studio.
+  - I campi Min/Max restano modificabili e sono loro a decidere cosa si scarica.
+  - Disegnando un'area, il centro mostra quello della nuova.
 
 ### Scegliere le immagini da confrontare
 
@@ -395,6 +417,7 @@ Vedi [Architettura](#architettura) sopra per l'albero delle cartelle principali.
 
 ```bash
 php webapp/tests/run.php
+node --test webapp/tests/
 cd python-service && venv/bin/python -m unittest discover -s tests -t .
 ```
 
